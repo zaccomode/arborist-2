@@ -4,24 +4,53 @@ Captures of the real Electron window, for attaching to pull requests so UI chang
 
 Regenerate them with `npm run screenshot`, or `xvfb-run -a npm run screenshot` on Linux. Each image comes from a scenario in `scripts/screenshots/scenarios.ts`; add one there to capture a state other than the opening screen. `CLAUDE.md` covers the workflow, including the checks a pull request needs before it goes up.
 
-## Shell
+Every capture below is deterministic: a scenario builds its own fixture repository at a fixed path, with commits at fixed dates, so re-running one reproduces the same pixels. Across environments they are not, because font rasterisation differs between macOS and Linux — the committed images are generated in the Linux cloud container, so regenerate them there.
 
-The two-pane shell as the app opens. This is the capture to compare against `concept.png`.
+## The shell
 
-| Dark                             | Light                              |
-| -------------------------------- | ---------------------------------- |
-| ![Shell, dark](./shell-dark.png) | ![Shell, light](./shell-light.png) |
+| Scenario                                                                                       | Dark                            | Light                            |
+| ---------------------------------------------------------------------------------------------- | ------------------------------- | -------------------------------- |
+| `shell` — the two-pane shell as the app opens, with no project. Compare against `concept.png`. | ![](./shell-dark.png)           | ![](./shell-light.png)           |
+| `worktree-badges` — the sidebar over the full badge matrix.                                    | ![](./worktree-badges-dark.png) | ![](./worktree-badges-light.png) |
 
-## Ping
+## Projects
 
-One scenario capturing two points in a flow: the M0 ping button before and after a round-trip to the main process. It's the one state that demonstrates a capture exercising real IPC, which a browser capture of the renderer can't show.
+| Scenario                                      | Dark                              | Light                              |
+| --------------------------------------------- | --------------------------------- | ---------------------------------- |
+| `add-project` — the empty state               | ![](./add-project-empty-dark.png) | ![](./add-project-empty-light.png) |
+| `add-project` — the switcher menu             | ![](./add-project-menu-dark.png)  | ![](./add-project-menu-light.png)  |
+| `add-project` — the project view that follows | ![](./add-project-added-dark.png) | ![](./add-project-added-light.png) |
+| `remove-project` — the confirmation           | ![](./remove-project-dark.png)    | ![](./remove-project-light.png)    |
 
-|        | Dark                                          | Light                                           |
-| ------ | --------------------------------------------- | ----------------------------------------------- |
-| Before | ![Ping, before, dark](./ping-before-dark.png) | ![Ping, before, light](./ping-before-light.png) |
-| After  | ![Ping, after, dark](./ping-after-dark.png)   | ![Ping, after, light](./ping-after-light.png)   |
+## Worktrees
 
-The `before` pair is byte-identical to `shell`, because the scaffold has exactly one interactive control and so nothing distinguishes the two starting states. That stops being true as soon as a scenario does any setup of its own; until then it's duplication worth knowing about rather than worth removing, since it's also the evidence that captures reproduce exactly.
+| Scenario                                              | Dark                                     | Light                                     |
+| ----------------------------------------------------- | ---------------------------------------- | ----------------------------------------- |
+| `worktree-detail` — ahead and behind its upstream     | ![](./worktree-detail-tracking-dark.png) | ![](./worktree-detail-tracking-light.png) |
+| `worktree-detail` — with a note                       | ![](./worktree-detail-notes-dark.png)    | ![](./worktree-detail-notes-light.png)    |
+| `worktree-detail` — folder missing                    | ![](./worktree-detail-prunable-dark.png) | ![](./worktree-detail-prunable-light.png) |
+| `create-worktree` — before                            | ![](./create-worktree-before-dark.png)   | ![](./create-worktree-before-light.png)   |
+| `create-worktree` — reading a pasted checkout command | ![](./create-worktree-dialog-dark.png)   | ![](./create-worktree-dialog-light.png)   |
+| `create-worktree` — after                             | ![](./create-worktree-after-dark.png)    | ![](./create-worktree-after-light.png)    |
+| `delete-worktree` — the first confirmation            | ![](./delete-worktree-confirm-dark.png)  | ![](./delete-worktree-confirm-light.png)  |
+| `delete-worktree` — the force confirmation            | ![](./delete-worktree-force-dark.png)    | ![](./delete-worktree-force-light.png)    |
+
+## Automation and settings
+
+| Scenario                                         | Dark                                     | Light                                     |
+| ------------------------------------------------ | ---------------------------------------- | ----------------------------------------- |
+| `setup-automation` — the script editor           | ![](./setup-automation-editor-dark.png)  | ![](./setup-automation-editor-light.png)  |
+| `setup-automation` — the console mid-run         | ![](./setup-automation-console-dark.png) | ![](./setup-automation-console-light.png) |
+| `project-settings` — script and preset overrides | ![](./project-settings-dark.png)         | ![](./project-settings-light.png)         |
+| `settings` — General                             | ![](./settings-general-dark.png)         | ![](./settings-general-light.png)         |
+| `settings` — Presets                             | ![](./settings-presets-dark.png)         | ![](./settings-presets-light.png)         |
+
+## Failure states
+
+| Scenario                                              | Dark                          | Light                          |
+| ----------------------------------------------------- | ----------------------------- | ------------------------------ |
+| `git-not-found` — the blocking screen and manual path | ![](./git-not-found-dark.png) | ![](./git-not-found-light.png) |
+| `store-corrupt` — the data file could not be read     | ![](./store-corrupt-dark.png) | ![](./store-corrupt-light.png) |
 
 ---
 
