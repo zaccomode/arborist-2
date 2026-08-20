@@ -5,6 +5,7 @@ import {
   type UseMutationResult
 } from '@tanstack/react-query'
 import type { Worktree } from '@shared/domain'
+import type { ResolvedPreset } from '@shared/presets'
 import type { Repository } from '@shared/persisted'
 import { invoke } from '@/api/client'
 
@@ -12,7 +13,9 @@ export const queryKeys = {
   projects: ['projects'] as const,
   worktrees: (repoPath: string) => ['worktrees', repoPath] as const,
   note: (repositoryId: string, worktreePath: string | null) =>
-    ['note', repositoryId, worktreePath] as const
+    ['note', repositoryId, worktreePath] as const,
+  presets: (repoPath: string | null, projectId: string | null) =>
+    ['presets', repoPath, projectId] as const
 }
 
 export function useProjects(): ReturnType<typeof useQuery<Repository[]>> {
@@ -53,5 +56,15 @@ export function useNote(
     // Notes only change here, so refetching them on focus would fight
     // whatever the user is typing.
     refetchOnWindowFocus: false
+  })
+}
+
+export function usePresets(
+  repoPath: string | null,
+  projectId: string | null
+): ReturnType<typeof useQuery<ResolvedPreset[]>> {
+  return useQuery({
+    queryKey: queryKeys.presets(repoPath, projectId),
+    queryFn: () => invoke('presets:list', repoPath, projectId)
   })
 }

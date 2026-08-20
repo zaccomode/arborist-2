@@ -11,28 +11,41 @@ export const repositorySchema = z.object({
 })
 
 /**
- * What opening a worktree does. `app` and `url` are handed to the OS, so
- * their values are never parsed by a shell; `shell` is a command line the
- * user wrote, and only the substituted values in it are escaped.
+ * What opening a worktree does.
+ *
+ * `app` is a path to an executable or a macOS .app bundle. v1 stored macOS
+ * bundle identifiers, which have no Windows equivalent; a path is the shape
+ * both platforms share. Built-in presets store nothing here at all — they
+ * carry a builtinId and resolve at run time, so a settings file copied
+ * between machines still works.
  */
-export const openActionSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('app'), app: z.string(), args: z.array(z.string()).default([]) }),
+export const presetCommandSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('app'), app: z.string() }),
   z.object({ type: z.literal('url'), url: z.string() }),
-  z.object({ type: z.literal('shell'), command: z.string() })
+  z.object({ type: z.literal('shell'), script: z.string() })
 ])
 
-export const openPresetSchema = z.object({
+export const presetSchema = z.object({
   id: z.string(),
   name: z.string(),
-  action: openActionSchema,
-  /** Platforms the preset makes sense on; empty means every platform. */
-  platforms: z.array(z.enum(['darwin', 'win32', 'linux'])).default([])
+  /** A lucide icon name, rendered by the Open In grid. */
+  icon: z.string().default('SquareArrowOutUpRight'),
+  command: presetCommandSchema,
+  sortOrder: z.number().default(0),
+  enabledByDefault: z.boolean().default(true),
+  /** Set when the preset belongs to one project rather than the app. */
+  projectId: z.string().nullable().default(null)
 })
 
 export const presetConfigSchema = z.object({
-  /** Built-ins the user has turned off. They are not persisted as presets. */
-  hiddenBuiltInIds: z.array(z.string()).default([]),
-  /** Preset ids in display order; anything unlisted follows, built-ins first. */
+  /** Presets, built-in or custom, switched off at the app level. */
+  disabledIds: z.array(z.string()).default([]),
+  /**
+   * Per-project tri-state overrides: `on`, `off`, or absent for inherit.
+   * Keyed by project id, then preset id.
+   */
+  overrides: z.record(z.string(), z.record(z.string(), z.enum(['on', 'off']))).default({}),
+  /** Preset ids in display order; anything unlisted follows, in its own order. */
   order: z.array(z.string()).default([])
 })
 
@@ -61,8 +74,8 @@ export const persistedDataSchema = z.object({
   /** `<repository id>::<worktree path>` → free-text note. */
   worktreeNotes: z.record(z.string(), z.string()).default({}),
   automationScripts: z.array(automationScriptSchema).default([]),
-  presets: z.array(openPresetSchema).default([]),
-  presetConfig: presetConfigSchema.default({ hiddenBuiltInIds: [], order: [] }),
+  presets: z.array(presetSchema).default([]),
+  presetConfig: presetConfigSchema.default({ disabledIds: [], overrides: {}, order: [] }),
   settings: settingsSchema.default({
     gitPath: null,
     theme: 'system',
@@ -72,8 +85,8 @@ export const persistedDataSchema = z.object({
 })
 
 export type Repository = z.infer<typeof repositorySchema>
-export type OpenAction = z.infer<typeof openActionSchema>
-export type OpenPreset = z.infer<typeof openPresetSchema>
+export type PresetCommand = z.infer<typeof presetCommandSchema>
+export type Preset = z.infer<typeof presetSchema>
 export type PresetConfig = z.infer<typeof presetConfigSchema>
 export type AutomationScript = z.infer<typeof automationScriptSchema>
 export type Settings = z.infer<typeof settingsSchema>

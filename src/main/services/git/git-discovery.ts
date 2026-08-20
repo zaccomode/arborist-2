@@ -1,5 +1,5 @@
-import { execFile } from 'child_process'
 import type { GitDiscoveryResult } from '../../../shared/domain'
+import { which } from '../system/which'
 import { execGitAt } from './git-executor'
 
 export interface DiscoveryDeps {
@@ -78,20 +78,6 @@ export async function discoverGit(
   return { ...notFound, overrideError }
 }
 
-function whichOnSystem(command: string): Promise<string | null> {
-  const finder = process.platform === 'win32' ? 'where' : 'which'
-  return new Promise((resolve) => {
-    execFile(finder, [command], { windowsHide: true }, (error, stdout) => {
-      if (error) {
-        resolve(null)
-        return
-      }
-      const first = stdout.split(/\r?\n/).find((line) => line.trim().length > 0)
-      resolve(first ? first.trim() : null)
-    })
-  })
-}
-
 async function probeVersion(path: string): Promise<string | null> {
   try {
     const { stdout, exitCode } = await execGitAt(path, ['--version'], { timeoutMs: 5_000 })
@@ -110,7 +96,7 @@ export function systemDiscoveryDeps(): DiscoveryDeps {
   return {
     platform: process.platform,
     env: process.env,
-    which: forceMissing ? async () => null : whichOnSystem,
+    which: forceMissing ? async () => null : which,
     probe: forceMissing ? async () => null : probeVersion
   }
 }

@@ -14,6 +14,7 @@ import { GitRunner } from './services/git/git-runner'
 import { setGitDebug } from './services/git/git-executor'
 import { ProjectService } from './services/projects'
 import { GitService } from './services/git/git-service'
+import { PresetService } from './services/presets'
 
 const DEFAULT_WINDOW: WindowState = { width: 1100, height: 720, maximized: false }
 
@@ -77,7 +78,8 @@ app.whenReady().then(async () => {
     gitRunner,
     store,
     projects: new ProjectService(store, gitRunner),
-    gitService: new GitService(gitRunner)
+    gitService: new GitService(gitRunner),
+    presets: new PresetService(store, gitRunner)
   })
 
   const windowStatePath = join(userData, 'window-state.json')

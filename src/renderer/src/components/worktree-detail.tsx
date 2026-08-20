@@ -1,5 +1,6 @@
 import { CircleAlert, GitBranch, Hash, House, MoreVertical, RefreshCw } from 'lucide-react'
 import type { Worktree } from '@shared/domain'
+import type { Repository } from '@shared/persisted'
 import { syncSummary, worktreeTitle } from '@shared/format'
 import { Button } from '@/components/ui/button'
 import {
@@ -9,6 +10,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { NotesEditor } from '@/components/notes-editor'
+import { OpenInGrid } from '@/components/open-in-grid'
 import { invoke } from '@/api/client'
 
 function Chip({
@@ -37,13 +39,13 @@ function Chip({
 
 export function WorktreeDetail({
   worktree,
-  repositoryId,
+  project,
   onRefresh,
   refreshing,
   onDelete
 }: {
   worktree: Worktree
-  repositoryId: string
+  project: Repository
   onRefresh: () => void
   refreshing: boolean
   onDelete: () => void
@@ -137,9 +139,11 @@ export function WorktreeDetail({
         )}
       </div>
 
+      <OpenInGrid project={project} worktree={worktree} />
+
       <NotesEditor
-        key={`${repositoryId}:${worktree.path}`}
-        repositoryId={repositoryId}
+        key={`${project.id}:${worktree.path}`}
+        repositoryId={project.id}
         worktreePath={worktree.path}
       />
 

@@ -6,6 +6,7 @@ import type { GitRunner } from '../services/git/git-runner'
 import type { Store } from '../services/persistence/store'
 import type { ProjectService } from '../services/projects'
 import type { GitService } from '../services/git/git-service'
+import type { PresetService } from '../services/presets'
 import { worktreeNoteKey } from '../../shared/persisted'
 
 type Handler<C extends IpcChannel> = (...args: IpcArgs<C>) => Promise<IpcReturn<C>> | IpcReturn<C>
@@ -29,9 +30,16 @@ export interface IpcDeps {
   store: Store
   projects: ProjectService
   gitService: GitService
+  presets: PresetService
 }
 
-export function registerIpcHandlers({ gitRunner, store, projects, gitService }: IpcDeps): void {
+export function registerIpcHandlers({
+  gitRunner,
+  store,
+  projects,
+  gitService,
+  presets
+}: IpcDeps): void {
   handle('system:pickFolder', async () => {
     // A native dialog cannot be driven by Playwright, so e2e tests and
     // screenshot scenarios say up front what the user would have chosen.
@@ -90,6 +98,9 @@ export function registerIpcHandlers({ gitRunner, store, projects, gitService }: 
   handle('system:copyText', (text) => {
     clipboard.writeText(text)
   })
+
+  handle('presets:list', (repoPath, projectId) => presets.list(repoPath, projectId))
+  handle('presets:run', (presetId, context) => presets.run(presetId, context))
 
   handle('git:discover', () => gitRunner.locator.discover())
 

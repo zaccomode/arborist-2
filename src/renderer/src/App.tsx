@@ -99,7 +99,7 @@ function App(): React.JSX.Element {
             {selected && worktree && (
               <WorktreeDetail
                 worktree={worktree}
-                repositoryId={selected.id}
+                project={selected}
                 refreshing={worktrees.isFetching}
                 onRefresh={() => void worktrees.refetch()}
                 onDelete={() => setDeletingWorktree(true)}

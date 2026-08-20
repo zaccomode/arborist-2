@@ -9,6 +9,8 @@
 
 import type { GitDiscoveryResult, StoreStatus, Worktree } from './domain'
 import type { Repository } from './persisted'
+import type { ResolvedPreset } from './presets'
+import type { SubstitutionValues } from './substitution'
 
 export interface IpcInvokeContract {
   /** Native folder picker. Resolves null when the user cancels. */
@@ -38,6 +40,15 @@ export interface IpcInvokeContract {
     result: void
   }
   'system:copyText': { args: [text: string]; result: void }
+  /** The presets to offer, in order, for this project on this machine. */
+  'presets:list': {
+    args: [repoPath: string | null, projectId: string | null]
+    result: ResolvedPreset[]
+  }
+  'presets:run': {
+    args: [presetId: string, context: SubstitutionValues & { projectId: string | null }]
+    result: void
+  }
   'git:discover': { args: []; result: GitDiscoveryResult }
   /** Sets (or clears, with null) the manual git path and re-runs discovery. */
   'git:setPath': { args: [path: string | null]; result: GitDiscoveryResult }
@@ -64,6 +75,8 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'notes:get',
   'notes:set',
   'system:copyText',
+  'presets:list',
+  'presets:run',
   'git:discover',
   'git:setPath',
   'store:status'

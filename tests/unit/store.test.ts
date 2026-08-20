@@ -46,10 +46,13 @@ describe('Store.load', () => {
       data.presets.push({
         id: 'p1',
         name: 'VS Code',
-        action: { type: 'app', app: 'Visual Studio Code', args: ['{{path}}'] },
-        platforms: []
+        icon: 'Code',
+        command: { type: 'app', app: '/Applications/Visual Studio Code.app' },
+        sortOrder: 0,
+        enabledByDefault: true,
+        projectId: null
       })
-      data.presetConfig.hiddenBuiltInIds.push('terminal')
+      data.presetConfig.disabledIds.push('builtin:terminal')
       data.settings.theme = 'dark'
     })
 
@@ -58,12 +61,11 @@ describe('Store.load', () => {
     expect(reloaded.data.notes['r1']).toBe('repository note')
     expect(reloaded.data.worktreeNotes['r1::/code/x-feature']).toBe('worktree note')
     expect(reloaded.data.automationScripts[0].runOnCreate).toBe(true)
-    expect(reloaded.data.presets[0].action).toEqual({
+    expect(reloaded.data.presets[0].command).toEqual({
       type: 'app',
-      app: 'Visual Studio Code',
-      args: ['{{path}}']
+      app: '/Applications/Visual Studio Code.app'
     })
-    expect(reloaded.data.presetConfig.hiddenBuiltInIds).toEqual(['terminal'])
+    expect(reloaded.data.presetConfig.disabledIds).toEqual(['builtin:terminal'])
     expect(reloaded.data.settings.theme).toBe('dark')
   })
 
