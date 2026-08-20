@@ -1,7 +1,13 @@
 import type { Page } from 'playwright'
 
+/**
+ * Captures the window as it currently stands, in both themes, as
+ * `<scenario>-<step>-<theme>.png`. Call it at each point worth showing.
+ */
+export type Shot = (step: string) => Promise<void>
+
 export interface Scenario {
-  /** File name stem: produces `<name>-dark.png` and `<name>-light.png`. */
+  /** File name stem: `<name>-<theme>.png`, or `<name>-<step>-<theme>.png`. */
   name: string
   /** What the capture is meant to show, for whoever reviews it. */
   description: string
@@ -10,11 +16,16 @@ export interface Scenario {
    * window as a Playwright page, so the full locator API is available.
    * Omit it to capture the app as it opens.
    *
-   * Anything awaited here must settle before the screenshot, so assert on
-   * the end state rather than sleeping — `expect`-style waits like
-   * `waitFor()` are what keep a capture from racing the UI it is showing.
+   * Call `shot` to capture partway through, as many times as the change
+   * needs — a before and an after belong in one scenario rather than two,
+   * since they share the setup that got the app there. A scenario that
+   * never calls `shot` is captured once, at the end.
+   *
+   * Anything awaited here must settle before the capture, so assert on the
+   * end state rather than sleeping — `waitFor()`-style waits are what keep
+   * a capture from racing the UI it is showing.
    */
-  drive?: (window: Page) => Promise<void>
+  drive?: (window: Page, shot: Shot) => Promise<void>
   /**
    * Keep the pointer where `drive` left it. The runner otherwise parks it in
    * the corner, so a click doesn't leave its target stuck in `hover:` styling.
@@ -26,17 +37,21 @@ export interface Scenario {
 export const scenarios: Scenario[] = [
   {
     name: 'shell',
-    description: 'The two-pane shell as the app opens, with no project selected.'
+    description:
+      'The two-pane shell as the app opens, with no project selected. This is ' +
+      'the capture to compare against concept.png.'
   },
   {
-    name: 'ping-result',
+    name: 'ping',
     description:
-      'The M0 ping button after a round-trip to the main process. Proves a ' +
-      'capture exercises real IPC, which is the whole reason for driving the ' +
-      'Electron window rather than the renderer in a browser.',
-    drive: async (window) => {
+      'The M0 ping button before and after a round-trip to the main process. ' +
+      'Proves a capture exercises real IPC, which is the whole reason for ' +
+      'driving the Electron window rather than the renderer in a browser.',
+    drive: async (window, shot) => {
+      await shot('before')
       await window.getByRole('button', { name: 'Ping main process' }).click()
       await window.getByTestId('ping-result').waitFor({ state: 'visible' })
+      await shot('after')
     }
   }
 
