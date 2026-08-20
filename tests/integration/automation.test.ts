@@ -116,7 +116,11 @@ describe('the automation runner', () => {
       .filter((event) => event.type === 'output')
       .map((event) => event.chunk)
       .join('')
-    expect(output).toContain("feature/it's here in arborist")
+    // Each value separately, because PowerShell's echo puts every argument on
+    // its own line: what matters is that a value carrying a quote and spaces
+    // arrived intact rather than splitting the command.
+    expect(output).toContain("feature/it's here")
+    expect(output).toContain('arborist')
   }, 30_000)
 
   it('cancels a long-running command, and quickly', async () => {
