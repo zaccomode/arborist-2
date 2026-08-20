@@ -42,13 +42,15 @@ export function WorktreeDetail({
   project,
   onRefresh,
   refreshing,
-  onDelete
+  onDelete,
+  onRunSetup
 }: {
   worktree: Worktree
   project: Repository
   onRefresh: () => void
   refreshing: boolean
   onDelete: () => void
+  onRunSetup: () => void
 }): React.JSX.Element {
   const hash = worktree.status?.lastCommit?.shortHash ?? worktree.head?.slice(0, 7) ?? null
 
@@ -87,6 +89,9 @@ export function WorktreeDetail({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem disabled={worktree.prunable} onSelect={onRunSetup}>
+              Run setup
+            </DropdownMenuItem>
             {/* The repository's own worktree cannot be removed, so the action
                 is absent rather than present and failing. */}
             {worktree.isMain ? (

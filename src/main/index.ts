@@ -15,6 +15,7 @@ import { setGitDebug } from './services/git/git-executor'
 import { ProjectService } from './services/projects'
 import { GitService } from './services/git/git-service'
 import { PresetService } from './services/presets'
+import { AutomationRunner } from './services/automation'
 
 const DEFAULT_WINDOW: WindowState = { width: 1100, height: 720, maximized: false }
 
@@ -74,12 +75,24 @@ app.whenReady().then(async () => {
     new GitLocator(systemDiscoveryDeps(), store.data.settings.gitPath)
   )
 
+  const automation = new AutomationRunner(
+    (event) => {
+      // One window, so every push goes to it; a second window would need the
+      // sender threaded through the handler instead.
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send('automation:event', event)
+      }
+    },
+    () => store!.data.settings
+  )
+
   registerIpcHandlers({
     gitRunner,
     store,
     projects: new ProjectService(store, gitRunner),
     gitService: new GitService(gitRunner),
-    presets: new PresetService(store, gitRunner)
+    presets: new PresetService(store, gitRunner),
+    automation
   })
 
   const windowStatePath = join(userData, 'window-state.json')

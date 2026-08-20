@@ -44,11 +44,13 @@ export function NoProjects({ onAddProject }: { onAddProject: () => void }): Reac
 export function ProjectDetail({
   project,
   onRemove,
-  onPrune
+  onPrune,
+  onOpenSettings
 }: {
   project: Repository
   onRemove: () => void
   onPrune: () => void
+  onOpenSettings: () => void
 }): React.JSX.Element {
   const [confirmingRemove, setConfirmingRemove] = useState(false)
 
@@ -74,6 +76,7 @@ export function ProjectDetail({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={onOpenSettings}>Project settings…</DropdownMenuItem>
             <DropdownMenuItem onSelect={onPrune}>Prune missing worktrees</DropdownMenuItem>
             <DropdownMenuItem variant="destructive" onSelect={() => setConfirmingRemove(true)}>
               Remove project…

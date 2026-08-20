@@ -192,6 +192,36 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'setup-automation',
+    description:
+      'The script editor with its parsed preview, and the console streaming ' +
+      'a run: one command finished, one still going.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+
+      await window.getByRole('button', { name: 'Project actions' }).click()
+      await window.getByRole('menuitem', { name: 'Project settings…' }).click()
+      await window
+        .getByTestId('automation-script')
+        .fill('echo "Installing into {{path}}"\n# comments are skipped\nsleep 30')
+      await window.getByTestId('automation-preview').waitFor({ state: 'visible' })
+      await shot('editor')
+
+      await window.getByRole('button', { name: 'Save' }).click()
+      await window.getByRole('button', { name: /main/ }).first().click()
+      await window.getByRole('button', { name: 'Worktree actions' }).click()
+      await window.getByRole('menuitem', { name: 'Run setup' }).click()
+      await window.getByTestId('automation-status').filter({ hasText: 'Running 2 of 2' }).waitFor()
+      await shot('console')
+    }
+  },
+  {
     name: 'git-not-found',
     description:
       'The blocking screen shown when no git binary can be found, with the ' +

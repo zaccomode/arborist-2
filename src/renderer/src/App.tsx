@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { Worktree } from '@shared/domain'
+import type { Repository } from '@shared/persisted'
 import { useQueryClient } from '@tanstack/react-query'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Sidebar } from '@/components/sidebar'
@@ -7,9 +9,25 @@ import { WorktreeDetail } from '@/components/worktree-detail'
 import { WorktreeList } from '@/components/worktree-list'
 import { CreateWorktreeDialog } from '@/components/create-worktree-dialog'
 import { DeleteWorktreeDialogs } from '@/components/delete-worktree'
+import { ProjectSettingsDialog } from '@/components/project-settings-dialog'
+import { AutomationConsole, type AutomationTarget } from '@/components/automation-console'
 import { useAddProject, useProjects, useRemoveProject, useWorktrees } from '@/api/queries'
 import { invoke } from '@/api/client'
 import { useSelection, useSelectedWorktree } from '@/state/selection'
+
+function automationTarget(project: Repository, worktree: Worktree): AutomationTarget {
+  return {
+    repositoryId: project.id,
+    worktreePath: worktree.path,
+    values: {
+      path: worktree.path,
+      branch: worktree.branch,
+      commitHash: worktree.status?.lastCommit?.hash ?? worktree.head,
+      repoName: project.name,
+      repoPath: project.path
+    }
+  }
+}
 
 function App(): React.JSX.Element {
   const queryClient = useQueryClient()
@@ -19,6 +37,8 @@ function App(): React.JSX.Element {
   const [addError, setAddError] = useState<string | null>(null)
   const [creatingWorktree, setCreatingWorktree] = useState(false)
   const [deletingWorktree, setDeletingWorktree] = useState(false)
+  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false)
+  const [automation, setAutomation] = useState<AutomationTarget | null>(null)
 
   const { projectId, selectProject, selectWorktree } = useSelection()
   const selectedWorktree = useSelectedWorktree()
@@ -94,6 +114,7 @@ function App(): React.JSX.Element {
                   await invoke('worktrees:prune', selected.path)
                   await worktrees.refetch()
                 }}
+                onOpenSettings={() => setProjectSettingsOpen(true)}
               />
             )}
             {selected && worktree && (
@@ -103,6 +124,7 @@ function App(): React.JSX.Element {
                 refreshing={worktrees.isFetching}
                 onRefresh={() => void worktrees.refetch()}
                 onDelete={() => setDeletingWorktree(true)}
+                onRunSetup={() => setAutomation(automationTarget(selected, worktree))}
               />
             )}
           </main>
@@ -123,13 +145,29 @@ function App(): React.JSX.Element {
       )}
 
       {selected && (
+        <ProjectSettingsDialog
+          project={selected}
+          open={projectSettingsOpen}
+          onOpenChange={setProjectSettingsOpen}
+        />
+      )}
+
+      <AutomationConsole target={automation} onClose={() => setAutomation(null)} />
+
+      {selected && (
         <CreateWorktreeDialog
           open={creatingWorktree}
           onOpenChange={setCreatingWorktree}
           repoPath={selected.path}
           onCreated={async (worktreePath) => {
-            await worktrees.refetch()
+            const { data } = await worktrees.refetch()
             selectWorktree(worktreePath)
+
+            // A project with a setup script runs it on the worktree it was
+            // written for, without anyone having to remember to.
+            const script = await invoke('automation:script', selected.id)
+            const created = data?.find((entry) => entry.path === worktreePath)
+            if (script.trim() && created) setAutomation(automationTarget(selected, created))
           }}
         />
       )}

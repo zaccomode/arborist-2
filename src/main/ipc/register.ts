@@ -7,6 +7,7 @@ import type { Store } from '../services/persistence/store'
 import type { ProjectService } from '../services/projects'
 import type { GitService } from '../services/git/git-service'
 import type { PresetService } from '../services/presets'
+import type { AutomationRunner } from '../services/automation'
 import { worktreeNoteKey } from '../../shared/persisted'
 
 type Handler<C extends IpcChannel> = (...args: IpcArgs<C>) => Promise<IpcReturn<C>> | IpcReturn<C>
@@ -31,6 +32,7 @@ export interface IpcDeps {
   projects: ProjectService
   gitService: GitService
   presets: PresetService
+  automation: AutomationRunner
 }
 
 export function registerIpcHandlers({
@@ -38,7 +40,8 @@ export function registerIpcHandlers({
   store,
   projects,
   gitService,
-  presets
+  presets,
+  automation
 }: IpcDeps): void {
   handle('system:pickFolder', async () => {
     // A native dialog cannot be driven by Playwright, so e2e tests and
@@ -98,6 +101,42 @@ export function registerIpcHandlers({
   handle('system:copyText', (text) => {
     clipboard.writeText(text)
   })
+
+  handle(
+    'automation:script',
+    (repositoryId) =>
+      store.data.automationScripts.find((script) => script.repositoryId === repositoryId)
+        ?.command ?? ''
+  )
+
+  handle('automation:setScript', async (repositoryId, script) => {
+    await store.update((data) => {
+      const existing = data.automationScripts.find((entry) => entry.repositoryId === repositoryId)
+      if (!script.trim()) {
+        data.automationScripts = data.automationScripts.filter(
+          (entry) => entry.repositoryId !== repositoryId
+        )
+      } else if (existing) {
+        existing.command = script
+      } else {
+        data.automationScripts.push({ repositoryId, command: script, runOnCreate: true })
+      }
+    })
+  })
+
+  handle('automation:start', (options) => {
+    const script =
+      store.data.automationScripts.find((entry) => entry.repositoryId === options.repositoryId)
+        ?.command ?? ''
+    return automation.start({
+      script,
+      worktreePath: options.worktreePath,
+      values: options.values,
+      startIndex: options.startIndex
+    })
+  })
+
+  handle('automation:cancel', (runId) => automation.cancel(runId))
 
   handle('presets:list', (repoPath, projectId) => presets.list(repoPath, projectId))
   handle('presets:run', (presetId, context) => presets.run(presetId, context))

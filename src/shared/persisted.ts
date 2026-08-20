@@ -63,7 +63,13 @@ export const settingsSchema = z.object({
   /** Log every git command to the console. Off by default: v1 logged always. */
   debugGit: z.boolean().default(false),
   /** How many worktrees are enriched at once during a refresh. */
-  refreshConcurrency: z.number().int().min(1).max(32).default(6)
+  refreshConcurrency: z.number().int().min(1).max(32).default(6),
+  /** Which shell runs automation lines on Windows. Ignored elsewhere. */
+  automationShell: z.enum(['powershell', 'cmd']).default('powershell'),
+  /** An explicit shell for automation, for pwsh and zsh users. */
+  customShellPath: z.string().nullable().default(null),
+  /** Arguments before the command, e.g. `["-c"]`. */
+  customShellArgs: z.array(z.string()).default([])
 })
 
 export const persistedDataSchema = z.object({
@@ -76,12 +82,7 @@ export const persistedDataSchema = z.object({
   automationScripts: z.array(automationScriptSchema).default([]),
   presets: z.array(presetSchema).default([]),
   presetConfig: presetConfigSchema.default({ disabledIds: [], overrides: {}, order: [] }),
-  settings: settingsSchema.default({
-    gitPath: null,
-    theme: 'system',
-    debugGit: false,
-    refreshConcurrency: 6
-  })
+  settings: settingsSchema.default(() => settingsSchema.parse({}))
 })
 
 export type Repository = z.infer<typeof repositorySchema>

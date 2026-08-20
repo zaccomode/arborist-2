@@ -9,6 +9,7 @@
 
 import type { GitDiscoveryResult, StoreStatus, Worktree } from './domain'
 import type { Repository } from './persisted'
+import type { AutomationEvent } from './automation'
 import type { ResolvedPreset } from './presets'
 import type { SubstitutionValues } from './substitution'
 
@@ -45,6 +46,21 @@ export interface IpcInvokeContract {
     args: [repoPath: string | null, projectId: string | null]
     result: ResolvedPreset[]
   }
+  'automation:script': { args: [repositoryId: string]; result: string }
+  'automation:setScript': { args: [repositoryId: string, script: string]; result: void }
+  /** Starts a run and returns its id; progress arrives on `automation:event`. */
+  'automation:start': {
+    args: [
+      options: {
+        repositoryId: string
+        worktreePath: string
+        values: SubstitutionValues
+        startIndex?: number
+      }
+    ]
+    result: string
+  }
+  'automation:cancel': { args: [runId: string]; result: void }
   'presets:run': {
     args: [presetId: string, context: SubstitutionValues & { projectId: string | null }]
     result: void
@@ -77,7 +93,23 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'system:copyText',
   'presets:list',
   'presets:run',
+  'automation:script',
+  'automation:setScript',
+  'automation:start',
+  'automation:cancel',
   'git:discover',
   'git:setPath',
   'store:status'
 ]
+
+/**
+ * Pushes from main to renderer. Unlike invokes these carry no reply, so the
+ * payload is the whole contract.
+ */
+export interface IpcEventContract {
+  'automation:event': AutomationEvent
+}
+
+export type IpcEventChannel = keyof IpcEventContract
+
+export const IPC_EVENT_CHANNELS: readonly IpcEventChannel[] = ['automation:event']
