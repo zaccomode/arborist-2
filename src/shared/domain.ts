@@ -13,3 +13,39 @@ export interface GitDiscoveryResult {
   /** Set when a settings override was supplied but did not run. */
   overrideError: string | null
 }
+
+/** One stanza of `git worktree list --porcelain`. */
+export interface WorktreeEntry {
+  path: string
+  /** Commit the worktree is checked out at; absent for a bare repository. */
+  head: string | null
+  /** Short branch name, or null when HEAD is detached. */
+  branch: string | null
+  /**
+   * The repository's own worktree, which git always lists first. It cannot
+   * be removed, so the UI protects it.
+   */
+  isMain: boolean
+  isBare: boolean
+  locked: boolean
+  lockReason: string | null
+  prunable: boolean
+  prunableReason: string | null
+}
+
+export interface BranchInfo {
+  name: string
+  current: boolean
+}
+
+export interface AheadBehind {
+  ahead: number
+  behind: number
+}
+
+export interface WorkingTreeStatus {
+  dirty: boolean
+  staged: number
+  unstaged: number
+  untracked: number
+}

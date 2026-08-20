@@ -1,0 +1,179 @@
+import { describe, it, expect } from 'vitest'
+import {
+  parseAheadBehind,
+  parseBranchList,
+  parseRemoteBranchList,
+  parseStatus,
+  parseWorktreeList
+} from '../../src/main/services/git/porcelain'
+
+describe('parseWorktreeList', () => {
+  it('parses a repository with one worktree', () => {
+    const output = [
+      'worktree /Users/iso/code/arborist',
+      'HEAD abc123',
+      'branch refs/heads/main',
+      ''
+    ]
+
+    expect(parseWorktreeList(output.join('\n'))).toEqual([
+      {
+        path: '/Users/iso/code/arborist',
+        head: 'abc123',
+        branch: 'main',
+        isMain: true,
+        isBare: false,
+        locked: false,
+        lockReason: null,
+        prunable: false,
+        prunableReason: null
+      }
+    ])
+  })
+
+  it('treats the first stanza as the main worktree, and only the first', () => {
+    const output = [
+      'worktree /code/arborist',
+      'HEAD aaa',
+      'branch refs/heads/main',
+      '',
+      'worktree /code/feature-x',
+      'HEAD bbb',
+      'branch refs/heads/feature/x',
+      ''
+    ].join('\n')
+
+    expect(parseWorktreeList(output).map((w) => [w.branch, w.isMain])).toEqual([
+      ['main', true],
+      ['feature/x', false]
+    ])
+  })
+
+  it('keeps spaces in worktree paths', () => {
+    const output = 'worktree /Users/iso/My Code/arborist wt\nHEAD aaa\nbranch refs/heads/main\n'
+
+    expect(parseWorktreeList(output)[0].path).toBe('/Users/iso/My Code/arborist wt')
+  })
+
+  it('reads a detached HEAD as a null branch', () => {
+    const output = 'worktree /code/x\nHEAD aaa\ndetached\n'
+
+    expect(parseWorktreeList(output)[0]).toMatchObject({ branch: null, head: 'aaa' })
+  })
+
+  it('reads locked with and without a reason', () => {
+    const output = [
+      'worktree /code/a',
+      'HEAD aaa',
+      'branch refs/heads/a',
+      'locked',
+      '',
+      'worktree /code/b',
+      'HEAD bbb',
+      'branch refs/heads/b',
+      'locked on an external drive',
+      ''
+    ].join('\n')
+
+    expect(parseWorktreeList(output).map((w) => [w.locked, w.lockReason])).toEqual([
+      [true, null],
+      [true, 'on an external drive']
+    ])
+  })
+
+  it('reads prunable with its reason', () => {
+    const output =
+      'worktree /code/gone\nHEAD aaa\nbranch refs/heads/gone\nprunable gitdir file points to non-existent location\n'
+
+    expect(parseWorktreeList(output)[0]).toMatchObject({
+      prunable: true,
+      prunableReason: 'gitdir file points to non-existent location'
+    })
+  })
+
+  it('reads a bare repository, which has no HEAD line', () => {
+    const output = 'worktree /code/arborist.git\nbare\n'
+
+    expect(parseWorktreeList(output)[0]).toMatchObject({
+      isBare: true,
+      isMain: true,
+      head: null,
+      branch: null
+    })
+  })
+
+  it('handles CRLF output and a missing trailing blank line', () => {
+    const output = 'worktree C:\\code\\arborist\r\nHEAD aaa\r\nbranch refs/heads/main'
+
+    expect(parseWorktreeList(output)).toHaveLength(1)
+    expect(parseWorktreeList(output)[0]).toMatchObject({
+      path: 'C:\\code\\arborist',
+      branch: 'main'
+    })
+  })
+
+  it('returns nothing for empty output', () => {
+    expect(parseWorktreeList('')).toEqual([])
+  })
+})
+
+describe('parseBranchList', () => {
+  it('marks the branch carrying the trailing star as current', () => {
+    expect(parseBranchList('main*\nfeature/x\nrelease/1.0\n')).toEqual([
+      { name: 'main', current: true },
+      { name: 'feature/x', current: false },
+      { name: 'release/1.0', current: false }
+    ])
+  })
+
+  it('ignores blank lines', () => {
+    expect(parseBranchList('\n\nmain\n\n')).toEqual([{ name: 'main', current: false }])
+  })
+})
+
+describe('parseRemoteBranchList', () => {
+  it('drops the symbolic HEAD entries', () => {
+    const output = 'origin/HEAD\norigin/main\norigin/feature/x\nupstream/HEAD\nupstream/main\n'
+
+    expect(parseRemoteBranchList(output)).toEqual([
+      'origin/main',
+      'origin/feature/x',
+      'upstream/main'
+    ])
+  })
+
+  it('keeps a branch merely ending in the word HEAD', () => {
+    expect(parseRemoteBranchList('origin/fix-HEAD-parsing\n')).toEqual(['origin/fix-HEAD-parsing'])
+  })
+})
+
+describe('parseAheadBehind', () => {
+  it('reads ahead from the left count and behind from the right', () => {
+    expect(parseAheadBehind('2\t1\n')).toEqual({ ahead: 2, behind: 1 })
+  })
+
+  it('reads a branch in sync', () => {
+    expect(parseAheadBehind('0\t0\n')).toEqual({ ahead: 0, behind: 0 })
+  })
+
+  it('returns null when there is no upstream to compare against', () => {
+    expect(parseAheadBehind('')).toBeNull()
+    expect(parseAheadBehind('fatal: no upstream configured')).toBeNull()
+  })
+})
+
+describe('parseStatus', () => {
+  it('counts a clean tree as clean', () => {
+    expect(parseStatus('')).toEqual({ dirty: false, staged: 0, unstaged: 0, untracked: 0 })
+  })
+
+  it('separates staged, unstaged and untracked changes', () => {
+    const output = ['M  staged.ts', ' M unstaged.ts', 'MM both.ts', '?? new.ts'].join('\n')
+
+    expect(parseStatus(output)).toEqual({ dirty: true, staged: 2, unstaged: 2, untracked: 1 })
+  })
+
+  it('counts a rename as staged', () => {
+    expect(parseStatus('R  old.ts -> new.ts')).toMatchObject({ dirty: true, staged: 1 })
+  })
+})
