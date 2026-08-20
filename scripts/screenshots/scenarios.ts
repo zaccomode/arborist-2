@@ -3,7 +3,7 @@ import { join } from 'path'
 import type { Page } from 'playwright'
 // Node's native type stripping resolves ESM imports literally, so this needs
 // the real file extension rather than a bare specifier.
-import { GitFixture } from '../../tests/integration/fixtures/git-fixture.ts'
+import { GitFixture, makeBadgeMatrixIn } from '../../tests/integration/fixtures/git-fixture.ts'
 
 /**
  * Captures the window as it currently stands, in both themes, as
@@ -96,6 +96,22 @@ export const scenarios: Scenario[] = [
       await window.getByRole('button', { name: 'Project actions' }).click()
       await window.getByRole('menuitem', { name: 'Remove project…' }).click()
       await window.getByRole('alertdialog').waitFor({ state: 'visible' })
+    }
+  },
+  {
+    name: 'worktree-badges',
+    description:
+      'The sidebar over the full badge matrix: ahead/behind, dirty, locked, ' +
+      'a missing folder, a deleted upstream, and a detached checkout. The ' +
+      'capture to check any change to a row or a badge against.',
+    setup: async ({ workDir }) => {
+      const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('listitem').filter({ hasText: 'feature/ahead-behind' }).waitFor()
     }
   },
   {

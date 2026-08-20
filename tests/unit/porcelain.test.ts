@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
+  FIELD_SEPARATOR,
   parseAheadBehind,
   parseBranchList,
+  parseCommit,
   parseRemoteBranchList,
   parseStatus,
+  parseUpstreamTrack,
   parseWorktreeList
 } from '../../src/main/services/git/porcelain'
 
@@ -175,5 +178,62 @@ describe('parseStatus', () => {
 
   it('counts a rename as staged', () => {
     expect(parseStatus('R  old.ts -> new.ts')).toMatchObject({ dirty: true, staged: 1 })
+  })
+})
+
+describe('parseUpstreamTrack', () => {
+  it('reads both counts', () => {
+    expect(parseUpstreamTrack('[ahead 2, behind 1]')).toEqual({ ahead: 2, behind: 1, gone: false })
+  })
+
+  it('reads one-sided divergence', () => {
+    expect(parseUpstreamTrack('[ahead 3]')).toEqual({ ahead: 3, behind: 0, gone: false })
+    expect(parseUpstreamTrack('[behind 4]')).toEqual({ ahead: 0, behind: 4, gone: false })
+  })
+
+  it('reads a branch in sync, which git reports as nothing at all', () => {
+    expect(parseUpstreamTrack('')).toEqual({ ahead: 0, behind: 0, gone: false })
+  })
+
+  it('reads a deleted upstream', () => {
+    expect(parseUpstreamTrack('[gone]')).toEqual({ ahead: 0, behind: 0, gone: true })
+  })
+})
+
+describe('parseCommit', () => {
+  const fields = (...values: string[]): string => values.join(FIELD_SEPARATOR)
+
+  it('reads every field', () => {
+    const output = fields(
+      '46862b9c0f0e1a2b3c4d5e6f708192a3b4c5d6e7',
+      '46862b9',
+      'Isaac Shea',
+      '2026-08-20T14:00:00+10:00',
+      'Updated nearby and station routes'
+    )
+
+    expect(parseCommit(`${output}\n`)).toEqual({
+      hash: '46862b9c0f0e1a2b3c4d5e6f708192a3b4c5d6e7',
+      shortHash: '46862b9',
+      author: 'Isaac Shea',
+      date: '2026-08-20T14:00:00+10:00',
+      subject: 'Updated nearby and station routes'
+    })
+  })
+
+  it('keeps a subject containing the characters a naive separator would break on', () => {
+    const output = fields(
+      'aaa',
+      'aaa',
+      'Isaac Shea',
+      '2026-08-20T14:00:00Z',
+      'Fix: tabs\tand | pipes'
+    )
+
+    expect(parseCommit(output)?.subject).toBe('Fix: tabs\tand | pipes')
+  })
+
+  it('returns null for an empty log, as in a repository with no commits', () => {
+    expect(parseCommit('')).toBeNull()
   })
 })

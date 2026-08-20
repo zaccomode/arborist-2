@@ -5,6 +5,7 @@ import { ok, err, type IpcResult } from '../../shared/result'
 import type { GitRunner } from '../services/git/git-runner'
 import type { Store } from '../services/persistence/store'
 import type { ProjectService } from '../services/projects'
+import type { GitService } from '../services/git/git-service'
 
 type Handler<C extends IpcChannel> = (...args: IpcArgs<C>) => Promise<IpcReturn<C>> | IpcReturn<C>
 
@@ -26,9 +27,10 @@ export interface IpcDeps {
   gitRunner: GitRunner
   store: Store
   projects: ProjectService
+  gitService: GitService
 }
 
-export function registerIpcHandlers({ gitRunner, store, projects }: IpcDeps): void {
+export function registerIpcHandlers({ gitRunner, store, projects, gitService }: IpcDeps): void {
   handle('system:pickFolder', async () => {
     // A native dialog cannot be driven by Playwright, so e2e tests and
     // screenshot scenarios say up front what the user would have chosen.
@@ -48,6 +50,10 @@ export function registerIpcHandlers({ gitRunner, store, projects }: IpcDeps): vo
   handle('projects:list', () => projects.list())
   handle('projects:add', (path) => projects.add(path))
   handle('projects:remove', (id) => projects.remove(id))
+
+  handle('worktrees:list', (repoPath) =>
+    gitService.listWorktrees(repoPath, store.data.settings.refreshConcurrency)
+  )
 
   handle('git:discover', () => gitRunner.locator.discover())
 

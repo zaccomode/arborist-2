@@ -20,12 +20,16 @@ import { join } from 'path'
  * imports the bundled app uses. There is no parsing here, so nothing is
  * duplicated by keeping it separate.
  */
-function runGit(args: string[], cwd: string): Promise<string> {
+function runGit(args: string[], cwd: string, env: NodeJS.ProcessEnv = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       'git',
       args,
-      { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' }, windowsHide: true },
+      {
+        cwd,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C', ...env },
+        windowsHide: true
+      },
       (error, stdout, stderr) => {
         if (error) reject(new Error(`git ${args.join(' ')} failed: ${stderr || error.message}`))
         else resolve(stdout)
@@ -42,11 +46,21 @@ export interface WorktreeOptions {
   detach?: boolean
 }
 
+/**
+ * A fixed base date for every fixture commit. Commit hashes are a function of
+ * their timestamps, so pinning these makes both the hashes and the dates the
+ * UI renders identical from one run to the next — which is what lets a
+ * screenshot of a fixture be compared at all.
+ */
+const BASE_COMMIT_TIME = Date.parse('2026-01-05T09:00:00Z')
+const COMMIT_INTERVAL_MS = 60_000
+
 export class GitFixture {
   readonly root: string
   readonly repoPath: string
   readonly remotePath: string
   #elsewhere: string | null = null
+  #commitCount = 0
 
   constructor(root: string, projectName = 'project') {
     this.root = root
@@ -68,7 +82,11 @@ export class GitFixture {
       await fs.writeFile(join(cwd, relative), contents, 'utf8')
     }
     await this.git(['add', '--all'], cwd)
-    await this.git(['commit', '--message', message, '--allow-empty'], cwd)
+    const when = new Date(BASE_COMMIT_TIME + this.#commitCount++ * COMMIT_INTERVAL_MS).toISOString()
+    await runGit(['commit', '--message', message, '--allow-empty'], cwd, {
+      GIT_AUTHOR_DATE: when,
+      GIT_COMMITTER_DATE: when
+    })
     return (await this.git(['rev-parse', 'HEAD'], cwd)).trim()
   }
 
@@ -172,7 +190,20 @@ export interface BadgeMatrix {
  * refresh pipeline and the sidebar are checked against.
  */
 export async function makeBadgeMatrix(): Promise<BadgeMatrix> {
-  const fixture = await makeFixtureRepo()
+  // realpath because macOS hands out /var/folders/... paths that are really
+  // /private/var/..., and git reports the resolved one: without this, every
+  // comparison against a fixture path fails on a Mac and nowhere else.
+  const root = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'arborist-fixture-')))
+  return makeBadgeMatrixIn(root)
+}
+
+/** The same matrix, in a directory the caller already has. */
+export async function makeBadgeMatrixIn(
+  root: string,
+  projectName = 'project'
+): Promise<BadgeMatrix> {
+  const fixture = new GitFixture(root, projectName)
+  await fixture.init()
   const git = fixture.git.bind(fixture)
 
   // Clean, tracking, ahead 2 / behind 1.

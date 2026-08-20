@@ -13,6 +13,7 @@ import { GitLocator, systemDiscoveryDeps } from './services/git/git-discovery'
 import { GitRunner } from './services/git/git-runner'
 import { setGitDebug } from './services/git/git-executor'
 import { ProjectService } from './services/projects'
+import { GitService } from './services/git/git-service'
 
 const DEFAULT_WINDOW: WindowState = { width: 1100, height: 720, maximized: false }
 
@@ -72,7 +73,12 @@ app.whenReady().then(async () => {
     new GitLocator(systemDiscoveryDeps(), store.data.settings.gitPath)
   )
 
-  registerIpcHandlers({ gitRunner, store, projects: new ProjectService(store, gitRunner) })
+  registerIpcHandlers({
+    gitRunner,
+    store,
+    projects: new ProjectService(store, gitRunner),
+    gitService: new GitService(gitRunner)
+  })
 
   const windowStatePath = join(userData, 'window-state.json')
   const windowState = await loadWindowState(windowStatePath, DEFAULT_WINDOW)

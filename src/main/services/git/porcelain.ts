@@ -9,6 +9,8 @@
 import type {
   AheadBehind,
   BranchInfo,
+  CommitSummary,
+  UpstreamTrack,
   WorkingTreeStatus,
   WorktreeEntry
 } from '../../../shared/domain'
@@ -130,6 +132,50 @@ export function parseAheadBehind(output: string): AheadBehind | null {
   const match = /^\s*(\d+)\s+(\d+)\s*$/.exec(output)
   if (!match) return null
   return { ahead: Number(match[1]), behind: Number(match[2]) }
+}
+
+/**
+ * Parses git's `%(upstream:track)`, which reads `[ahead 2, behind 1]`,
+ * `[gone]`, or nothing at all.
+ *
+ * `[gone]` is why the refresh pipeline asks for this rather than counting with
+ * rev-list: once the remote-tracking ref is pruned, `@{upstream}` stops
+ * resolving entirely, and a deleted upstream would be indistinguishable from a
+ * branch that was never pushed. They are different badges.
+ */
+export function parseUpstreamTrack(value: string): UpstreamTrack {
+  const track = value.trim()
+  if (track === '[gone]') return { ahead: 0, behind: 0, gone: true }
+
+  const ahead = /\bahead (\d+)/.exec(track)
+  const behind = /\bbehind (\d+)/.exec(track)
+  return {
+    ahead: ahead ? Number(ahead[1]) : 0,
+    behind: behind ? Number(behind[1]) : 0,
+    gone: false
+  }
+}
+
+/**
+ * NUL separates the fields below, because a commit subject can contain
+ * anything else. The format asks for `%x00` rather than carrying the
+ * character itself, since an argv entry cannot hold a NUL.
+ */
+export const FIELD_SEPARATOR = '\u0000'
+
+export const COMMIT_FORMAT = ['%H', '%h', '%an', '%aI', '%s'].join('%x00')
+
+/** Parses one commit written with `COMMIT_FORMAT`. */
+export function parseCommit(output: string): CommitSummary | null {
+  const fields = output.replace(/\r?\n$/, '').split(FIELD_SEPARATOR)
+  if (fields.length < 5 || !fields[0]) return null
+  return {
+    hash: fields[0],
+    shortHash: fields[1],
+    author: fields[2],
+    date: fields[3],
+    subject: fields[4]
+  }
 }
 
 /**

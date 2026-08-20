@@ -1,20 +1,25 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Sidebar } from '@/components/sidebar'
 import { NoProjects, ProjectDetail } from '@/components/detail-pane'
-import { useAddProject, useProjects, useRemoveProject } from '@/api/queries'
+import { WorktreeList } from '@/components/worktree-list'
+import { useAddProject, useProjects, useRemoveProject, useWorktrees } from '@/api/queries'
 import { invoke } from '@/api/client'
-import { useSelection } from '@/state/selection'
+import { useSelection, useSelectedWorktree } from '@/state/selection'
 
 function App(): React.JSX.Element {
+  const queryClient = useQueryClient()
   const projects = useProjects()
   const addProject = useAddProject()
   const removeProject = useRemoveProject()
   const [addError, setAddError] = useState<string | null>(null)
 
-  const { projectId, selectProject } = useSelection()
+  const { projectId, selectProject, selectWorktree } = useSelection()
+  const selectedWorktree = useSelectedWorktree()
   const list = useMemo(() => projects.data ?? [], [projects.data])
   const selected = list.find((project) => project.id === projectId) ?? null
+  const worktrees = useWorktrees(selected?.path ?? null)
 
   useEffect(() => {
     // Land on something as soon as there is something to land on, including
@@ -22,6 +27,19 @@ function App(): React.JSX.Element {
     if (!selected && list.length > 0) selectProject(list[0].id)
     if (list.length === 0 && projectId) selectProject(null)
   }, [list, selected, projectId, selectProject])
+
+  useEffect(() => {
+    // Cmd/Ctrl-R refreshes, the way it does everywhere else. #18 moves this
+    // to the application menu alongside the rest of the shortcuts.
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'r') {
+        event.preventDefault()
+        void queryClient.invalidateQueries()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [queryClient])
 
   const handleAddProject = async (): Promise<void> => {
     setAddError(null)
@@ -46,7 +64,16 @@ function App(): React.JSX.Element {
             onSelect={selectProject}
             onAddProject={() => void handleAddProject()}
             addError={addError}
-          />
+          >
+            {selected && (
+              <WorktreeList
+                worktrees={worktrees.data ?? []}
+                loading={worktrees.isPending}
+                selectedPath={selectedWorktree}
+                onSelect={selectWorktree}
+              />
+            )}
+          </Sidebar>
         </ResizablePanel>
         <ResizableHandle className="mx-1 bg-transparent" />
         <ResizablePanel>

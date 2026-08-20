@@ -7,7 +7,7 @@
  * types from it. Adding a channel means adding it here first.
  */
 
-import type { GitDiscoveryResult, StoreStatus } from './domain'
+import type { GitDiscoveryResult, StoreStatus, Worktree } from './domain'
 import type { Repository } from './persisted'
 
 export interface IpcInvokeContract {
@@ -16,6 +16,8 @@ export interface IpcInvokeContract {
   'projects:list': { args: []; result: Repository[] }
   'projects:add': { args: [path: string]; result: Repository }
   'projects:remove': { args: [id: string]; result: void }
+  /** Lists a repository's worktrees, each enriched with its current status. */
+  'worktrees:list': { args: [repoPath: string]; result: Worktree[] }
   'git:discover': { args: []; result: GitDiscoveryResult }
   /** Sets (or clears, with null) the manual git path and re-runs discovery. */
   'git:setPath': { args: [path: string | null]; result: GitDiscoveryResult }
@@ -32,6 +34,7 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'projects:list',
   'projects:add',
   'projects:remove',
+  'worktrees:list',
   'git:discover',
   'git:setPath',
   'store:status'

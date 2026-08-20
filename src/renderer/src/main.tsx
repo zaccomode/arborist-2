@@ -8,6 +8,7 @@ import App from './App'
 import { GitGate } from './components/git-gate'
 import { StoreStatusToasts } from './components/store-status'
 import { Toaster } from '@/components/ui/sonner'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,10 +28,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         settings screen sets it explicitly. */}
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <QueryClientProvider client={queryClient}>
-        <StoreStatusToasts />
-        <GitGate>
-          <App />
-        </GitGate>
+        <TooltipProvider>
+          <StoreStatusToasts />
+          <GitGate>
+            <App />
+          </GitGate>
+        </TooltipProvider>
       </QueryClientProvider>
       <Toaster />
     </ThemeProvider>

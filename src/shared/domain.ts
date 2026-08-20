@@ -60,3 +60,36 @@ export interface WorkingTreeStatus {
   unstaged: number
   untracked: number
 }
+
+export interface CommitSummary {
+  hash: string
+  shortHash: string
+  author: string
+  /** ISO 8601, so the renderer can format it in the user's locale. */
+  date: string
+  subject: string
+}
+
+/** What a branch's upstream is doing, as git's `%(upstream:track)` reports it. */
+export interface UpstreamTrack {
+  ahead: number
+  behind: number
+  /** The upstream is still configured, but the remote branch is gone. */
+  gone: boolean
+}
+
+export interface WorktreeStatus extends WorkingTreeStatus, UpstreamTrack {
+  /** Short upstream name (`origin/main`), or null when nothing is tracked. */
+  upstream: string | null
+  lastCommit: CommitSummary | null
+}
+
+/**
+ * A worktree as the sidebar shows it: what git listed, plus whatever
+ * enrichment managed to run. `status` is null when enrichment failed, which
+ * is a state the UI shows rather than one that fails the refresh.
+ */
+export interface Worktree extends WorktreeEntry {
+  status: WorktreeStatus | null
+  statusError: string | null
+}
