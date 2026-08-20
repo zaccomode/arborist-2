@@ -20,13 +20,13 @@ function splitLines(output: string): string[] {
 }
 
 /**
- * Git reports worktree paths with forward slashes, even on Windows, while
- * every path the app builds itself uses backslashes. Normalising here, once,
- * is what lets a path from git and a path from `join()` compare equal — and
- * they are compared constantly: selecting a worktree, keying its note,
- * deleting it.
+ * Git prints paths with forward slashes, even on Windows, while every path
+ * the app builds itself uses backslashes. Normalising everything git says,
+ * as it is read, is what lets the two compare equal — and they are compared
+ * constantly: selecting a worktree, keying its note, deleting it, showing a
+ * project's own location.
  */
-export function normaliseWorktreePath(
+export function normaliseGitPath(
   path: string,
   platform: NodeJS.Platform = process.platform
 ): string {
@@ -71,7 +71,7 @@ export function parseWorktreeList(
     if (key === 'worktree') {
       finish()
       current = {
-        path: normaliseWorktreePath(value ?? '', platform),
+        path: normaliseGitPath(value ?? '', platform),
         head: null,
         branch: null,
         isMain: entries.length === 0,

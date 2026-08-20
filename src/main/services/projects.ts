@@ -4,6 +4,7 @@ import { AppError } from '../../shared/errors'
 import type { Repository } from '../../shared/persisted'
 import type { Store } from './persistence/store'
 import type { GitRunner } from './git/git-runner'
+import { normaliseGitPath } from './git/porcelain'
 
 /**
  * Projects are repositories the user has added to Arborist. Adding one only
@@ -32,7 +33,10 @@ export class ProjectService {
       throw new AppError(`${path} is not a git repository.`, 'not-a-repository')
     }
 
-    const root = result.stdout.trim()
+    // Through the same normalisation as everything else git prints: on
+    // Windows this comes back with forward slashes, and it is the path the
+    // detail pane shows and every git call is made against.
+    const root = normaliseGitPath(result.stdout.trim())
     const existing = this.#store.data.repositories.find((repo) => repo.path === root)
     if (existing) {
       throw new AppError(`${existing.name} is already in Arborist.`, 'project-already-added')

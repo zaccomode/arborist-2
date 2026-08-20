@@ -4,7 +4,7 @@ import {
   parseAheadBehind,
   parseBranchList,
   parseCommit,
-  normaliseWorktreePath,
+  normaliseGitPath,
   parseRemoteBranchList,
   parseStatus,
   parseUpstreamTrack,
@@ -241,17 +241,15 @@ describe('parseCommit', () => {
   })
 })
 
-describe('normaliseWorktreePath', () => {
+describe('normaliseGitPath', () => {
   it('turns git\u2019s forward slashes into the separator Windows paths use', () => {
-    expect(normaliseWorktreePath('C:/Users/iso/code/arborist', 'win32')).toBe(
+    expect(normaliseGitPath('C:/Users/iso/code/arborist', 'win32')).toBe(
       'C:\\Users\\iso\\code\\arborist'
     )
   })
 
   it('leaves a POSIX path alone', () => {
-    expect(normaliseWorktreePath('/Users/iso/code/arborist', 'darwin')).toBe(
-      '/Users/iso/code/arborist'
-    )
+    expect(normaliseGitPath('/Users/iso/code/arborist', 'darwin')).toBe('/Users/iso/code/arborist')
   })
 
   it('normalises the paths a worktree listing reports', () => {
