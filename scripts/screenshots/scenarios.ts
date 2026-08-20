@@ -225,7 +225,8 @@ export const scenarios: Scenario[] = [
     name: 'settings',
     description:
       'Settings: the General tab with the detected git binary and the theme, ' +
-      'and the Presets tab with the built-in switches.',
+      'the Presets tab with the built-in switches, the preset editor over it, ' +
+      'and the Developer tab.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -245,13 +246,30 @@ export const scenarios: Scenario[] = [
       await window.getByRole('tab', { name: 'Presets' }).click()
       await window.getByTestId('preset-settings').waitFor({ state: 'visible' })
       await shot('presets')
+
+      await window.getByRole('button', { name: 'New preset' }).click()
+      await window.getByTestId('preset-editor').waitFor({ state: 'visible' })
+      await shot('preset-editor')
+
+      await window.getByLabel('Icon').click()
+      await window.getByRole('listbox').waitFor({ state: 'visible' })
+      await shot('preset-icons')
+
+      await window.keyboard.press('Escape')
+      await window.getByRole('listbox').waitFor({ state: 'detached' })
+      await window.getByRole('button', { name: 'Cancel' }).click()
+      await window.getByTestId('preset-editor').waitFor({ state: 'detached' })
+      await window.getByRole('tab', { name: 'Developer' }).click()
+      await window.getByLabel('Log every git command').waitFor({ state: 'visible' })
+      await shot('developer')
     }
   },
   {
     name: 'project-settings',
     description:
-      'Project settings: the automation script with its parsed preview, and ' +
-      'the per-project preset overrides underneath.',
+      'Project settings, opened from the button under the worktree list: the ' +
+      'automation script with its parsed preview, and the per-project preset ' +
+      'overrides underneath.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -260,8 +278,8 @@ export const scenarios: Scenario[] = [
     drive: async (window) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByRole('button', { name: 'Project actions' }).click()
-      await window.getByRole('menuitem', { name: 'Project settings…' }).click()
+      await window.getByTestId('project-detail').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'Project settings' }).click()
       await window.getByTestId('automation-script').fill('npm install\nnpm run build')
       await window.getByTestId('project-preset-overrides').waitFor({ state: 'visible' })
     }

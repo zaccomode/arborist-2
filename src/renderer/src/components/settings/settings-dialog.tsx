@@ -10,6 +10,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useSettings } from '@/api/queries'
 import { invoke } from '@/api/client'
+import { DeveloperSettings } from '@/components/settings/developer-settings'
 import { GeneralSettings } from '@/components/settings/general-settings'
 import { PresetSettings } from '@/components/settings/preset-settings'
 
@@ -43,12 +44,15 @@ export function SettingsDialog({
           <DialogDescription>Applies to every project.</DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="general">
-          <TabsList>
+        {/* The tab row spans the dialog's full width, past its padding, so the
+            rule under it separates the header from whichever tab is open. */}
+        <Tabs defaultValue="general" className="gap-0">
+          <TabsList variant="line" className="-mx-6 w-[calc(100%+3rem)] rounded-none border-b px-6">
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="presets">Presets</TabsTrigger>
+            <TabsTrigger value="developer">Developer</TabsTrigger>
           </TabsList>
-          <TabsContent value="general">
+          <TabsContent value="general" className="pt-4">
             {settings.data && (
               <GeneralSettings
                 settings={settings.data}
@@ -56,8 +60,16 @@ export function SettingsDialog({
               />
             )}
           </TabsContent>
-          <TabsContent value="presets">
+          <TabsContent value="presets" className="pt-4">
             <PresetSettings />
+          </TabsContent>
+          <TabsContent value="developer" className="pt-4">
+            {settings.data && (
+              <DeveloperSettings
+                settings={settings.data}
+                onChange={(changes) => void change(changes)}
+              />
+            )}
           </TabsContent>
         </Tabs>
       </DialogContent>

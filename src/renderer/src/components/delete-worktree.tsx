@@ -95,7 +95,7 @@ export function DeleteWorktreeDialogs({
           <AlertDialogHeader>
             <AlertDialogTitle>{worktreeTitle(worktree)} has uncommitted changes</AlertDialogTitle>
             <AlertDialogDescription>
-              Force deleting will permanently discard them. There is no way back.
+              Force deleting will permanently discard them. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {error && <p className="text-sm text-destructive">{error}</p>}

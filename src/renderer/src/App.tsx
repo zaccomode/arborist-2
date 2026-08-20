@@ -91,6 +91,7 @@ function App(): React.JSX.Element {
             onAddProject={() => void handleAddProject()}
             onNewWorktree={() => setCreatingWorktree(true)}
             onOpenSettings={() => setSettingsOpen(true)}
+            onOpenProjectSettings={() => setProjectSettingsOpen(true)}
             addError={addError}
           >
             {selected && (

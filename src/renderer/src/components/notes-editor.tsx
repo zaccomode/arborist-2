@@ -61,11 +61,13 @@ export function NotesEditor({
   }
 
   return (
-    <section className="mt-6 flex min-h-0 flex-1 flex-col">
+    <section className="mt-6 flex flex-col">
       <p className="text-xs font-medium text-muted-foreground">Notes</p>
+      {/* A fixed, modest height with a drag handle rather than the rest of the
+          pane: notes are a side note, and anyone who wants more can drag. */}
       <Textarea
         data-testid="notes-editor"
-        className="mt-2 min-h-24 flex-1 resize-none bg-transparent"
+        className="mt-2 h-56 field-sizing-fixed resize-y bg-transparent"
         placeholder="Anything worth remembering about this worktree…"
         value={text ?? saved.data ?? ''}
         onChange={(event) => {

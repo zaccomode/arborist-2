@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react'
+import { Plus, SlidersHorizontal } from 'lucide-react'
 import type { Repository } from '@shared/persisted'
 import { Button } from '@/components/ui/button'
 import { ProjectSwitcher } from '@/components/project-switcher'
@@ -10,6 +10,7 @@ export function Sidebar({
   onAddProject,
   onNewWorktree,
   onOpenSettings,
+  onOpenProjectSettings,
   addError,
   children
 }: {
@@ -19,6 +20,7 @@ export function Sidebar({
   onAddProject: () => void
   onNewWorktree: () => void
   onOpenSettings: () => void
+  onOpenProjectSettings: () => void
   /** Why the last add failed, shown where the user asked for it. */
   addError: string | null
   children?: React.ReactNode
@@ -53,6 +55,20 @@ export function Sidebar({
           </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">{children}</div>
+        {/* Project-scoped settings are also in the project detail's menu, but
+            that pane is only reachable with no worktree selected. */}
+        <div className="border-t p-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start font-normal text-muted-foreground"
+            disabled={!selectedId}
+            onClick={onOpenProjectSettings}
+          >
+            <SlidersHorizontal />
+            Project settings
+          </Button>
+        </div>
       </aside>
     </div>
   )

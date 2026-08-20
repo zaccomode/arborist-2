@@ -24,6 +24,18 @@ export function GitGate({ children }: { children: React.ReactNode }): React.JSX.
   return <GitNotFound discovery={discovery} onResolved={setDiscovery} />
 }
 
+/** Only the platform in front of the user; the other download is no help. */
+function installLink(platform: NodeJS.Platform): { href: string; label: string } {
+  switch (platform) {
+    case 'darwin':
+      return { href: 'https://git-scm.com/download/mac', label: 'Install on macOS' }
+    case 'win32':
+      return { href: 'https://git-scm.com/download/win', label: 'Install on Windows' }
+    default:
+      return { href: 'https://git-scm.com/downloads', label: 'Install git' }
+  }
+}
+
 function GitNotFound({
   discovery,
   onResolved
@@ -34,6 +46,7 @@ function GitNotFound({
   const [path, setPath] = useState('')
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(discovery.overrideError)
+  const install = installLink(window.arborist.platform)
 
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
@@ -66,15 +79,10 @@ function GitNotFound({
           Arborist at it directly.
         </p>
 
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4">
           <Button asChild variant="outline" size="sm">
-            <a href="https://git-scm.com/download/mac" target="_blank" rel="noreferrer">
-              Install on macOS
-            </a>
-          </Button>
-          <Button asChild variant="outline" size="sm">
-            <a href="https://git-scm.com/download/win" target="_blank" rel="noreferrer">
-              Install on Windows
+            <a href={install.href} target="_blank" rel="noreferrer">
+              {install.label}
             </a>
           </Button>
         </div>
@@ -85,7 +93,11 @@ function GitNotFound({
             <Input
               id="git-path"
               value={path}
-              placeholder="/usr/local/bin/git"
+              placeholder={
+                window.arborist.platform === 'win32'
+                  ? 'C:\\Program Files\\Git\\cmd\\git.exe'
+                  : '/usr/local/bin/git'
+              }
               spellCheck={false}
               onChange={(event) => setPath(event.target.value)}
             />

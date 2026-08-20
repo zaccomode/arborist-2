@@ -4,7 +4,6 @@ import type { Settings } from '@shared/persisted'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -112,20 +111,6 @@ export function GeneralSettings({
           />
         </section>
       )}
-
-      <section className="flex items-center justify-between">
-        <div>
-          <Label htmlFor="debug-git">Log every git command</Label>
-          <p className="text-xs text-muted-foreground">
-            For working out what Arborist actually ran. Off by default; v1 logged unconditionally.
-          </p>
-        </div>
-        <Switch
-          id="debug-git"
-          checked={settings.debugGit}
-          onCheckedChange={(debugGit) => onChange({ debugGit })}
-        />
-      </section>
     </div>
   )
 }

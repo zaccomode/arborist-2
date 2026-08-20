@@ -98,15 +98,14 @@ export function PresetEditor({
           />
         </div>
 
-        <div className="flex gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
             <Label htmlFor="preset-icon">Icon</Label>
+            {/* The trigger renders the selected item's own content, icon
+                included, so it must not repeat the icon itself. */}
             <Select value={draft.icon} onValueChange={(icon) => setDraft({ ...draft, icon })}>
-              <SelectTrigger id="preset-icon" className="w-44">
-                <span className="flex items-center gap-2">
-                  <PresetIcon name={draft.icon} className="size-4" />
-                  <SelectValue />
-                </span>
+              <SelectTrigger id="preset-icon" className="w-full">
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {PRESET_ICON_NAMES.map((name) => (
@@ -127,7 +126,7 @@ export function PresetEditor({
                 setDraft({ ...draft, command: withValue(type as PresetCommand['type'], '') })
               }
             >
-              <SelectTrigger id="preset-type" className="w-44">
+              <SelectTrigger id="preset-type" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
