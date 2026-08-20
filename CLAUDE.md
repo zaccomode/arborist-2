@@ -25,14 +25,31 @@ If the CLI misbehaves, diagnose and fix the plumbing — don't fall back to hand
 
 ## Previewing UI changes visually
 
-You can't screenshot the Electron window, but `npm run dev` (electron-vite) also serves the renderer over plain HTTP at http://localhost:5173, which an in-app/headless browser can load.
+Screenshot the real Electron window. `npm run screenshot` builds, launches the app under Playwright's `_electron`, and writes `shell-dark.png` and `shell-light.png` to `docs/screenshots/` (pass a different directory as an argument). Compare the dark capture against `concept.png`.
 
-1. Start the dev server via the `dev` configuration in `.claude/launch.json` (e.g. Claude Code's `preview_start` with name `"dev"`). Don't run the server with raw shell commands if a preview tool is available.
-2. Open http://localhost:5173 in the browser pane and screenshot it.
-3. The reference design (`concept.png`) is dark — set the browser's color scheme to dark before screenshotting, since the app follows `prefers-color-scheme`. Compare your screenshot against `concept.png`.
+On Linux, including cloud containers, prefix it with a virtual display:
 
-Caveats:
+```bash
+xvfb-run -a npm run screenshot
+```
 
-- In a browser there is no preload, so `window.arborist` is undefined — any IPC-backed interaction (e.g. the ping button) will error. That's expected; only visuals can be verified this way. Anything needing real IPC has to go through the Playwright e2e tests (`npm run test:e2e`), which drive the actual Electron app.
-- If port 5173 is busy, check for an orphaned `electron-vite dev` / Electron process from a previous run (`lsof -nP -iTCP:5173 -sTCP:LISTEN`) and kill it. Note that killing the electron-vite CLI does not always kill the Electron app it spawned — `pkill -f "arborist-2/node_modules/electron/dist"` cleans up the leftover app.
-- If you start `npm run dev` in the background yourself, kill both the CLI and the Electron app when done, or the port stays held.
+This is the full app with preload and IPC, so it's the accurate reference. Prefer it over loading the renderer in a browser.
+
+Two things the script handles that are easy to get wrong if you write your own capture:
+
+- **Wait for the theme class, not just `emulateMedia`.** `main.tsx` mirrors `prefers-color-scheme` onto a `.dark` class from a change listener, so the class lands a tick after `emulateMedia` resolves.
+- **Screenshot with `animations: 'disabled'`.** Buttons carry `transition-all`, so a theme swap animates their colours. Capturing mid-transition renders a blend of both themes — a `bg-primary` button came out mid-grey in both schemes, which reads as a styling bug that isn't there.
+
+### Running the app in a container
+
+`npm run dev` works, but needs both a virtual display and the sandbox disabled, because Electron refuses to run as root:
+
+```bash
+ELECTRON_DISABLE_SANDBOX=1 xvfb-run -a npm run dev
+```
+
+Without `ELECTRON_DISABLE_SANDBOX` Electron aborts with `Running as root without --no-sandbox is not supported`, and because electron-vite supervises the Electron process, that takes the renderer server down with it. Expect GPU and IPv6 socket errors in the log; they're noise from the headless environment, not failures. `npm run test:e2e` needs the same `xvfb-run` prefix, but not the env var, since Playwright passes `--no-sandbox` itself.
+
+Falling back to the renderer in a browser (electron-vite also serves it at http://localhost:5173) only verifies layout: there's no preload, so `window.arborist` is undefined and any IPC-backed interaction errors.
+
+If port 5173 is busy, check for an orphaned process from a previous run (`lsof -nP -iTCP:5173 -sTCP:LISTEN`). Killing the electron-vite CLI does not always kill the Electron app it spawned — `pkill -f "arborist-2/node_modules/electron/dist"` cleans up the leftover app.

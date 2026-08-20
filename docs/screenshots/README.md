@@ -1,9 +1,15 @@
 # Screenshots
 
-Screenshots captured from the renderer running in a headless browser, for visual review in pull requests.
+Captures of the real Electron window, for attaching to pull requests so UI changes can be reviewed without launching the app.
 
-Markdown files in the repository can reference these images with a relative path, and GitHub resolves them when viewing the file on the web:
+Regenerate them with `npm run screenshot`, or `xvfb-run -a npm run screenshot` on Linux. See the "Previewing UI changes visually" section of `CLAUDE.md`.
 
-![Arborist M0 shell, dark](./m0-shell-dark.png)
+## Dark
 
-Note that relative paths only work inside repository files. Pull request and issue bodies are rendered outside any file's directory, so images there need an absolute URL pointing at the committed blob.
+![Arborist shell, dark](./shell-dark.png)
+
+## Light
+
+![Arborist shell, light](./shell-light.png)
+
+Relative paths like the ones above only resolve inside repository files. A pull request body is rendered outside any file's directory, so embedding one there needs an absolute `github.com/.../blob/<sha>/...?raw=true` URL. On a private repository that blob URL is the only form that renders, since `raw.githubusercontent.com` serves private content only against a token the browser doesn't send.
