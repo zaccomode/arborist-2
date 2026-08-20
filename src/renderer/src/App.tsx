@@ -5,6 +5,7 @@ import { Sidebar } from '@/components/sidebar'
 import { NoProjects, ProjectDetail } from '@/components/detail-pane'
 import { WorktreeDetail } from '@/components/worktree-detail'
 import { WorktreeList } from '@/components/worktree-list'
+import { CreateWorktreeDialog } from '@/components/create-worktree-dialog'
 import { useAddProject, useProjects, useRemoveProject, useWorktrees } from '@/api/queries'
 import { invoke } from '@/api/client'
 import { useSelection, useSelectedWorktree } from '@/state/selection'
@@ -15,6 +16,7 @@ function App(): React.JSX.Element {
   const addProject = useAddProject()
   const removeProject = useRemoveProject()
   const [addError, setAddError] = useState<string | null>(null)
+  const [creatingWorktree, setCreatingWorktree] = useState(false)
 
   const { projectId, selectProject, selectWorktree } = useSelection()
   const selectedWorktree = useSelectedWorktree()
@@ -65,6 +67,7 @@ function App(): React.JSX.Element {
             selectedId={selected?.id ?? null}
             onSelect={selectProject}
             onAddProject={() => void handleAddProject()}
+            onNewWorktree={() => setCreatingWorktree(true)}
             addError={addError}
           >
             {selected && (
@@ -98,6 +101,18 @@ function App(): React.JSX.Element {
           </main>
         </ResizablePanel>
       </ResizablePanelGroup>
+
+      {selected && (
+        <CreateWorktreeDialog
+          open={creatingWorktree}
+          onOpenChange={setCreatingWorktree}
+          repoPath={selected.path}
+          onCreated={async (worktreePath) => {
+            await worktrees.refetch()
+            selectWorktree(worktreePath)
+          }}
+        />
+      )}
     </div>
   )
 }

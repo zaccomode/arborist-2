@@ -8,6 +8,7 @@ export function Sidebar({
   selectedId,
   onSelect,
   onAddProject,
+  onNewWorktree,
   addError,
   children
 }: {
@@ -15,6 +16,7 @@ export function Sidebar({
   selectedId: string | null
   onSelect: (id: string) => void
   onAddProject: () => void
+  onNewWorktree: () => void
   /** Why the last add failed, shown where the user asked for it. */
   addError: string | null
   children?: React.ReactNode
@@ -37,7 +39,13 @@ export function Sidebar({
       <aside className="flex min-h-0 flex-1 flex-col rounded-lg border bg-sidebar">
         <div className="flex items-center justify-between py-2 pr-2 pl-3">
           <p className="text-xs font-medium text-muted-foreground">Worktrees</p>
-          <Button variant="ghost" size="icon-xs" aria-label="New worktree" disabled={!selectedId}>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="New worktree"
+            disabled={!selectedId}
+            onClick={onNewWorktree}
+          >
             <Plus />
           </Button>
         </div>

@@ -1,3 +1,7 @@
+import { promises as fs } from 'fs'
+import { dirname, join } from 'path'
+import { AppError } from '../../../shared/errors'
+import { sanitizeForFolder } from '../../../shared/branch-name'
 import { mapWithConcurrency } from '../../../shared/concurrency'
 import type { Worktree, WorktreeEntry, WorktreeStatus } from '../../../shared/domain'
 import type { GitRunner } from './git-runner'
@@ -44,6 +48,61 @@ export class GitService {
       }
       return { ...entry, status: null, statusError: (result.reason as Error).message }
     })
+  }
+
+  async branchExists(repoPath: string, branch: string): Promise<boolean> {
+    const { exitCode } = await this.#git.run(
+      ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`],
+      { repoPath }
+    )
+    return exitCode === 0
+  }
+
+  /**
+   * Where a new worktree for `branch` goes by default: a sibling of the
+   * repository, named after the branch, suffixed if something is already
+   * there.
+   */
+  async suggestWorktreePath(repoPath: string, branch: string): Promise<string> {
+    const parent = dirname(repoPath)
+    const base = sanitizeForFolder(branch)
+
+    for (let suffix = 1; suffix < 100; suffix++) {
+      const candidate = join(parent, suffix === 1 ? base : `${base}-${suffix}`)
+      if (!(await exists(candidate))) return candidate
+    }
+    return join(parent, base)
+  }
+
+  /**
+   * Creates a worktree, checking out `branch` if it already exists and
+   * creating it from `baseRef` (HEAD by default) if it does not.
+   *
+   * Both failure cases are pre-checked rather than read back out of git's
+   * stderr. v1 classified errors by matching those strings, which breaks
+   * across git versions and locales; a `show-ref` and a `stat` do not.
+   */
+  async createWorktree(
+    repoPath: string,
+    options: { branch: string; path: string; baseRef?: string | null }
+  ): Promise<string> {
+    if (await exists(options.path)) {
+      throw new AppError(`${options.path} already exists.`, 'path-already-exists')
+    }
+
+    const args = (await this.branchExists(repoPath, options.branch))
+      ? ['worktree', 'add', options.path, options.branch]
+      : [
+          'worktree',
+          'add',
+          '-b',
+          options.branch,
+          options.path,
+          ...(options.baseRef ? [options.baseRef] : [])
+        ]
+
+    await this.#git.runOrThrow(args, { repoPath })
+    return options.path
   }
 
   async #enrich(entry: WorktreeEntry): Promise<WorktreeStatus> {
@@ -98,5 +157,14 @@ export class GitService {
       upstream: upstream.trim() ? upstream.trim() : null,
       track: parseUpstreamTrack(track)
     }
+  }
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await fs.stat(path)
+    return true
+  } catch {
+    return false
   }
 }

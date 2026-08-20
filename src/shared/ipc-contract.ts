@@ -18,6 +18,13 @@ export interface IpcInvokeContract {
   'projects:remove': { args: [id: string]; result: void }
   /** Lists a repository's worktrees, each enriched with its current status. */
   'worktrees:list': { args: [repoPath: string]; result: Worktree[] }
+  'branches:exists': { args: [repoPath: string, branch: string]; result: boolean }
+  /** The default sibling folder for a new worktree, already de-duplicated. */
+  'worktrees:suggestPath': { args: [repoPath: string, branch: string]; result: string }
+  'worktrees:create': {
+    args: [repoPath: string, options: { branch: string; path: string; baseRef?: string | null }]
+    result: string
+  }
   /** A worktree's note, or the project's own when `worktreePath` is null. */
   'notes:get': { args: [repositoryId: string, worktreePath: string | null]; result: string }
   'notes:set': {
@@ -42,6 +49,9 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'projects:add',
   'projects:remove',
   'worktrees:list',
+  'branches:exists',
+  'worktrees:suggestPath',
+  'worktrees:create',
   'notes:get',
   'notes:set',
   'system:copyText',

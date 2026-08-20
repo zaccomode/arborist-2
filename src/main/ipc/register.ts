@@ -56,6 +56,12 @@ export function registerIpcHandlers({ gitRunner, store, projects, gitService }: 
     gitService.listWorktrees(repoPath, store.data.settings.refreshConcurrency)
   )
 
+  handle('branches:exists', (repoPath, branch) => gitService.branchExists(repoPath, branch))
+  handle('worktrees:suggestPath', (repoPath, branch) =>
+    gitService.suggestWorktreePath(repoPath, branch)
+  )
+  handle('worktrees:create', (repoPath, options) => gitService.createWorktree(repoPath, options))
+
   handle('notes:get', (repositoryId, worktreePath) => {
     const { notes, worktreeNotes } = store.data
     return worktreePath

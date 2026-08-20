@@ -141,6 +141,32 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'create-worktree',
+    description:
+      'The create dialog reading a pasted checkout command, and the worktree ' +
+      'list either side of creating one.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('button', { name: /main/ }).first().waitFor()
+      await shot('before')
+
+      await window.getByRole('button', { name: 'New worktree' }).click()
+      await window.getByLabel('Branch').fill('git checkout -b feature/ABC-123')
+      await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
+      await shot('dialog')
+
+      await window.getByRole('button', { name: 'Create' }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await shot('after')
+    }
+  },
+  {
     name: 'git-not-found',
     description:
       'The blocking screen shown when no git binary can be found, with the ' +
