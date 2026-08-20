@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, realpath } from 'fs/promises'
+import { mkdtemp, mkdir, readFile, rm, realpath, stat, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test'
@@ -85,5 +85,33 @@ test('keeps a worktree note across a relaunch', async () => {
   await expect(reopened.getByTestId('notes-editor')).toHaveValue('Rebase before review.')
 
   await second.close()
+  await rm(root, { recursive: true, force: true })
+})
+
+test('walks both confirmations to delete a dirty worktree', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+  const dirty = await fixture.addWorktree('dirty', { branch: 'feature/dirty' })
+  await writeFile(join(dirty, 'README.md'), 'edited but not committed\n', 'utf8')
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+
+  await window.getByRole('button', { name: /feature\/dirty/ }).click()
+  await window.getByRole('button', { name: 'Worktree actions' }).click()
+  await window.getByRole('menuitem', { name: 'Delete worktree…' }).click()
+  await window.getByRole('button', { name: 'Delete', exact: true }).click()
+
+  // The second dialog is the whole point: a dirty worktree cannot be deleted
+  // by one click.
+  await expect(window.getByTestId('force-delete-worktree-dialog')).toBeVisible()
+  await window.getByRole('button', { name: 'Force delete' }).click()
+
+  await expect(window.getByRole('button', { name: /feature\/dirty/ })).toHaveCount(0)
+  await expect(stat(dirty)).rejects.toThrow()
+
+  await app.close()
   await rm(root, { recursive: true, force: true })
 })

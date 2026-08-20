@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { NotesEditor } from '@/components/notes-editor'
@@ -39,14 +40,13 @@ export function WorktreeDetail({
   repositoryId,
   onRefresh,
   refreshing,
-  actions
+  onDelete
 }: {
   worktree: Worktree
   repositoryId: string
   onRefresh: () => void
   refreshing: boolean
-  /** Overflow-menu entries the surrounding screen owns, such as deletion. */
-  actions?: React.ReactNode
+  onDelete: () => void
 }): React.JSX.Element {
   const hash = worktree.status?.lastCommit?.shortHash ?? worktree.head?.slice(0, 7) ?? null
 
@@ -78,16 +78,29 @@ export function WorktreeDetail({
         >
           <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
         </Button>
-        {actions && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" aria-label="Worktree actions">
-                <MoreVertical />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">{actions}</DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" aria-label="Worktree actions">
+              <MoreVertical />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {/* The repository's own worktree cannot be removed, so the action
+                is absent rather than present and failing. */}
+            {worktree.isMain ? (
+              <DropdownMenuItem disabled>The main worktree cannot be deleted</DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={worktree.locked}
+                title={worktree.locked ? 'Unlock this worktree before deleting it' : undefined}
+                onSelect={onDelete}
+              >
+                Delete worktree…
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {worktree.prunable && (
@@ -99,6 +112,9 @@ export function WorktreeDetail({
           <span className="flex-1">
             This worktree&apos;s folder is gone. Git still lists it until the entry is pruned.
           </span>
+          <Button size="sm" variant="outline" onClick={onDelete}>
+            Remove entry
+          </Button>
         </div>
       )}
 

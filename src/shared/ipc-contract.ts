@@ -25,6 +25,12 @@ export interface IpcInvokeContract {
     args: [repoPath: string, options: { branch: string; path: string; baseRef?: string | null }]
     result: string
   }
+  'worktrees:isDirty': { args: [worktreePath: string]; result: boolean }
+  'worktrees:remove': {
+    args: [repoPath: string, worktreePath: string, force: boolean]
+    result: void
+  }
+  'worktrees:prune': { args: [repoPath: string]; result: void }
   /** A worktree's note, or the project's own when `worktreePath` is null. */
   'notes:get': { args: [repositoryId: string, worktreePath: string | null]; result: string }
   'notes:set': {
@@ -52,6 +58,9 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'branches:exists',
   'worktrees:suggestPath',
   'worktrees:create',
+  'worktrees:isDirty',
+  'worktrees:remove',
+  'worktrees:prune',
   'notes:get',
   'notes:set',
   'system:copyText',

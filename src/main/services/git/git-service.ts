@@ -105,6 +105,32 @@ export class GitService {
     return options.path
   }
 
+  /**
+   * Whether the worktree has uncommitted changes, asked fresh rather than
+   * read off the last refresh: this decides whether deleting it needs the
+   * second confirmation, and the answer has to be current.
+   */
+  async isDirty(worktreePath: string): Promise<boolean> {
+    const { stdout } = await this.#git.runOrThrow(['status', '--porcelain'], {
+      repoPath: worktreePath
+    })
+    return parseStatus(stdout).dirty
+  }
+
+  /**
+   * Removes a worktree and its directory. The branch is left alone, exactly
+   * as v1 left it.
+   */
+  async removeWorktree(repoPath: string, worktreePath: string, force = false): Promise<void> {
+    const args = ['worktree', 'remove', ...(force ? ['--force'] : []), worktreePath]
+    await this.#git.runOrThrow(args, { repoPath })
+  }
+
+  /** Drops the entries for worktrees whose directories are gone. */
+  async pruneWorktrees(repoPath: string): Promise<void> {
+    await this.#git.runOrThrow(['worktree', 'prune'], { repoPath })
+  }
+
   async #enrich(entry: WorktreeEntry): Promise<WorktreeStatus> {
     // A prunable worktree's directory is gone and a bare repository has no
     // working tree, so there is nothing to ask about either of them.

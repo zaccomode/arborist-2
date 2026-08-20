@@ -167,6 +167,31 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'delete-worktree',
+    description:
+      'Both confirmations for deleting a dirty worktree: the first says what ' +
+      'goes, the second says what cannot be recovered.',
+    setup: async ({ workDir }) => {
+      const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('button', { name: /feature\/dirty/ }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'Worktree actions' }).click()
+      await window.getByRole('menuitem', { name: 'Delete worktree…' }).click()
+      await window.getByTestId('delete-worktree-dialog').waitFor({ state: 'visible' })
+      await shot('confirm')
+
+      await window.getByRole('button', { name: 'Delete', exact: true }).click()
+      await window.getByTestId('force-delete-worktree-dialog').waitFor({ state: 'visible' })
+      await shot('force')
+    }
+  },
+  {
     name: 'git-not-found',
     description:
       'The blocking screen shown when no git binary can be found, with the ' +

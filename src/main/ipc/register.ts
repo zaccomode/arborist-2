@@ -62,6 +62,12 @@ export function registerIpcHandlers({ gitRunner, store, projects, gitService }: 
   )
   handle('worktrees:create', (repoPath, options) => gitService.createWorktree(repoPath, options))
 
+  handle('worktrees:isDirty', (worktreePath) => gitService.isDirty(worktreePath))
+  handle('worktrees:remove', (repoPath, worktreePath, force) =>
+    gitService.removeWorktree(repoPath, worktreePath, force)
+  )
+  handle('worktrees:prune', (repoPath) => gitService.pruneWorktrees(repoPath))
+
   handle('notes:get', (repositoryId, worktreePath) => {
     const { notes, worktreeNotes } = store.data
     return worktreePath

@@ -6,6 +6,7 @@ import { NoProjects, ProjectDetail } from '@/components/detail-pane'
 import { WorktreeDetail } from '@/components/worktree-detail'
 import { WorktreeList } from '@/components/worktree-list'
 import { CreateWorktreeDialog } from '@/components/create-worktree-dialog'
+import { DeleteWorktreeDialogs } from '@/components/delete-worktree'
 import { useAddProject, useProjects, useRemoveProject, useWorktrees } from '@/api/queries'
 import { invoke } from '@/api/client'
 import { useSelection, useSelectedWorktree } from '@/state/selection'
@@ -17,6 +18,7 @@ function App(): React.JSX.Element {
   const removeProject = useRemoveProject()
   const [addError, setAddError] = useState<string | null>(null)
   const [creatingWorktree, setCreatingWorktree] = useState(false)
+  const [deletingWorktree, setDeletingWorktree] = useState(false)
 
   const { projectId, selectProject, selectWorktree } = useSelection()
   const selectedWorktree = useSelectedWorktree()
@@ -88,6 +90,10 @@ function App(): React.JSX.Element {
               <ProjectDetail
                 project={selected}
                 onRemove={() => removeProject.mutate(selected.id)}
+                onPrune={async () => {
+                  await invoke('worktrees:prune', selected.path)
+                  await worktrees.refetch()
+                }}
               />
             )}
             {selected && worktree && (
@@ -96,11 +102,25 @@ function App(): React.JSX.Element {
                 repositoryId={selected.id}
                 refreshing={worktrees.isFetching}
                 onRefresh={() => void worktrees.refetch()}
+                onDelete={() => setDeletingWorktree(true)}
               />
             )}
           </main>
         </ResizablePanel>
       </ResizablePanelGroup>
+
+      {selected && worktree && (
+        <DeleteWorktreeDialogs
+          worktree={worktree}
+          repoPath={selected.path}
+          open={deletingWorktree}
+          onOpenChange={setDeletingWorktree}
+          onDeleted={async () => {
+            selectWorktree(null)
+            await worktrees.refetch()
+          }}
+        />
+      )}
 
       {selected && (
         <CreateWorktreeDialog
