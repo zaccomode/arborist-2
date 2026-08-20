@@ -101,7 +101,9 @@ async function capture(scenario: Scenario, outDir: string): Promise<void> {
     await window.waitForLoadState('domcontentloaded')
     // The window is created with show: false and revealed on ready-to-show,
     // so capturing before that lands catches a blank frame.
-    await window.waitForSelector('#root > *')
+    // `:not(script)` because the theme provider's no-flash script is the
+    // first child of #root, and waiting on an invisible element never settles.
+    await window.waitForSelector('#root > :not(script)')
 
     const steps = new Set<string>()
     const shot = async (step: string): Promise<void> => {

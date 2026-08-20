@@ -5,29 +5,62 @@ import { AppError } from '../../../shared/errors'
 import { SCHEMA_VERSION, defaultData, persistedDataSchema, type PersistedData } from './schema'
 import { migrate } from './migrations'
 
-const WRITE_DEBOUNCE_MS = 500
+const WRITE_DEBOUNCE_MS = 250
 
 export interface LoadResult {
   store: Store
   /** Set when the existing file was corrupt and had to be backed up. */
   warning?: string
+  /** Where the unreadable file went, for the log rather than the toast. */
+  backupPath?: string
+}
+
+interface Batch {
+  promise: Promise<void>
+  resolve: () => void
+  reject: (error: unknown) => void
+}
+
+function deferred(): Batch {
+  let resolve!: () => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
 }
 
 /**
  * Schema-versioned JSON store with debounced atomic writes (tmp + rename).
- * A file written by a newer app version is readable but refuses writes.
+ *
+ * Every failure is loud. v1 swallowed them into a print, so a user whose
+ * notes had stopped saving had no way to know: `update` resolves only once
+ * the change is on disk, and rejects with the reason if it never gets there.
+ *
+ * A file written by a newer app version is readable but refuses writes,
+ * rather than being clobbered with fields its schema no longer has.
  */
 export class Store {
   #data: PersistedData
   #filePath: string
   #readOnlyReason: string | null
+  #corruptWarning: string | null
   #writeTimer: NodeJS.Timeout | null = null
-  #pendingWrite: Promise<void> = Promise.resolve()
+  #batch: Batch | null = null
+  /** Serialises writes, so two saves can never interleave their renames. */
+  #queue: Promise<void> = Promise.resolve()
 
-  private constructor(filePath: string, data: PersistedData, readOnlyReason: string | null) {
+  private constructor(
+    filePath: string,
+    data: PersistedData,
+    readOnlyReason: string | null,
+    corruptWarning: string | null = null
+  ) {
     this.#filePath = filePath
     this.#data = data
     this.#readOnlyReason = readOnlyReason
+    this.#corruptWarning = corruptWarning
   }
 
   static async load(filePath: string): Promise<LoadResult> {
@@ -72,10 +105,13 @@ export class Store {
     } catch (error) {
       const backupPath = join(dirname(filePath), `${basename(filePath)}.corrupt-${Date.now()}.json`)
       await fs.rename(filePath, backupPath)
-      return {
-        store: new Store(filePath, defaultData(), null),
-        warning: `Data file was corrupt (${(error as Error).message}); backed up to ${backupPath} and started fresh.`
-      }
+      // The message is deliberately free of the backup's timestamped path: it
+      // is for a toast, and the path belongs in the log next to the parse
+      // error that caused all this.
+      const warning =
+        'Arborist could not read its saved data, so it has been backed up and a new file started. Any projects, notes and presets it held are gone.'
+      console.warn(`Data file unreadable (${(error as Error).message}); backed up to ${backupPath}`)
+      return { store: new Store(filePath, defaultData(), null, warning), warning, backupPath }
     }
   }
 
@@ -87,35 +123,55 @@ export class Store {
     return this.#readOnlyReason
   }
 
-  /** Apply a targeted mutation and schedule a debounced atomic write. */
-  mutate(fn: (data: PersistedData) => void): void {
-    if (this.#readOnlyReason) {
-      throw new AppError(this.#readOnlyReason, 'store-read-only')
-    }
-    fn(this.#data)
-    this.#scheduleWrite()
+  get corruptWarning(): string | null {
+    return this.#corruptWarning
   }
 
-  /** Write any pending changes immediately. Rejects on failure — never silent. */
+  /**
+   * Applies a targeted mutation and resolves once it is on disk. Calls made
+   * inside one debounce window share a save, and all of them see its outcome.
+   */
+  update(fn: (data: PersistedData) => void): Promise<void> {
+    if (this.#readOnlyReason) {
+      return Promise.reject(new AppError(this.#readOnlyReason, 'store-read-only'))
+    }
+    fn(this.#data)
+    return this.#scheduleWrite()
+  }
+
+  /** Writes any pending change immediately. Rejects on failure — never silent. */
   async flush(): Promise<void> {
     if (this.#writeTimer) {
       clearTimeout(this.#writeTimer)
       this.#writeTimer = null
-      this.#pendingWrite = this.#writeNow()
+      this.#runBatch()
     }
-    await this.#pendingWrite
+    await this.#queue
   }
 
-  #scheduleWrite(): void {
+  #scheduleWrite(): Promise<void> {
+    this.#batch ??= deferred()
+    const batch = this.#batch
     if (this.#writeTimer) clearTimeout(this.#writeTimer)
     this.#writeTimer = setTimeout(() => {
       this.#writeTimer = null
-      this.#pendingWrite = this.#writeNow()
-      this.#pendingWrite.catch(() => {
-        // Surfaced to callers via flush(); kept here so a debounced write
-        // failure does not become an unhandled rejection.
-      })
+      this.#runBatch()
     }, WRITE_DEBOUNCE_MS)
+    return batch.promise
+  }
+
+  #runBatch(): void {
+    const batch = this.#batch
+    if (!batch) return
+    this.#batch = null
+
+    this.#queue = this.#queue.then(() =>
+      this.#writeNow().then(batch.resolve, (error: unknown) => {
+        batch.reject(error)
+        // The failure belongs to the caller that asked for the write, and it
+        // has it; the queue stays healthy so later writes can still succeed.
+      })
+    )
   }
 
   async #writeNow(): Promise<void> {

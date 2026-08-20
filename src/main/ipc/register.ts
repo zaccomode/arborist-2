@@ -33,11 +33,15 @@ export function registerIpcHandlers({ gitRunner, store }: IpcDeps): void {
 
   handle('git:setPath', async (path) => {
     const trimmed = path?.trim() ? path.trim() : null
-    store.mutate((data) => {
-      data.settings['gitPath'] = trimmed
+    await store.update((data) => {
+      data.settings.gitPath = trimmed
     })
-    await store.flush()
     gitRunner.locator.setOverride(trimmed)
     return gitRunner.locator.discover()
   })
+
+  handle('store:status', () => ({
+    corruptWarning: store.corruptWarning,
+    readOnlyReason: store.readOnlyReason
+  }))
 }

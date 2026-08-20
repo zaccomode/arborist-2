@@ -7,13 +7,14 @@
  * types from it. Adding a channel means adding it here first.
  */
 
-import type { GitDiscoveryResult } from './domain'
+import type { GitDiscoveryResult, StoreStatus } from './domain'
 
 export interface IpcInvokeContract {
   'system:ping': { args: []; result: string }
   'git:discover': { args: []; result: GitDiscoveryResult }
   /** Sets (or clears, with null) the manual git path and re-runs discovery. */
   'git:setPath': { args: [path: string | null]; result: GitDiscoveryResult }
+  'store:status': { args: []; result: StoreStatus }
 }
 
 export type IpcChannel = keyof IpcInvokeContract
@@ -21,4 +22,9 @@ export type IpcChannel = keyof IpcInvokeContract
 export type IpcArgs<C extends IpcChannel> = IpcInvokeContract[C]['args']
 export type IpcReturn<C extends IpcChannel> = IpcInvokeContract[C]['result']
 
-export const IPC_CHANNELS: readonly IpcChannel[] = ['system:ping', 'git:discover', 'git:setPath']
+export const IPC_CHANNELS: readonly IpcChannel[] = [
+  'system:ping',
+  'git:discover',
+  'git:setPath',
+  'store:status'
+]

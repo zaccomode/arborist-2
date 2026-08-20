@@ -2,21 +2,22 @@ import './assets/main.css'
 
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { ThemeProvider } from 'next-themes'
 import App from './App'
 import { GitGate } from './components/git-gate'
-
-// Follow the OS theme until M1 wires nativeTheme + an explicit setting.
-const darkQuery = window.matchMedia('(prefers-color-scheme: dark)')
-const applyTheme = (): void => {
-  document.documentElement.classList.toggle('dark', darkQuery.matches)
-}
-applyTheme()
-darkQuery.addEventListener('change', applyTheme)
+import { StoreStatusToasts } from './components/store-status'
+import { Toaster } from '@/components/ui/sonner'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <GitGate>
-      <App />
-    </GitGate>
+    {/* Mirrors the theme onto a `.dark` class, following the OS until the
+        settings screen sets it explicitly. */}
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <StoreStatusToasts />
+      <GitGate>
+        <App />
+      </GitGate>
+      <Toaster />
+    </ThemeProvider>
   </React.StrictMode>
 )

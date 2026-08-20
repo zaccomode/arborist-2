@@ -1,3 +1,5 @@
+import { writeFile } from 'fs/promises'
+import { join } from 'path'
 import type { Page } from 'playwright'
 
 /**
@@ -73,6 +75,19 @@ export const scenarios: Scenario[] = [
     setup: async () => ({ ARBORIST_FORCE_GIT_MISSING: '1' }),
     drive: async (window) => {
       await window.getByTestId('git-not-found').waitFor({ state: 'visible' })
+    }
+  },
+  {
+    name: 'store-corrupt',
+    description:
+      'The toast shown when the data file could not be read and was backed ' +
+      'up. v1 printed this to a console nobody was reading, so the capture ' +
+      'is the point: it has to be visible.',
+    setup: async ({ userDataDir }) => {
+      await writeFile(join(userDataDir, 'arborist-data.json'), 'not json{{{', 'utf8')
+    },
+    drive: async (window) => {
+      await window.getByText('Your Arborist data could not be read').waitFor({ state: 'visible' })
     }
   }
 

@@ -14,6 +14,17 @@ export interface GitDiscoveryResult {
   overrideError: string | null
 }
 
+/**
+ * How the persistence layer came up. Both fields are things the user needs
+ * telling about: v1 swallowed them, and people lost notes without knowing.
+ */
+export interface StoreStatus {
+  /** The data file was unreadable, was backed up, and the app started fresh. */
+  corruptWarning: string | null
+  /** The data file came from a newer version, so nothing will be saved. */
+  readOnlyReason: string | null
+}
+
 /** One stanza of `git worktree list --porcelain`. */
 export interface WorktreeEntry {
   path: string

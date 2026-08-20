@@ -4,15 +4,25 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerIpcHandlers } from './ipc/register'
 import { Store } from './services/persistence/store'
+import {
+  loadWindowState,
+  trackWindowState,
+  type WindowState
+} from './services/persistence/window-state'
 import { GitLocator, systemDiscoveryDeps } from './services/git/git-discovery'
 import { GitRunner } from './services/git/git-runner'
+import { setGitDebug } from './services/git/git-executor'
+
+const DEFAULT_WINDOW: WindowState = { width: 1100, height: 720, maximized: false }
 
 let store: Store | null = null
 
-function createWindow(): void {
+function createWindow(state: WindowState, windowStatePath: string): void {
   const mainWindow = new BrowserWindow({
-    width: 1100,
-    height: 720,
+    width: state.width,
+    height: state.height,
+    x: state.x,
+    y: state.y,
     minWidth: 720,
     minHeight: 480,
     show: false,
@@ -25,6 +35,9 @@ function createWindow(): void {
       nodeIntegration: false
     }
   })
+
+  if (state.maximized) mainWindow.maximize()
+  trackWindowState(mainWindow, windowStatePath)
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
@@ -49,26 +62,23 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  const { store: loadedStore, warning } = await Store.load(
-    join(app.getPath('userData'), 'arborist-data.json')
-  )
+  const userData = app.getPath('userData')
+  const { store: loadedStore } = await Store.load(join(userData, 'arborist-data.json'))
   store = loadedStore
-  if (warning) {
-    // M1 surfaces this as a renderer toast; until then it must not be silent.
-    console.warn(warning)
-  }
 
-  const gitPath = store.data.settings['gitPath']
+  setGitDebug(store.data.settings.debugGit)
   const gitRunner = new GitRunner(
-    new GitLocator(systemDiscoveryDeps(), typeof gitPath === 'string' ? gitPath : null)
+    new GitLocator(systemDiscoveryDeps(), store.data.settings.gitPath)
   )
 
   registerIpcHandlers({ gitRunner, store })
 
-  createWindow()
+  const windowStatePath = join(userData, 'window-state.json')
+  const windowState = await loadWindowState(windowStatePath, DEFAULT_WINDOW)
+  createWindow(windowState, windowStatePath)
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(windowState, windowStatePath)
   })
 })
 
