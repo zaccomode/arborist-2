@@ -25,20 +25,41 @@ If the CLI misbehaves, diagnose and fix the plumbing — don't fall back to hand
 
 ## Previewing UI changes visually
 
-Screenshot the real Electron window. `npm run screenshot` builds, launches the app under Playwright's `_electron`, and writes `shell-dark.png` and `shell-light.png` to `docs/screenshots/` (pass a different directory as an argument). Compare the dark capture against `concept.png`.
+Screenshot the real Electron window. `npm run screenshot` builds, launches the app under Playwright's `_electron`, and writes a dark and a light PNG per scenario into `docs/screenshots/`. Compare the dark captures against `concept.png`.
 
 On Linux, including cloud containers, prefix it with a virtual display:
 
 ```bash
-xvfb-run -a npm run screenshot
+xvfb-run -a npm run screenshot                  # every scenario
+xvfb-run -a npm run screenshot -- shell         # just the named ones
+xvfb-run -a npm run screenshot -- --out /tmp/x  # somewhere other than docs/
 ```
 
 This is the full app with preload and IPC, so it's the accurate reference. Prefer it over loading the renderer in a browser.
 
-Two things the script handles that are easy to get wrong if you write your own capture:
+### Capturing a state other than the opening screen
+
+Add a scenario to `scripts/screenshots/scenarios.ts` rather than editing the runner. A scenario names the output and optionally supplies `drive`, which receives the Electron window as a Playwright page, so anything the e2e tests can do — click, type, hover, drag — is available:
+
+```ts
+{
+  name: 'project-switcher-open',
+  description: 'The project switcher menu, expanded.',
+  drive: async (window) => {
+    await window.getByRole('button', { name: 'No project' }).click()
+    await window.getByRole('menu').waitFor({ state: 'visible' })
+  }
+}
+```
+
+Wait on the end state, as above, rather than sleeping: a capture that races the UI it is showing fails intermittently and is easy to mistake for a styling bug. Each scenario gets its own Electron launch and a throwaway `--user-data-dir`, so captures can't leak state into each other or depend on whatever is already stored on the machine.
+
+Four things the runner handles that are easy to get wrong in a hand-rolled capture. All four produce a plausible-looking wrong image rather than an error, which is the dangerous kind:
 
 - **Wait for the theme class, not just `emulateMedia`.** `main.tsx` mirrors `prefers-color-scheme` onto a `.dark` class from a change listener, so the class lands a tick after `emulateMedia` resolves.
 - **Screenshot with `animations: 'disabled'`.** Buttons carry `transition-all`, so a theme swap animates their colours. Capturing mid-transition renders a blend of both themes — a `bg-primary` button came out mid-grey in both schemes, which reads as a styling bug that isn't there.
+- **Park the pointer after clicking.** It otherwise rests on whatever was clicked and the capture picks up its `hover:` styling: the ping button measured RGB 209 hovered against 229 at rest. Set `keepPointer` on the scenario to capture a hover state deliberately.
+- **Wait for `#root > *`.** The window is created with `show: false` and revealed on `ready-to-show`, so capturing earlier catches a blank frame.
 
 ### Running the app in a container
 

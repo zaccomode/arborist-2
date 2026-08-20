@@ -1,21 +1,101 @@
 /**
  * Captures PNGs of the real Electron window, for attaching to pull requests.
  *
- * Requires a prior `electron-vite build`; the `screenshot` npm script handles
- * it. On Linux CI and cloud containers this needs a virtual display, which the
- * npm script supplies via `xvfb-run`.
+ * Each scenario in `scripts/screenshots/scenarios.ts` drives the app to a
+ * state and is captured in both themes. Add a scenario there rather than
+ * editing this runner.
  *
- * Usage: npm run screenshot -- [outDir]
+ * Requires a prior `electron-vite build`; the `screenshot` npm script handles
+ * it. On Linux, including cloud containers, this needs a virtual display:
+ *
+ *   xvfb-run -a npm run screenshot            # every scenario
+ *   xvfb-run -a npm run screenshot -- shell   # just the named ones
+ *   xvfb-run -a npm run screenshot -- --out /tmp/shots
  */
-import { mkdir } from 'fs/promises'
-import { resolve } from 'path'
-import { _electron as electron } from 'playwright'
+import { mkdir, mkdtemp, rm } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join, resolve } from 'path'
+import { _electron as electron, type ElectronApplication } from 'playwright'
+// Node's native type stripping resolves ESM imports literally, so this needs
+// the real file extension rather than a bare specifier.
+import { scenarios, type Scenario } from './screenshots/scenarios.ts'
 
-const outDir = resolve(process.argv[2] ?? 'docs/screenshots')
+const THEMES = ['dark', 'light'] as const
 
-// Electron refuses to run as root without this, which is the default user in
-// most containers. Harmless elsewhere, since this only ever runs locally.
-const args = process.getuid?.() === 0 ? ['.', '--no-sandbox'] : ['.']
+function parseArgs(argv: string[]): { outDir: string; names: string[] } {
+  const names: string[] = []
+  let outDir = 'docs/screenshots'
+
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--out') {
+      const value = argv[++i]
+      if (value === undefined) throw new Error('--out needs a directory')
+      outDir = value
+    } else {
+      names.push(argv[i])
+    }
+  }
+
+  return { outDir: resolve(outDir), names }
+}
+
+async function launch(userDataDir: string): Promise<ElectronApplication> {
+  const args = [
+    '.',
+    // Keep each scenario off the real app's stored data, so captures can't
+    // depend on whatever is already on the machine running them.
+    `--user-data-dir=${userDataDir}`
+  ]
+  // Electron refuses to run as root, which is the default user in most
+  // containers. Harmless elsewhere, since this only ever runs locally.
+  if (process.getuid?.() === 0) args.push('--no-sandbox')
+
+  return electron.launch({ args })
+}
+
+async function capture(scenario: Scenario, outDir: string): Promise<void> {
+  const userDataDir = await mkdtemp(join(tmpdir(), 'arborist-shot-'))
+  const app = await launch(userDataDir)
+
+  try {
+    const window = await app.firstWindow()
+    await window.waitForLoadState('domcontentloaded')
+    // The window is created with show: false and revealed on ready-to-show,
+    // so capturing before that lands catches a blank frame.
+    await window.waitForSelector('#root > *')
+
+    await scenario.drive?.(window)
+
+    if (!scenario.keepPointer) {
+      // Clicking leaves the pointer resting on whatever was clicked, so the
+      // capture picks up its `hover:` styling. Park it out of the way unless
+      // the scenario is deliberately showing a hover state.
+      await window.mouse.move(0, 0)
+    }
+
+    for (const theme of THEMES) {
+      await window.emulateMedia({ colorScheme: theme })
+
+      // main.tsx mirrors the media query onto a `.dark` class, and it does so
+      // from a change listener, so the class lands a tick after emulateMedia
+      // resolves. Without this the capture shows the previous theme.
+      await window.waitForFunction(
+        (wantsDark) => document.documentElement.classList.contains('dark') === wantsDark,
+        theme === 'dark'
+      )
+
+      const path = join(outDir, `${scenario.name}-${theme}.png`)
+      // Buttons carry `transition-all`, so swapping the theme animates their
+      // colours. Without this the capture lands mid-transition and renders a
+      // blend of the two themes rather than either one.
+      await window.screenshot({ path, animations: 'disabled' })
+      console.log(`wrote ${path}`)
+    }
+  } finally {
+    await app.close()
+    await rm(userDataDir, { recursive: true, force: true })
+  }
+}
 
 async function main(): Promise<void> {
   if (process.platform === 'linux' && !process.env.DISPLAY) {
@@ -27,39 +107,29 @@ async function main(): Promise<void> {
     )
   }
 
+  const { outDir, names } = parseArgs(process.argv.slice(2))
+
+  const selected = names.length
+    ? names.map((name) => {
+        const match = scenarios.find((scenario) => scenario.name === name)
+        if (!match) {
+          throw new Error(
+            `Unknown scenario "${name}". Available: ${scenarios.map((s) => s.name).join(', ')}`
+          )
+        }
+        return match
+      })
+    : scenarios
+
   await mkdir(outDir, { recursive: true })
 
-  const app = await electron.launch({ args })
-  const window = await app.firstWindow()
-  await window.waitForLoadState('domcontentloaded')
-
-  // The window is created with show: false and revealed on ready-to-show, so
-  // screenshotting before that lands captures a blank frame.
-  await window.waitForSelector('#root > *')
-
-  for (const scheme of ['dark', 'light'] as const) {
-    await window.emulateMedia({ colorScheme: scheme })
-
-    // main.tsx mirrors the media query onto a `.dark` class, and it does so from
-    // a change listener, so the class lands a tick after emulateMedia resolves.
-    // Screenshotting without waiting for it captures a half-themed frame.
-    await window.waitForFunction(
-      (wantsDark) => document.documentElement.classList.contains('dark') === wantsDark,
-      scheme === 'dark'
-    )
-
-    const path = resolve(outDir, `shell-${scheme}.png`)
-    // Buttons carry `transition-all`, so swapping the theme animates their
-    // colours. Without this the capture lands mid-transition and the button
-    // renders a blend of the two themes rather than either one.
-    await window.screenshot({ path, animations: 'disabled' })
-    console.log(`wrote ${path}`)
+  // Electron apps get one instance at a time, so these can't overlap.
+  for (const scenario of selected) {
+    await capture(scenario, outDir)
   }
-
-  await app.close()
 }
 
 main().catch((error: unknown) => {
-  console.error(error)
+  console.error(error instanceof Error ? error.message : error)
   process.exit(1)
 })
