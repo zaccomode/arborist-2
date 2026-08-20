@@ -1,6 +1,9 @@
 import { writeFile } from 'fs/promises'
 import { join } from 'path'
 import type { Page } from 'playwright'
+// Node's native type stripping resolves ESM imports literally, so this needs
+// the real file extension rather than a bare specifier.
+import { GitFixture } from '../../tests/integration/fixtures/git-fixture.ts'
 
 /**
  * Captures the window as it currently stands, in both themes, as
@@ -33,6 +36,10 @@ export interface Scenario {
    * repositories under `workDir`, a seeded `arborist-data.json` under
    * `userDataDir`, or both. Returns environment variables to launch with.
    * Both directories are temporary and removed after the capture.
+   *
+   * `workDir` is a fixed path derived from the scenario name, because a
+   * fixture path can end up on screen and a random one would change the
+   * pixels on every run.
    */
   setup?: (context: {
     userDataDir: string
@@ -54,16 +61,41 @@ export const scenarios: Scenario[] = [
       'the capture to compare against concept.png.'
   },
   {
-    name: 'ping',
+    name: 'add-project',
     description:
-      'The M0 ping button before and after a round-trip to the main process. ' +
-      'Proves a capture exercises real IPC, which is the whole reason for ' +
-      'driving the Electron window rather than the renderer in a browser.',
+      'Adding a project: the empty state, the switcher menu that offers it, ' +
+      'and the project view that follows.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
     drive: async (window, shot) => {
-      await shot('before')
-      await window.getByRole('button', { name: 'Ping main process' }).click()
-      await window.getByTestId('ping-result').waitFor({ state: 'visible' })
-      await shot('after')
+      await shot('empty')
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menu').waitFor({ state: 'visible' })
+      await shot('menu')
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('project-detail').waitFor({ state: 'visible' })
+      await shot('added')
+    }
+  },
+  {
+    name: 'remove-project',
+    description:
+      'The confirmation for removing a project, which says what it does and ' + 'does not touch.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('project-detail').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'Project actions' }).click()
+      await window.getByRole('menuitem', { name: 'Remove project…' }).click()
+      await window.getByRole('alertdialog').waitFor({ state: 'visible' })
     }
   },
   {
@@ -90,15 +122,4 @@ export const scenarios: Scenario[] = [
       await window.getByText('Your Arborist data could not be read').waitFor({ state: 'visible' })
     }
   }
-
-  // Capturing a transient state, once M1 gives the switcher a real menu:
-  //
-  // {
-  //   name: 'project-switcher-open',
-  //   description: 'The project switcher menu, expanded.',
-  //   drive: async (window) => {
-  //     await window.getByRole('button', { name: 'No project' }).click()
-  //     await window.getByRole('menu').waitFor({ state: 'visible' })
-  //   }
-  // }
 ]

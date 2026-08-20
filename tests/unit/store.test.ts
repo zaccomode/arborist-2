@@ -3,7 +3,7 @@ import { promises as fs } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { Store } from '../../src/main/services/persistence/store'
-import { SCHEMA_VERSION } from '../../src/main/services/persistence/schema'
+import { SCHEMA_VERSION } from '@shared/persisted'
 import { migrate, type Migration } from '../../src/main/services/persistence/migrations'
 
 let dir: string

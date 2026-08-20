@@ -92,7 +92,12 @@ async function captureThemes(
 
 async function capture(scenario: Scenario, outDir: string): Promise<void> {
   const userDataDir = await mkdtemp(join(tmpdir(), 'arborist-shot-'))
-  const workDir = await mkdtemp(join(tmpdir(), 'arborist-shot-work-'))
+  // Deterministic, unlike the user-data dir, because whatever a scenario
+  // builds here can end up on screen: a random temp path would change the
+  // pixels on every run and make the whole comparison worthless.
+  const workDir = join(tmpdir(), 'arborist-shot-work', scenario.name)
+  await rm(workDir, { recursive: true, force: true })
+  await mkdir(workDir, { recursive: true })
   const env = (await scenario.setup?.({ userDataDir, workDir })) ?? {}
   const app = await launch(userDataDir, env)
 

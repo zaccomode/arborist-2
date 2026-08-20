@@ -2,7 +2,12 @@ import { promises as fs } from 'fs'
 import { dirname, join, basename } from 'path'
 import { randomUUID } from 'crypto'
 import { AppError } from '../../../shared/errors'
-import { SCHEMA_VERSION, defaultData, persistedDataSchema, type PersistedData } from './schema'
+import {
+  SCHEMA_VERSION,
+  defaultData,
+  persistedDataSchema,
+  type PersistedData
+} from '../../../shared/persisted'
 import { migrate } from './migrations'
 
 const WRITE_DEBOUNCE_MS = 250

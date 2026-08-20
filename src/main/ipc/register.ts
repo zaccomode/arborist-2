@@ -1,9 +1,10 @@
-import { ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain } from 'electron'
 import type { IpcArgs, IpcChannel, IpcReturn } from '../../shared/ipc-contract'
 import { serializeError } from '../../shared/errors'
 import { ok, err, type IpcResult } from '../../shared/result'
 import type { GitRunner } from '../services/git/git-runner'
 import type { Store } from '../services/persistence/store'
+import type { ProjectService } from '../services/projects'
 
 type Handler<C extends IpcChannel> = (...args: IpcArgs<C>) => Promise<IpcReturn<C>> | IpcReturn<C>
 
@@ -24,10 +25,29 @@ export function handle<C extends IpcChannel>(channel: C, handler: Handler<C>): v
 export interface IpcDeps {
   gitRunner: GitRunner
   store: Store
+  projects: ProjectService
 }
 
-export function registerIpcHandlers({ gitRunner, store }: IpcDeps): void {
-  handle('system:ping', () => 'pong')
+export function registerIpcHandlers({ gitRunner, store, projects }: IpcDeps): void {
+  handle('system:pickFolder', async () => {
+    // A native dialog cannot be driven by Playwright, so e2e tests and
+    // screenshot scenarios say up front what the user would have chosen.
+    const scripted = process.env['ARBORIST_PICK_FOLDER']
+    if (scripted) return scripted
+
+    const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const result = window
+      ? await dialog.showOpenDialog(window, {
+          properties: ['openDirectory', 'createDirectory'],
+          title: 'Choose a git repository'
+        })
+      : await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+
+  handle('projects:list', () => projects.list())
+  handle('projects:add', (path) => projects.add(path))
+  handle('projects:remove', (id) => projects.remove(id))
 
   handle('git:discover', () => gitRunner.locator.discover())
 

@@ -8,9 +8,14 @@
  */
 
 import type { GitDiscoveryResult, StoreStatus } from './domain'
+import type { Repository } from './persisted'
 
 export interface IpcInvokeContract {
-  'system:ping': { args: []; result: string }
+  /** Native folder picker. Resolves null when the user cancels. */
+  'system:pickFolder': { args: []; result: string | null }
+  'projects:list': { args: []; result: Repository[] }
+  'projects:add': { args: [path: string]; result: Repository }
+  'projects:remove': { args: [id: string]; result: void }
   'git:discover': { args: []; result: GitDiscoveryResult }
   /** Sets (or clears, with null) the manual git path and re-runs discovery. */
   'git:setPath': { args: [path: string | null]; result: GitDiscoveryResult }
@@ -23,7 +28,10 @@ export type IpcArgs<C extends IpcChannel> = IpcInvokeContract[C]['args']
 export type IpcReturn<C extends IpcChannel> = IpcInvokeContract[C]['result']
 
 export const IPC_CHANNELS: readonly IpcChannel[] = [
-  'system:ping',
+  'system:pickFolder',
+  'projects:list',
+  'projects:add',
+  'projects:remove',
   'git:discover',
   'git:setPath',
   'store:status'

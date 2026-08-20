@@ -1,50 +1,67 @@
-import { useState } from 'react'
-import { TreePine, FolderGit2, ChevronDown } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { useEffect, useMemo, useState } from 'react'
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { Sidebar } from '@/components/sidebar'
+import { NoProjects, ProjectDetail } from '@/components/detail-pane'
+import { useAddProject, useProjects, useRemoveProject } from '@/api/queries'
 import { invoke } from '@/api/client'
+import { useSelection } from '@/state/selection'
 
 function App(): React.JSX.Element {
-  const [pingResult, setPingResult] = useState<string | null>(null)
+  const projects = useProjects()
+  const addProject = useAddProject()
+  const removeProject = useRemoveProject()
+  const [addError, setAddError] = useState<string | null>(null)
 
-  const handlePing = async (): Promise<void> => {
+  const { projectId, selectProject } = useSelection()
+  const list = useMemo(() => projects.data ?? [], [projects.data])
+  const selected = list.find((project) => project.id === projectId) ?? null
+
+  useEffect(() => {
+    // Land on something as soon as there is something to land on, including
+    // after the selected project is removed.
+    if (!selected && list.length > 0) selectProject(list[0].id)
+    if (list.length === 0 && projectId) selectProject(null)
+  }, [list, selected, projectId, selectProject])
+
+  const handleAddProject = async (): Promise<void> => {
+    setAddError(null)
+    const path = await invoke('system:pickFolder')
+    if (!path) return
     try {
-      const value = await invoke('system:ping')
-      setPingResult(value)
+      const added = await addProject.mutateAsync(path)
+      selectProject(added.id)
     } catch (error) {
-      setPingResult(`error: ${(error as Error).message}`)
+      setAddError((error as Error).message)
     }
   }
 
   return (
-    <div className="flex h-screen gap-2 bg-background p-2">
-      <div className="flex w-[260px] shrink-0 flex-col gap-2">
-        <button
-          type="button"
-          className="flex items-center gap-2 rounded-lg border bg-sidebar px-3 py-2 text-sm font-medium hover:bg-accent"
-        >
-          <FolderGit2 className="size-4 text-muted-foreground" />
-          <span className="flex-1 text-left">No project</span>
-          <ChevronDown className="size-4 text-muted-foreground" />
-        </button>
-        <aside className="flex flex-1 flex-col rounded-lg border bg-sidebar p-3">
-          <p className="px-1 text-xs font-medium text-muted-foreground">Worktrees</p>
-          <p className="mt-2 px-1 text-sm text-muted-foreground">Coming in M1.</p>
-        </aside>
-      </div>
-
-      <main className="flex flex-1 flex-col items-center justify-center rounded-lg border bg-card">
-        <TreePine className="size-10 text-muted-foreground" />
-        <h1 className="mt-4 text-2xl font-semibold">Arborist</h1>
-        <p className="mt-1 text-sm text-muted-foreground">M0 scaffold — shell placeholder</p>
-        <Button className="mt-6" onClick={handlePing}>
-          Ping main process
-        </Button>
-        {pingResult !== null && (
-          <p data-testid="ping-result" className="mt-3 font-mono text-sm text-muted-foreground">
-            {pingResult}
-          </p>
-        )}
-      </main>
+    <div className="h-screen bg-background p-2">
+      <ResizablePanelGroup orientation="horizontal">
+        {/* Numeric sizes are pixels: the concept's sidebar is about 260 wide. */}
+        <ResizablePanel defaultSize={260} minSize={200} maxSize={420}>
+          <Sidebar
+            projects={list}
+            selectedId={selected?.id ?? null}
+            onSelect={selectProject}
+            onAddProject={() => void handleAddProject()}
+            addError={addError}
+          />
+        </ResizablePanel>
+        <ResizableHandle className="mx-1 bg-transparent" />
+        <ResizablePanel>
+          <main className="h-full rounded-lg border bg-card">
+            {selected ? (
+              <ProjectDetail
+                project={selected}
+                onRemove={() => removeProject.mutate(selected.id)}
+              />
+            ) : (
+              <NoProjects onAddProject={() => void handleAddProject()} />
+            )}
+          </main>
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </div>
   )
 }

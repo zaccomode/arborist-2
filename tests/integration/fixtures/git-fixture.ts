@@ -8,13 +8,31 @@
  * The "remote" is a bare clone reached by file URL, so upstream, fetch and
  * remote-deletion behaviour are all testable with no network.
  */
+import { execFile } from 'child_process'
 import { promises as fs } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { GitLocator } from '../../../src/main/services/git/git-discovery'
-import { GitRunner } from '../../../src/main/services/git/git-runner'
 
-const runner = new GitRunner(new GitLocator())
+/**
+ * Deliberately shells out to git rather than going through the app's own
+ * executor: the screenshot runner builds fixtures too, and it runs the
+ * TypeScript with Node's type stripping, which cannot follow the extensionless
+ * imports the bundled app uses. There is no parsing here, so nothing is
+ * duplicated by keeping it separate.
+ */
+function runGit(args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'git',
+      args,
+      { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' }, windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error) reject(new Error(`git ${args.join(' ')} failed: ${stderr || error.message}`))
+        else resolve(stdout)
+      }
+    )
+  })
+}
 
 export interface WorktreeOptions {
   /** Branch to create for the worktree. Omit for a detached checkout. */
@@ -30,15 +48,14 @@ export class GitFixture {
   readonly remotePath: string
   #elsewhere: string | null = null
 
-  constructor(root: string) {
+  constructor(root: string, projectName = 'project') {
     this.root = root
-    this.repoPath = join(root, 'project')
+    this.repoPath = join(root, projectName)
     this.remotePath = join(root, 'remote.git')
   }
 
-  async git(args: string[], cwd: string = this.repoPath): Promise<string> {
-    const { stdout } = await runner.runOrThrow(args, { repoPath: cwd })
-    return stdout
+  git(args: string[], cwd: string = this.repoPath): Promise<string> {
+    return runGit(args, cwd)
   }
 
   /** Writes files (paths relative to `cwd`) and commits them. Returns the sha. */
@@ -94,7 +111,7 @@ export class GitFixture {
   async #elsewhereClone(): Promise<string> {
     if (this.#elsewhere) return this.#elsewhere
     const path = join(this.root, 'elsewhere')
-    await runner.runOrThrow(['clone', this.remotePath, path])
+    await runGit(['clone', this.remotePath, path], this.root)
     await this.#configure(path)
     this.#elsewhere = path
     return path
@@ -114,7 +131,7 @@ export class GitFixture {
     await this.#configure(this.repoPath)
     await this.commit('Initial commit', { 'README.md': '# fixture\n' })
 
-    await runner.runOrThrow(['clone', '--bare', this.repoPath, this.remotePath])
+    await runGit(['clone', '--bare', this.repoPath, this.remotePath], this.root)
     await this.git(['remote', 'add', 'origin', this.remotePath])
     await this.git(['fetch', 'origin'])
     await this.git(['branch', '--set-upstream-to=origin/main', 'main'])
