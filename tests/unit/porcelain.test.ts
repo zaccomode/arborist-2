@@ -20,7 +20,9 @@ describe('parseWorktreeList', () => {
       ''
     ]
 
-    expect(parseWorktreeList(output.join('\n'))).toEqual([
+    // Explicit platform, because the parser normalises separators to the one
+    // the host uses and these assertions are about POSIX paths.
+    expect(parseWorktreeList(output.join('\n'), 'darwin')).toEqual([
       {
         path: '/Users/iso/code/arborist',
         head: 'abc123',
@@ -47,7 +49,7 @@ describe('parseWorktreeList', () => {
       ''
     ].join('\n')
 
-    expect(parseWorktreeList(output).map((w) => [w.branch, w.isMain])).toEqual([
+    expect(parseWorktreeList(output, 'darwin').map((w) => [w.branch, w.isMain])).toEqual([
       ['main', true],
       ['feature/x', false]
     ])
@@ -56,7 +58,7 @@ describe('parseWorktreeList', () => {
   it('keeps spaces in worktree paths', () => {
     const output = 'worktree /Users/iso/My Code/arborist wt\nHEAD aaa\nbranch refs/heads/main\n'
 
-    expect(parseWorktreeList(output)[0].path).toBe('/Users/iso/My Code/arborist wt')
+    expect(parseWorktreeList(output, 'darwin')[0].path).toBe('/Users/iso/My Code/arborist wt')
   })
 
   it('reads a detached HEAD as a null branch', () => {
@@ -109,8 +111,8 @@ describe('parseWorktreeList', () => {
   it('handles CRLF output and a missing trailing blank line', () => {
     const output = 'worktree C:\\code\\arborist\r\nHEAD aaa\r\nbranch refs/heads/main'
 
-    expect(parseWorktreeList(output)).toHaveLength(1)
-    expect(parseWorktreeList(output)[0]).toMatchObject({
+    expect(parseWorktreeList(output, 'win32')).toHaveLength(1)
+    expect(parseWorktreeList(output, 'win32')[0]).toMatchObject({
       path: 'C:\\code\\arborist',
       branch: 'main'
     })
