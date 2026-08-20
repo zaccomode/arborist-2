@@ -4,6 +4,8 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerIpcHandlers } from './ipc/register'
 import { Store } from './services/persistence/store'
+import { GitLocator, systemDiscoveryDeps } from './services/git/git-discovery'
+import { GitRunner } from './services/git/git-runner'
 
 let store: Store | null = null
 
@@ -47,8 +49,6 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  registerIpcHandlers()
-
   const { store: loadedStore, warning } = await Store.load(
     join(app.getPath('userData'), 'arborist-data.json')
   )
@@ -57,6 +57,13 @@ app.whenReady().then(async () => {
     // M1 surfaces this as a renderer toast; until then it must not be silent.
     console.warn(warning)
   }
+
+  const gitPath = store.data.settings['gitPath']
+  const gitRunner = new GitRunner(
+    new GitLocator(systemDiscoveryDeps(), typeof gitPath === 'string' ? gitPath : null)
+  )
+
+  registerIpcHandlers({ gitRunner, store })
 
   createWindow()
 

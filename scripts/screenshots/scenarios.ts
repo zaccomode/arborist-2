@@ -27,6 +27,16 @@ export interface Scenario {
    */
   drive?: (window: Page, shot: Shot) => Promise<void>
   /**
+   * Prepares whatever the scenario needs before Electron launches: fixture
+   * repositories under `workDir`, a seeded `arborist-data.json` under
+   * `userDataDir`, or both. Returns environment variables to launch with.
+   * Both directories are temporary and removed after the capture.
+   */
+  setup?: (context: {
+    userDataDir: string
+    workDir: string
+  }) => Promise<Record<string, string> | void>
+  /**
    * Keep the pointer where `drive` left it. The runner otherwise parks it in
    * the corner, so a click doesn't leave its target stuck in `hover:` styling.
    * Set this only to capture a hover state, and hover as the last step.
@@ -52,6 +62,17 @@ export const scenarios: Scenario[] = [
       await window.getByRole('button', { name: 'Ping main process' }).click()
       await window.getByTestId('ping-result').waitFor({ state: 'visible' })
       await shot('after')
+    }
+  },
+  {
+    name: 'git-not-found',
+    description:
+      'The blocking screen shown when no git binary can be found, with the ' +
+      'manual path field. Every other screen assumes a working git, so this ' +
+      'is the one state that replaces the whole shell.',
+    setup: async () => ({ ARBORIST_FORCE_GIT_MISSING: '1' }),
+    drive: async (window) => {
+      await window.getByTestId('git-not-found').waitFor({ state: 'visible' })
     }
   }
 

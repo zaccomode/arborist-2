@@ -39,7 +39,10 @@ function parseArgs(argv: string[]): { outDir: string; names: string[] } {
   return { outDir: resolve(outDir), names }
 }
 
-async function launch(userDataDir: string): Promise<ElectronApplication> {
+async function launch(
+  userDataDir: string,
+  env: Record<string, string>
+): Promise<ElectronApplication> {
   const args = [
     '.',
     // Keep each scenario off the real app's stored data, so captures can't
@@ -50,7 +53,7 @@ async function launch(userDataDir: string): Promise<ElectronApplication> {
   // containers. Harmless elsewhere, since this only ever runs locally.
   if (process.getuid?.() === 0) args.push('--no-sandbox')
 
-  return electron.launch({ args })
+  return electron.launch({ args, env: { ...(process.env as Record<string, string>), ...env } })
 }
 
 /** Captures the window as it stands, once per theme, as `<stem>-<theme>.png`. */
@@ -89,7 +92,9 @@ async function captureThemes(
 
 async function capture(scenario: Scenario, outDir: string): Promise<void> {
   const userDataDir = await mkdtemp(join(tmpdir(), 'arborist-shot-'))
-  const app = await launch(userDataDir)
+  const workDir = await mkdtemp(join(tmpdir(), 'arborist-shot-work-'))
+  const env = (await scenario.setup?.({ userDataDir, workDir })) ?? {}
+  const app = await launch(userDataDir, env)
 
   try {
     const window = await app.firstWindow()
@@ -117,6 +122,7 @@ async function capture(scenario: Scenario, outDir: string): Promise<void> {
   } finally {
     await app.close()
     await rm(userDataDir, { recursive: true, force: true })
+    await rm(workDir, { recursive: true, force: true })
   }
 }
 

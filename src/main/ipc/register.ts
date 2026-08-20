@@ -2,6 +2,8 @@ import { ipcMain } from 'electron'
 import type { IpcArgs, IpcChannel, IpcReturn } from '../../shared/ipc-contract'
 import { serializeError } from '../../shared/errors'
 import { ok, err, type IpcResult } from '../../shared/result'
+import type { GitRunner } from '../services/git/git-runner'
+import type { Store } from '../services/persistence/store'
 
 type Handler<C extends IpcChannel> = (...args: IpcArgs<C>) => Promise<IpcReturn<C>> | IpcReturn<C>
 
@@ -19,6 +21,23 @@ export function handle<C extends IpcChannel>(channel: C, handler: Handler<C>): v
   })
 }
 
-export function registerIpcHandlers(): void {
+export interface IpcDeps {
+  gitRunner: GitRunner
+  store: Store
+}
+
+export function registerIpcHandlers({ gitRunner, store }: IpcDeps): void {
   handle('system:ping', () => 'pong')
+
+  handle('git:discover', () => gitRunner.locator.discover())
+
+  handle('git:setPath', async (path) => {
+    const trimmed = path?.trim() ? path.trim() : null
+    store.mutate((data) => {
+      data.settings['gitPath'] = trimmed
+    })
+    await store.flush()
+    gitRunner.locator.setOverride(trimmed)
+    return gitRunner.locator.discover()
+  })
 }
