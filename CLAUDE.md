@@ -2,6 +2,23 @@
 
 Cross-platform (macOS + Windows) git worktree manager. Electron + React + TypeScript + Tailwind v4 + shadcn/ui. See README.md for layout and commands.
 
+## UI components: always use the shadcn CLI
+
+Never hand-write components that shadcn provides. `src/renderer/src/components/ui/` is owned by the CLI:
+
+```bash
+npx shadcn@latest add <component> --overwrite --yes
+```
+
+Then run `npx prettier --write` on the generated files (the CLI emits its own style). ESLint rules the generated code doesn't satisfy are already relaxed for that directory in `eslint.config.mjs` — relax rules there rather than editing generated files, or `--overwrite` will reintroduce the problem.
+
+Plumbing that makes the CLI work here (don't break it):
+
+- `components.json` at the root is hand-authored because `shadcn init` can't detect electron-vite's split config.
+- The root `tsconfig.json` carries `baseUrl`/`paths` purely so the CLI can resolve the `@/` alias — it compiles nothing (`files: []`). Keep its paths in sync with `tsconfig.web.json`. **Symptom of breakage:** the CLI reports success but writes into a literal `./@/` directory at the repo root.
+
+If the CLI misbehaves, diagnose and fix the plumbing — don't fall back to hand-copying component source.
+
 ## Design reference
 
 `concept.png` at the repo root is the authoritative UI concept (dark theme, two-pane layout: project switcher above the sidebar panel, worktree detail pane at right). Read it whenever making layout or styling decisions — the v2 plan's "UI reference" section describes the same screenshot in prose.
