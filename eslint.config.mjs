@@ -29,10 +29,13 @@ export default defineConfig(
     }
   },
   {
-    // shadcn ui components export cva variants alongside the component.
+    // src/renderer/src/components/ui is owned by the shadcn CLI
+    // (`npx shadcn add <component> --overwrite`) — never hand-edit it.
+    // Relax rules its generated code doesn't satisfy.
     files: ['src/renderer/src/components/ui/**/*.tsx'],
     rules: {
-      'react-refresh/only-export-components': 'off'
+      'react-refresh/only-export-components': 'off',
+      '@typescript-eslint/explicit-function-return-type': 'off'
     }
   },
   // Import direction: renderer ↛ main/preload, main/preload ↛ renderer,
