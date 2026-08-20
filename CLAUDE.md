@@ -19,20 +19,107 @@ Plumbing that makes the CLI work here (don't break it):
 
 If the CLI misbehaves, diagnose and fix the plumbing — don't fall back to hand-copying component source.
 
+## Before opening a pull request
+
+Every PR that touches behaviour or UI needs all four of these. Do them in order, before opening the PR, not after review asks for them.
+
+**1. Cover the change with scenarios.** Add or update scenarios in `scripts/screenshots/scenarios.ts` for the UI this change _affects_, which is wider than the UI it edits: a change to a shared component affects every screen that renders one. Capture the states the change actually alters, including the ones that are easy to skip — empty, error, and loading states, and the state partway through a flow. If a change alters a before-and-after, capture both in a single scenario using `shot`.
+
+**2. Unit test the logic.** Run `npm test`, and extend it: a PR that changes behaviour without touching `tests/` is a PR whose behaviour nobody has pinned down. Logic that can live in `src/shared` as a pure function is far cheaper to test there than through the UI, so prefer moving it.
+
+**3. Check for visual regressions.** Regenerate every scenario and see what moved:
+
+```bash
+xvfb-run -a npm run screenshot
+git status --short docs/screenshots
+```
+
+Then **open each changed PNG and look at it**. Git reports a binary blob changed, not what changed, so an unreviewed diff here is worth nothing. Every changed image must be either an intended result of this PR or a bug you then fix. An image you can't explain is a regression until proven otherwise — the traps below all produce a plausible-looking wrong image rather than an error, and a `bg-primary` button once came out mid-grey in both themes and read as a real styling bug.
+
+Captures are deterministic within one environment: re-running a scenario unchanged reproduces byte-identical PNGs, which is what makes this check meaningful. **Across** environments they are not, because font rasterisation differs between macOS and Linux. The committed baselines are generated in the Linux cloud container, so regenerate them there too. Regenerating on macOS will diff every image at once, which is the signature of this problem rather than of a real regression.
+
+**4. Put the screenshots in the PR body.** Embed the captures the change affects, before and after where there's a meaningful pair, so the visual can be reviewed without launching the app. This repository is private, so the only URL form that renders is the committed blob:
+
+```markdown
+![Shell, dark](https://github.com/zaccomode/arborist-2/blob/<sha>/docs/screenshots/shell-dark.png?raw=true)
+```
+
+Pin `<sha>` to a commit rather than the branch, so the images survive the branch being deleted after merge. `raw.githubusercontent.com` URLs and relative paths both fail here: the former serves private content only against a token the browser doesn't send, and the latter has no directory to resolve against in a PR body.
+
 ## Design reference
 
 `concept.png` at the repo root is the authoritative UI concept (dark theme, two-pane layout: project switcher above the sidebar panel, worktree detail pane at right). Read it whenever making layout or styling decisions — the v2 plan's "UI reference" section describes the same screenshot in prose.
 
 ## Previewing UI changes visually
 
-You can't screenshot the Electron window, but `npm run dev` (electron-vite) also serves the renderer over plain HTTP at http://localhost:5173, which an in-app/headless browser can load.
+Screenshot the real Electron window. `npm run screenshot` builds, launches the app under Playwright's `_electron`, and writes a dark and a light PNG per scenario into `docs/screenshots/`. Compare the dark captures against `concept.png`.
 
-1. Start the dev server via the `dev` configuration in `.claude/launch.json` (e.g. Claude Code's `preview_start` with name `"dev"`). Don't run the server with raw shell commands if a preview tool is available.
-2. Open http://localhost:5173 in the browser pane and screenshot it.
-3. The reference design (`concept.png`) is dark — set the browser's color scheme to dark before screenshotting, since the app follows `prefers-color-scheme`. Compare your screenshot against `concept.png`.
+On Linux, including cloud containers, prefix it with a virtual display:
 
-Caveats:
+```bash
+xvfb-run -a npm run screenshot                  # every scenario
+xvfb-run -a npm run screenshot -- shell         # just the named ones
+xvfb-run -a npm run screenshot -- --out /tmp/x  # somewhere other than docs/
+```
 
-- In a browser there is no preload, so `window.arborist` is undefined — any IPC-backed interaction (e.g. the ping button) will error. That's expected; only visuals can be verified this way. Anything needing real IPC has to go through the Playwright e2e tests (`npm run test:e2e`), which drive the actual Electron app.
-- If port 5173 is busy, check for an orphaned `electron-vite dev` / Electron process from a previous run (`lsof -nP -iTCP:5173 -sTCP:LISTEN`) and kill it. Note that killing the electron-vite CLI does not always kill the Electron app it spawned — `pkill -f "arborist-2/node_modules/electron/dist"` cleans up the leftover app.
-- If you start `npm run dev` in the background yourself, kill both the CLI and the Electron app when done, or the port stays held.
+This is the full app with preload and IPC, so it's the accurate reference. Prefer it over loading the renderer in a browser.
+
+### Capturing a state other than the opening screen
+
+Add a scenario to `scripts/screenshots/scenarios.ts` rather than editing the runner. A scenario names the output and optionally supplies `drive`, which receives the Electron window as a Playwright page, so anything the e2e tests can do — click, type, hover, drag — is available:
+
+```ts
+{
+  name: 'project-switcher-open',
+  description: 'The project switcher menu, expanded.',
+  drive: async (window) => {
+    await window.getByRole('button', { name: 'No project' }).click()
+    await window.getByRole('menu').waitFor({ state: 'visible' })
+  }
+}
+```
+
+Wait on the end state, as above, rather than sleeping: a capture that races the UI it is showing fails intermittently and is easy to mistake for a styling bug. Each scenario gets its own Electron launch and a throwaway `--user-data-dir`, so captures can't leak state into each other or depend on whatever is already stored on the machine.
+
+### Capturing several points in one flow
+
+`drive` receives a second argument, `shot`, which captures the window as it currently stands. A before and an after belong in **one** scenario rather than two, since they share the setup that got the app there:
+
+```ts
+{
+  name: 'create-worktree',
+  description: 'The worktree list either side of creating one.',
+  drive: async (window, shot) => {
+    await shot('before')
+    await window.getByRole('button', { name: 'New worktree' }).click()
+    await window.getByLabel('Branch').fill('feature/thing')
+    await shot('dialog-filled')
+    await window.getByRole('button', { name: 'Create' }).click()
+    await window.getByRole('listitem').filter({ hasText: 'feature/thing' }).waitFor()
+    await shot('after')
+  }
+}
+```
+
+Each call writes `<scenario>-<step>-<theme>.png`, so the example produces six images. A scenario that never calls `shot` is captured once at the end, as `<scenario>-<theme>.png`. Reusing a step name within a scenario is an error rather than a silent overwrite.
+
+Four things the runner handles that are easy to get wrong in a hand-rolled capture. All four produce a plausible-looking wrong image rather than an error, which is the dangerous kind:
+
+- **Wait for the theme class, not just `emulateMedia`.** `main.tsx` mirrors `prefers-color-scheme` onto a `.dark` class from a change listener, so the class lands a tick after `emulateMedia` resolves.
+- **Screenshot with `animations: 'disabled'`.** Buttons carry `transition-all`, so a theme swap animates their colours. Capturing mid-transition renders a blend of both themes — a `bg-primary` button came out mid-grey in both schemes, which reads as a styling bug that isn't there.
+- **Park the pointer after clicking.** It otherwise rests on whatever was clicked and the capture picks up its `hover:` styling: the ping button measured RGB 209 hovered against 229 at rest. Set `keepPointer` on the scenario to capture a hover state deliberately.
+- **Wait for `#root > *`.** The window is created with `show: false` and revealed on `ready-to-show`, so capturing earlier catches a blank frame.
+
+### Running the app in a container
+
+`npm run dev` works, but needs both a virtual display and the sandbox disabled, because Electron refuses to run as root:
+
+```bash
+ELECTRON_DISABLE_SANDBOX=1 xvfb-run -a npm run dev
+```
+
+Without `ELECTRON_DISABLE_SANDBOX` Electron aborts with `Running as root without --no-sandbox is not supported`, and because electron-vite supervises the Electron process, that takes the renderer server down with it. Expect GPU and IPv6 socket errors in the log; they're noise from the headless environment, not failures. `npm run test:e2e` needs the same `xvfb-run` prefix, but not the env var, since Playwright passes `--no-sandbox` itself.
+
+Falling back to the renderer in a browser (electron-vite also serves it at http://localhost:5173) only verifies layout: there's no preload, so `window.arborist` is undefined and any IPC-backed interaction errors.
+
+If port 5173 is busy, check for an orphaned process from a previous run (`lsof -nP -iTCP:5173 -sTCP:LISTEN`). Killing the electron-vite CLI does not always kill the Electron app it spawned — `pkill -f "arborist-2/node_modules/electron/dist"` cleans up the leftover app.
