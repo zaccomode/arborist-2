@@ -38,11 +38,7 @@ describe('Store.load', () => {
       data.repositories.push({ id: 'r1', path: '/code/x', name: 'x', addedAt: '2026-01-01' })
       data.notes['r1'] = 'repository note'
       data.worktreeNotes['r1::/code/x-feature'] = 'worktree note'
-      data.automationScripts.push({
-        repositoryId: 'r1',
-        command: 'npm install',
-        runOnCreate: true
-      })
+      data.automationScripts.push({ repositoryId: 'r1', command: 'npm install' })
       data.presets.push({
         id: 'p1',
         name: 'VS Code',
@@ -60,7 +56,7 @@ describe('Store.load', () => {
     expect(reloaded.data.repositories[0].name).toBe('x')
     expect(reloaded.data.notes['r1']).toBe('repository note')
     expect(reloaded.data.worktreeNotes['r1::/code/x-feature']).toBe('worktree note')
-    expect(reloaded.data.automationScripts[0].runOnCreate).toBe(true)
+    expect(reloaded.data.automationScripts[0].command).toBe('npm install')
     expect(reloaded.data.presets[0].command).toEqual({
       type: 'app',
       app: '/Applications/Visual Studio Code.app'

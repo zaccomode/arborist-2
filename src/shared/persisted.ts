@@ -51,9 +51,8 @@ export const presetConfigSchema = z.object({
 
 export const automationScriptSchema = z.object({
   repositoryId: z.string(),
-  command: z.string(),
-  /** Run automatically once a new worktree has been created. */
-  runOnCreate: z.boolean().default(false)
+  /** The script itself. A project with one runs it on every worktree it creates. */
+  command: z.string()
 })
 
 export const settingsSchema = z.object({

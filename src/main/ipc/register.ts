@@ -120,7 +120,7 @@ export function registerIpcHandlers({
       } else if (existing) {
         existing.command = script
       } else {
-        data.automationScripts.push({ repositoryId, command: script, runOnCreate: true })
+        data.automationScripts.push({ repositoryId, command: script })
       }
     })
   })
