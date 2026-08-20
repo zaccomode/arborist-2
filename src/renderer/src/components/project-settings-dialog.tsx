@@ -14,6 +14,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { invoke } from '@/api/client'
+import { ProjectPresetOverrides } from '@/components/settings/project-preset-overrides'
 
 /** What the preview substitutes into, so tokens can be seen doing something. */
 function sampleValues(project: Repository): Parameters<typeof substitute>[1] {
@@ -63,12 +64,13 @@ export function ProjectSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-testid="project-settings-dialog" className="sm:max-w-2xl">
+      <DialogContent
+        data-testid="project-settings-dialog"
+        className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+      >
         <DialogHeader>
           <DialogTitle>{project.name} settings</DialogTitle>
-          <DialogDescription>
-            Commands to run in a new worktree once it has been created.
-          </DialogDescription>
+          <DialogDescription>Settings for this project alone.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-2">
@@ -118,6 +120,8 @@ export function ProjectSettingsDialog({
             </ol>
           </div>
         )}
+
+        <ProjectPresetOverrides projectId={project.id} />
 
         {error && <p className="text-sm text-destructive">{error}</p>}
 

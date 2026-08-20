@@ -29,6 +29,13 @@ export interface ResolvedPreset {
   projectId: string | null
 }
 
+/** What the settings UI needs to show and edit presets, in one round trip. */
+export interface PresetCatalogue {
+  builtIns: Array<BuiltInPreset & { id: string; available: boolean; enabled: boolean }>
+  presets: Preset[]
+  config: PresetConfig
+}
+
 export function builtInPresetId(builtinId: string): string {
   return `builtin:${builtinId}`
 }

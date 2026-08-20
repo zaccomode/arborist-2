@@ -5,8 +5,8 @@ import {
   type UseMutationResult
 } from '@tanstack/react-query'
 import type { Worktree } from '@shared/domain'
-import type { ResolvedPreset } from '@shared/presets'
-import type { Repository } from '@shared/persisted'
+import type { PresetCatalogue, ResolvedPreset } from '@shared/presets'
+import type { Repository, Settings } from '@shared/persisted'
 import { invoke } from '@/api/client'
 
 export const queryKeys = {
@@ -15,7 +15,9 @@ export const queryKeys = {
   note: (repositoryId: string, worktreePath: string | null) =>
     ['note', repositoryId, worktreePath] as const,
   presets: (repoPath: string | null, projectId: string | null) =>
-    ['presets', repoPath, projectId] as const
+    ['presets', repoPath, projectId] as const,
+  presetCatalogue: ['preset-catalogue'] as const,
+  settings: ['settings'] as const
 }
 
 export function useProjects(): ReturnType<typeof useQuery<Repository[]>> {
@@ -67,4 +69,15 @@ export function usePresets(
     queryKey: queryKeys.presets(repoPath, projectId),
     queryFn: () => invoke('presets:list', repoPath, projectId)
   })
+}
+
+export function usePresetCatalogue(): ReturnType<typeof useQuery<PresetCatalogue>> {
+  return useQuery({
+    queryKey: queryKeys.presetCatalogue,
+    queryFn: () => invoke('presets:catalogue')
+  })
+}
+
+export function useSettings(): ReturnType<typeof useQuery<Settings>> {
+  return useQuery({ queryKey: queryKeys.settings, queryFn: () => invoke('settings:get') })
 }

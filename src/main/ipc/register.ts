@@ -1,8 +1,9 @@
-import { BrowserWindow, clipboard, dialog, ipcMain } from 'electron'
+import { BrowserWindow, clipboard, dialog, ipcMain, nativeTheme } from 'electron'
 import type { IpcArgs, IpcChannel, IpcReturn } from '../../shared/ipc-contract'
 import { serializeError } from '../../shared/errors'
 import { ok, err, type IpcResult } from '../../shared/result'
 import type { GitRunner } from '../services/git/git-runner'
+import { setGitDebug } from '../services/git/git-executor'
 import type { Store } from '../services/persistence/store'
 import type { ProjectService } from '../services/projects'
 import type { GitService } from '../services/git/git-service'
@@ -139,6 +140,14 @@ export function registerIpcHandlers({
   handle('automation:cancel', (runId) => automation.cancel(runId))
 
   handle('presets:list', (repoPath, projectId) => presets.list(repoPath, projectId))
+  handle('presets:catalogue', () => presets.catalogue())
+  handle('presets:setEnabled', (presetId, enabled) => presets.setEnabled(presetId, enabled))
+  handle('presets:setOverride', (projectId, presetId, override) =>
+    presets.setOverride(projectId, presetId, override)
+  )
+  handle('presets:save', (preset) => presets.save(preset))
+  handle('presets:delete', (presetId) => presets.remove(presetId))
+  handle('presets:reorder', (orderedIds) => presets.reorder(orderedIds))
   handle('presets:run', (presetId, context) => presets.run(presetId, context))
 
   handle('git:discover', () => gitRunner.locator.discover())
@@ -150,6 +159,21 @@ export function registerIpcHandlers({
     })
     gitRunner.locator.setOverride(trimmed)
     return gitRunner.locator.discover()
+  })
+
+  handle('settings:get', () => store.data.settings)
+
+  handle('settings:update', async (changes) => {
+    await store.update((data) => {
+      data.settings = { ...data.settings, ...changes }
+    })
+    const settings = store.data.settings
+    setGitDebug(settings.debugGit)
+    // The native theme drives the window chrome, which the renderer's class
+    // cannot reach.
+    nativeTheme.themeSource = settings.theme
+    if (changes.gitPath !== undefined) gitRunner.locator.setOverride(settings.gitPath)
+    return settings
   })
 
   handle('store:status', () => ({

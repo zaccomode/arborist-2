@@ -11,6 +11,7 @@ import { CreateWorktreeDialog } from '@/components/create-worktree-dialog'
 import { DeleteWorktreeDialogs } from '@/components/delete-worktree'
 import { ProjectSettingsDialog } from '@/components/project-settings-dialog'
 import { AutomationConsole, type AutomationTarget } from '@/components/automation-console'
+import { SettingsDialog } from '@/components/settings/settings-dialog'
 import { useAddProject, useProjects, useRemoveProject, useWorktrees } from '@/api/queries'
 import { invoke } from '@/api/client'
 import { useSelection, useSelectedWorktree } from '@/state/selection'
@@ -39,6 +40,7 @@ function App(): React.JSX.Element {
   const [deletingWorktree, setDeletingWorktree] = useState(false)
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false)
   const [automation, setAutomation] = useState<AutomationTarget | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const { projectId, selectProject, selectWorktree } = useSelection()
   const selectedWorktree = useSelectedWorktree()
@@ -55,16 +57,14 @@ function App(): React.JSX.Element {
   }, [list, selected, projectId, selectProject])
 
   useEffect(() => {
-    // Cmd/Ctrl-R refreshes, the way it does everywhere else. #18 moves this
-    // to the application menu alongside the rest of the shortcuts.
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'r') {
-        event.preventDefault()
-        void queryClient.invalidateQueries()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    // The accelerators live in the application menu, which is the only way to
+    // get platform-correct modifiers and, on macOS, working copy and paste.
+    const unsubscribers = [
+      window.arborist.subscribe('app:refresh', () => void queryClient.invalidateQueries()),
+      window.arborist.subscribe('app:newWorktree', () => setCreatingWorktree(true)),
+      window.arborist.subscribe('app:openSettings', () => setSettingsOpen(true))
+    ]
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [queryClient])
 
   const handleAddProject = async (): Promise<void> => {
@@ -90,6 +90,7 @@ function App(): React.JSX.Element {
             onSelect={selectProject}
             onAddProject={() => void handleAddProject()}
             onNewWorktree={() => setCreatingWorktree(true)}
+            onOpenSettings={() => setSettingsOpen(true)}
             addError={addError}
           >
             {selected && (
@@ -153,6 +154,8 @@ function App(): React.JSX.Element {
       )}
 
       <AutomationConsole target={automation} onClose={() => setAutomation(null)} />
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
       {selected && (
         <CreateWorktreeDialog

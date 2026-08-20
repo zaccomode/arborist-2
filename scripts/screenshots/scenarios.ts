@@ -222,6 +222,51 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'settings',
+    description:
+      'Settings: the General tab with the detected git binary and the theme, ' +
+      'and the Presets tab with the built-in switches.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('project-detail').waitFor({ state: 'visible' })
+
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Settings…' }).click()
+      await window.getByTestId('settings-dialog').waitFor({ state: 'visible' })
+      await window.getByTestId('git-discovery').waitFor({ state: 'visible' })
+      await shot('general')
+
+      await window.getByRole('tab', { name: 'Presets' }).click()
+      await window.getByTestId('preset-settings').waitFor({ state: 'visible' })
+      await shot('presets')
+    }
+  },
+  {
+    name: 'project-settings',
+    description:
+      'Project settings: the automation script with its parsed preview, and ' +
+      'the per-project preset overrides underneath.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('button', { name: 'Project actions' }).click()
+      await window.getByRole('menuitem', { name: 'Project settings…' }).click()
+      await window.getByTestId('automation-script').fill('npm install\nnpm run build')
+      await window.getByTestId('project-preset-overrides').waitFor({ state: 'visible' })
+    }
+  },
+  {
     name: 'git-not-found',
     description:
       'The blocking screen shown when no git binary can be found, with the ' +

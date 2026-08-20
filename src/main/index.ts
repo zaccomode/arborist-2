@@ -1,8 +1,9 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, nativeTheme } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerIpcHandlers } from './ipc/register'
+import { buildAppMenu } from './menu'
 import { Store } from './services/persistence/store'
 import {
   loadWindowState,
@@ -71,6 +72,8 @@ app.whenReady().then(async () => {
   store = loadedStore
 
   setGitDebug(store.data.settings.debugGit)
+  nativeTheme.themeSource = store.data.settings.theme
+  buildAppMenu()
   const gitRunner = new GitRunner(
     new GitLocator(systemDiscoveryDeps(), store.data.settings.gitPath)
   )

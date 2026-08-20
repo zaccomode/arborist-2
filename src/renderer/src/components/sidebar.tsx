@@ -9,6 +9,7 @@ export function Sidebar({
   onSelect,
   onAddProject,
   onNewWorktree,
+  onOpenSettings,
   addError,
   children
 }: {
@@ -17,6 +18,7 @@ export function Sidebar({
   onSelect: (id: string) => void
   onAddProject: () => void
   onNewWorktree: () => void
+  onOpenSettings: () => void
   /** Why the last add failed, shown where the user asked for it. */
   addError: string | null
   children?: React.ReactNode
@@ -28,6 +30,7 @@ export function Sidebar({
         selectedId={selectedId}
         onSelect={onSelect}
         onAddProject={onAddProject}
+        onOpenSettings={onOpenSettings}
       />
 
       {addError && (

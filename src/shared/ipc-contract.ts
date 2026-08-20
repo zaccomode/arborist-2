@@ -8,9 +8,9 @@
  */
 
 import type { GitDiscoveryResult, StoreStatus, Worktree } from './domain'
-import type { Repository } from './persisted'
+import type { Preset, Repository, Settings } from './persisted'
 import type { AutomationEvent } from './automation'
-import type { ResolvedPreset } from './presets'
+import type { PresetCatalogue, ResolvedPreset } from './presets'
 import type { SubstitutionValues } from './substitution'
 
 export interface IpcInvokeContract {
@@ -61,6 +61,16 @@ export interface IpcInvokeContract {
     result: string
   }
   'automation:cancel': { args: [runId: string]; result: void }
+  /** Everything the settings UI needs to show and edit presets. */
+  'presets:catalogue': { args: []; result: PresetCatalogue }
+  'presets:setEnabled': { args: [presetId: string, enabled: boolean]; result: void }
+  'presets:setOverride': {
+    args: [projectId: string, presetId: string, override: 'on' | 'off' | null]
+    result: void
+  }
+  'presets:save': { args: [preset: Preset]; result: void }
+  'presets:delete': { args: [presetId: string]; result: void }
+  'presets:reorder': { args: [orderedIds: string[]]; result: void }
   'presets:run': {
     args: [presetId: string, context: SubstitutionValues & { projectId: string | null }]
     result: void
@@ -69,6 +79,8 @@ export interface IpcInvokeContract {
   /** Sets (or clears, with null) the manual git path and re-runs discovery. */
   'git:setPath': { args: [path: string | null]; result: GitDiscoveryResult }
   'store:status': { args: []; result: StoreStatus }
+  'settings:get': { args: []; result: Settings }
+  'settings:update': { args: [changes: Partial<Settings>]; result: Settings }
 }
 
 export type IpcChannel = keyof IpcInvokeContract
@@ -92,6 +104,12 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'notes:set',
   'system:copyText',
   'presets:list',
+  'presets:catalogue',
+  'presets:setEnabled',
+  'presets:setOverride',
+  'presets:save',
+  'presets:delete',
+  'presets:reorder',
   'presets:run',
   'automation:script',
   'automation:setScript',
@@ -99,7 +117,9 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'automation:cancel',
   'git:discover',
   'git:setPath',
-  'store:status'
+  'store:status',
+  'settings:get',
+  'settings:update'
 ]
 
 /**
@@ -108,8 +128,17 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
  */
 export interface IpcEventContract {
   'automation:event': AutomationEvent
+  /** Menu accelerators, which the renderer turns into the matching action. */
+  'app:refresh': void
+  'app:newWorktree': void
+  'app:openSettings': void
 }
 
 export type IpcEventChannel = keyof IpcEventContract
 
-export const IPC_EVENT_CHANNELS: readonly IpcEventChannel[] = ['automation:event']
+export const IPC_EVENT_CHANNELS: readonly IpcEventChannel[] = [
+  'automation:event',
+  'app:refresh',
+  'app:newWorktree',
+  'app:openSettings'
+]

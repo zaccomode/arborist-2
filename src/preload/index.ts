@@ -14,6 +14,8 @@ const allowedChannels = new Set<string>(IPC_CHANNELS)
 const allowedEventChannels = new Set<string>(IPC_EVENT_CHANNELS)
 
 export interface ArboristApi {
+  /** The renderer has no process object; a few screens are platform-specific. */
+  platform: NodeJS.Platform
   invoke<C extends IpcChannel>(channel: C, ...args: IpcArgs<C>): Promise<IpcResult<IpcReturn<C>>>
   /** Subscribes to a main-process push. Returns the unsubscribe function. */
   subscribe<C extends IpcEventChannel>(
@@ -23,6 +25,7 @@ export interface ArboristApi {
 }
 
 const api: ArboristApi = {
+  platform: process.platform,
   invoke: (channel, ...args) => {
     if (!allowedChannels.has(channel)) {
       throw new Error(`IPC channel not in contract: ${channel}`)

@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import { GitGate } from './components/git-gate'
 import { StoreStatusToasts } from './components/store-status'
+import { ThemeSync } from './components/theme-sync'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
@@ -30,6 +31,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <StoreStatusToasts />
+          <ThemeSync />
           <GitGate>
             <App />
           </GitGate>

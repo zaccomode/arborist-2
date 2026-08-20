@@ -1,4 +1,4 @@
-import { ChevronDown, FolderGit2, FolderPlus } from 'lucide-react'
+import { ChevronDown, FolderGit2, FolderPlus, Settings } from 'lucide-react'
 import type { Repository } from '@shared/persisted'
 import {
   DropdownMenu,
@@ -19,12 +19,14 @@ export function ProjectSwitcher({
   projects,
   selectedId,
   onSelect,
-  onAddProject
+  onAddProject,
+  onOpenSettings
 }: {
   projects: Repository[]
   selectedId: string | null
   onSelect: (id: string) => void
   onAddProject: () => void
+  onOpenSettings: () => void
 }): React.JSX.Element {
   const selected = projects.find((project) => project.id === selectedId)
 
@@ -55,6 +57,10 @@ export function ProjectSwitcher({
         <DropdownMenuItem onSelect={onAddProject}>
           <FolderPlus />
           Add project…
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onOpenSettings}>
+          <Settings />
+          Settings…
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

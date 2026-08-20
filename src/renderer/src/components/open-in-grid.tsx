@@ -1,7 +1,7 @@
 import { toast } from 'sonner'
 import type { Worktree } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
-import { presetIcon } from '@/lib/preset-icons'
+import { PresetIcon } from '@/components/preset-icon'
 import { usePresets } from '@/api/queries'
 import { invoke } from '@/api/client'
 
@@ -42,7 +42,6 @@ export function OpenInGrid({
       <p className="text-xs font-medium text-muted-foreground">Open In</p>
       <div className="mt-2 flex flex-wrap gap-2">
         {list.map((preset) => {
-          const Icon = presetIcon(preset.icon)
           return (
             <button
               key={preset.id}
@@ -53,7 +52,7 @@ export function OpenInGrid({
               onClick={() => void run(preset.id)}
               className="flex h-[76px] max-w-[220px] min-w-[120px] flex-1 flex-col items-center justify-center gap-2 rounded-lg border bg-sidebar text-sm outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
             >
-              <Icon className="size-5 text-muted-foreground" />
+              <PresetIcon name={preset.icon} className="size-5 text-muted-foreground" />
               {preset.name}
             </button>
           )

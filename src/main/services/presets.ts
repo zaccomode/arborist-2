@@ -8,6 +8,7 @@ import {
   githubUrlFromRemote,
   resolvePresets,
   type BuiltInPreset,
+  type PresetCatalogue,
   type ResolvedPreset
 } from '../../shared/presets'
 import { substitute, type SubstitutionValues } from '../../shared/substitution'
@@ -128,6 +129,74 @@ export class PresetService {
       config: this.#store.data.presetConfig,
       projectId,
       platform: process.platform
+    })
+  }
+
+  /** Every preset the settings UI can show, with what this machine supports. */
+  async catalogue(): Promise<PresetCatalogue> {
+    const available = await this.availableBuiltInIds(null)
+    const { presets, presetConfig } = this.#store.data
+
+    return {
+      builtIns: BUILT_IN_PRESETS.filter(
+        (preset) => preset.platforms.length === 0 || preset.platforms.includes(process.platform)
+      ).map((preset) => ({
+        ...preset,
+        id: builtInPresetId(preset.builtinId),
+        // GitHub depends on the project's remote rather than on this
+        // machine, so it can't be judged from here; per-project resolution
+        // hides it where there is no GitHub remote.
+        available: available.includes(preset.builtinId) || preset.builtinId === 'github',
+        enabled: presetConfig.disabledIds.includes(builtInPresetId(preset.builtinId))
+          ? false
+          : preset.enabledByDefault
+      })),
+      presets: [...presets],
+      config: presetConfig
+    }
+  }
+
+  async setEnabled(presetId: string, enabled: boolean): Promise<void> {
+    await this.#store.update((data) => {
+      const disabled = new Set(data.presetConfig.disabledIds)
+      if (enabled) disabled.delete(presetId)
+      else disabled.add(presetId)
+      data.presetConfig.disabledIds = [...disabled]
+    })
+  }
+
+  /** Null clears the override, putting the preset back on inherit. */
+  async setOverride(
+    projectId: string,
+    presetId: string,
+    override: 'on' | 'off' | null
+  ): Promise<void> {
+    await this.#store.update((data) => {
+      const overrides = { ...(data.presetConfig.overrides[projectId] ?? {}) }
+      if (override) overrides[presetId] = override
+      else delete overrides[presetId]
+      data.presetConfig.overrides[projectId] = overrides
+    })
+  }
+
+  async save(preset: Preset): Promise<void> {
+    await this.#store.update((data) => {
+      const index = data.presets.findIndex((entry) => entry.id === preset.id)
+      if (index === -1) data.presets.push(preset)
+      else data.presets[index] = preset
+    })
+  }
+
+  async remove(presetId: string): Promise<void> {
+    await this.#store.update((data) => {
+      data.presets = data.presets.filter((preset) => preset.id !== presetId)
+      data.presetConfig.order = data.presetConfig.order.filter((id) => id !== presetId)
+    })
+  }
+
+  async reorder(orderedIds: string[]): Promise<void> {
+    await this.#store.update((data) => {
+      data.presetConfig.order = orderedIds
     })
   }
 
