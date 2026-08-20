@@ -54,6 +54,9 @@ export function DeleteWorktreeDialogs({
     // nothing to lose and nothing to ask about.
     const dirty = worktree.prunable ? false : await invoke('worktrees:isDirty', worktree.path)
     if (dirty) {
+      // The second question replaces the first rather than stacking on it:
+      // two modals at once trap focus in the wrong one.
+      onOpenChange(false)
       setConfirmingForce(true)
       return
     }

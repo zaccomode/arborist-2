@@ -19,6 +19,20 @@ function splitLines(output: string): string[] {
   return output.split(/\r?\n/)
 }
 
+/**
+ * Git reports worktree paths with forward slashes, even on Windows, while
+ * every path the app builds itself uses backslashes. Normalising here, once,
+ * is what lets a path from git and a path from `join()` compare equal — and
+ * they are compared constantly: selecting a worktree, keying its note,
+ * deleting it.
+ */
+export function normaliseWorktreePath(
+  path: string,
+  platform: NodeJS.Platform = process.platform
+): string {
+  return platform === 'win32' ? path.replace(/\//g, '\\') : path
+}
+
 /** Splits `key value` where the value may itself contain spaces, or is absent. */
 function splitRecord(line: string): [key: string, value: string | null] {
   const index = line.indexOf(' ')
@@ -34,7 +48,10 @@ function splitRecord(line: string): [key: string, value: string | null] {
  * identified it by the `bare` marker, which is absent in a normal repository,
  * so no worktree was ever protected from deletion.
  */
-export function parseWorktreeList(output: string): WorktreeEntry[] {
+export function parseWorktreeList(
+  output: string,
+  platform: NodeJS.Platform = process.platform
+): WorktreeEntry[] {
   const entries: WorktreeEntry[] = []
   let current: WorktreeEntry | null = null
 
@@ -54,7 +71,7 @@ export function parseWorktreeList(output: string): WorktreeEntry[] {
     if (key === 'worktree') {
       finish()
       current = {
-        path: value ?? '',
+        path: normaliseWorktreePath(value ?? '', platform),
         head: null,
         branch: null,
         isMain: entries.length === 0,

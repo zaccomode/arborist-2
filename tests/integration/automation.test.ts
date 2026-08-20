@@ -33,7 +33,10 @@ function finished(): Promise<AutomationEvent & { type: 'finished' }> {
 }
 
 beforeEach(async () => {
-  cwd = await fs.mkdtemp(join(tmpdir(), 'arborist-automation-'))
+  // realpath because the temp directory a shell reports back is the resolved
+  // one: /private/var rather than /var on macOS, and the long form rather
+  // than the 8.3 short form on Windows.
+  cwd = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'arborist-automation-')))
   events = []
   runner = new AutomationRunner(
     (event) => events.push(event),

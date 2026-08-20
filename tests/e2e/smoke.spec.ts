@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, realpath, stat, writeFile } from 'fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, rm, realpath, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test'
@@ -109,8 +109,21 @@ test('walks both confirmations to delete a dirty worktree', async () => {
   await expect(window.getByTestId('force-delete-worktree-dialog')).toBeVisible()
   await window.getByRole('button', { name: 'Force delete' }).click()
 
+  // Both dialogs closing is what says the removal succeeded — a failure keeps
+  // them open with the reason. Asserting on the sidebar first would not: a
+  // modal marks the rest of the app aria-hidden, so the row "disappears" from
+  // the accessibility tree either way.
+  await expect(window.getByTestId('force-delete-worktree-dialog')).toBeHidden()
+  await expect(window.getByTestId('delete-worktree-dialog')).toBeHidden()
   await expect(window.getByRole('button', { name: /feature\/dirty/ })).toHaveCount(0)
-  await expect(stat(dirty)).rejects.toThrow()
+  await expect
+    .poll(async () =>
+      readdir(dirty).then(
+        (entries) => entries.join(', '),
+        () => 'gone'
+      )
+    )
+    .toBe('gone')
 
   await app.close()
   await rm(root, { recursive: true, force: true })
