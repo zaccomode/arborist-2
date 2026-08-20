@@ -115,6 +115,32 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'worktree-detail',
+    description:
+      'The detail pane for a worktree that is ahead and behind, and for one ' +
+      'whose folder has gone missing — the two ends of what the chips and ' +
+      'the banner have to say.',
+    setup: async ({ workDir }) => {
+      const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+
+      await window.getByRole('button', { name: /feature\/ahead-behind/ }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await shot('tracking')
+
+      await window.getByTestId('notes-editor').fill('Waiting on review before merging.')
+      await shot('notes')
+
+      await window.getByRole('button', { name: /feature\/prunable/ }).click()
+      await window.getByTestId('prunable-banner').waitFor({ state: 'visible' })
+      await shot('prunable')
+    }
+  },
+  {
     name: 'git-not-found',
     description:
       'The blocking screen shown when no git binary can be found, with the ' +

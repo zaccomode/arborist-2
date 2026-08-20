@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatRelativeDate, worktreeTitle } from '@shared/format'
+import { formatRelativeDate, syncSummary, worktreeTitle } from '@shared/format'
 import type { Worktree } from '@shared/domain'
 
 const now = new Date('2026-08-20T14:00:00Z')
@@ -60,5 +60,53 @@ describe('worktreeTitle', () => {
 
   it('falls back to the path when there is nothing else', () => {
     expect(worktreeTitle({ ...worktree, branch: null, head: null })).toBe('/code/feature-x')
+  })
+})
+
+describe('syncSummary', () => {
+  const status = {
+    dirty: false,
+    staged: 0,
+    unstaged: 0,
+    untracked: 0,
+    upstream: 'origin/feature/x',
+    ahead: 0,
+    behind: 0,
+    gone: false,
+    lastCommit: null
+  }
+
+  it('reads an up-to-date branch', () => {
+    expect(syncSummary({ ...worktree, status })).toBe('Up-to-date with origin/feature/x')
+  })
+
+  it('reads divergence in both directions', () => {
+    expect(syncSummary({ ...worktree, status: { ...status, ahead: 2, behind: 1 } })).toBe(
+      '↑2 ↓1 from origin/feature/x'
+    )
+    expect(syncSummary({ ...worktree, status: { ...status, ahead: 2 } })).toBe(
+      '↑2 ahead of origin/feature/x'
+    )
+    expect(syncSummary({ ...worktree, status: { ...status, behind: 3 } })).toBe(
+      '↓3 behind origin/feature/x'
+    )
+  })
+
+  it('separates a branch with no upstream from one whose upstream was deleted', () => {
+    expect(syncSummary({ ...worktree, status: { ...status, upstream: null } })).toBe(
+      'No upstream branch'
+    )
+    expect(syncSummary({ ...worktree, status: { ...status, gone: true } })).toBe(
+      'origin/feature/x was deleted'
+    )
+  })
+
+  it('says the folder is missing before anything about upstreams', () => {
+    expect(syncSummary({ ...worktree, prunable: true, status })).toBe('Folder missing')
+  })
+
+  it('separates status still loading from status that failed', () => {
+    expect(syncSummary(worktree)).toBe('Checking…')
+    expect(syncSummary({ ...worktree, statusError: 'no such file' })).toBe('Status unavailable')
   })
 })

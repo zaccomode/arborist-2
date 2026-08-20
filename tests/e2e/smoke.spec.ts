@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, realpath } from 'fs/promises'
+import { mkdtemp, mkdir, readFile, rm, realpath } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test'
@@ -56,5 +56,34 @@ test('refuses a folder that is not a git repository', async () => {
   await expect(window.getByTestId('no-projects')).toBeVisible()
 
   await app.close()
+  await rm(root, { recursive: true, force: true })
+})
+
+test('keeps a worktree note across a relaunch', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+  await fixture.addWorktree('feature-x', { branch: 'feature/x' })
+
+  const first = await launch(root, fixture.repoPath)
+  const window = await first.firstWindow()
+  await addProject(first)
+  await window.getByRole('button', { name: /feature\/x/ }).click()
+  await window.getByTestId('notes-editor').fill('Rebase before review.')
+  // The editor debounces and the store debounces again, so wait for the note
+  // to actually reach disk rather than for the keystroke to land.
+  await expect
+    .poll(async () =>
+      readFile(join(root, 'user-data', 'arborist-data.json'), 'utf8').catch(() => '')
+    )
+    .toContain('Rebase before review.')
+  await first.close()
+
+  const second = await launch(root, fixture.repoPath)
+  const reopened = await second.firstWindow()
+  await reopened.getByRole('button', { name: /feature\/x/ }).click()
+  await expect(reopened.getByTestId('notes-editor')).toHaveValue('Rebase before review.')
+
+  await second.close()
   await rm(root, { recursive: true, force: true })
 })

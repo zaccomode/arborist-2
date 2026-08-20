@@ -18,6 +18,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { NotesEditor } from '@/components/notes-editor'
+import { invoke } from '@/api/client'
 
 export function NoProjects({ onAddProject }: { onAddProject: () => void }): React.JSX.Element {
   return (
@@ -54,7 +56,14 @@ export function ProjectDetail({
         <FolderGit2 className="mt-1.5 size-6 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-2xl font-semibold">{project.name}</h1>
-          <p className="truncate font-mono text-sm text-muted-foreground">{project.path}</p>
+          <button
+            type="button"
+            title="Copy path"
+            onClick={() => void invoke('system:copyText', project.path)}
+            className="block max-w-full truncate font-mono text-sm text-muted-foreground hover:text-foreground"
+          >
+            {project.path}
+          </button>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -69,6 +78,8 @@ export function ProjectDetail({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <NotesEditor key={project.id} repositoryId={project.id} worktreePath={null} />
 
       <AlertDialog open={confirmingRemove} onOpenChange={setConfirmingRemove}>
         <AlertDialogContent>

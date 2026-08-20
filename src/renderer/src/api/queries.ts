@@ -10,7 +10,9 @@ import { invoke } from '@/api/client'
 
 export const queryKeys = {
   projects: ['projects'] as const,
-  worktrees: (repoPath: string) => ['worktrees', repoPath] as const
+  worktrees: (repoPath: string) => ['worktrees', repoPath] as const,
+  note: (repositoryId: string, worktreePath: string | null) =>
+    ['note', repositoryId, worktreePath] as const
 }
 
 export function useProjects(): ReturnType<typeof useQuery<Repository[]>> {
@@ -38,5 +40,18 @@ export function useWorktrees(repoPath: string | null): ReturnType<typeof useQuer
     queryKey: queryKeys.worktrees(repoPath ?? ''),
     queryFn: () => invoke('worktrees:list', repoPath!),
     enabled: repoPath !== null
+  })
+}
+
+export function useNote(
+  repositoryId: string,
+  worktreePath: string | null
+): ReturnType<typeof useQuery<string>> {
+  return useQuery({
+    queryKey: queryKeys.note(repositoryId, worktreePath),
+    queryFn: () => invoke('notes:get', repositoryId, worktreePath),
+    // Notes only change here, so refetching them on focus would fight
+    // whatever the user is typing.
+    refetchOnWindowFocus: false
   })
 }

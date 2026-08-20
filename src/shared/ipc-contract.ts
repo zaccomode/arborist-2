@@ -18,6 +18,13 @@ export interface IpcInvokeContract {
   'projects:remove': { args: [id: string]; result: void }
   /** Lists a repository's worktrees, each enriched with its current status. */
   'worktrees:list': { args: [repoPath: string]; result: Worktree[] }
+  /** A worktree's note, or the project's own when `worktreePath` is null. */
+  'notes:get': { args: [repositoryId: string, worktreePath: string | null]; result: string }
+  'notes:set': {
+    args: [repositoryId: string, worktreePath: string | null, text: string]
+    result: void
+  }
+  'system:copyText': { args: [text: string]; result: void }
   'git:discover': { args: []; result: GitDiscoveryResult }
   /** Sets (or clears, with null) the manual git path and re-runs discovery. */
   'git:setPath': { args: [path: string | null]; result: GitDiscoveryResult }
@@ -35,6 +42,9 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'projects:add',
   'projects:remove',
   'worktrees:list',
+  'notes:get',
+  'notes:set',
+  'system:copyText',
   'git:discover',
   'git:setPath',
   'store:status'

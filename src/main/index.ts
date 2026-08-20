@@ -89,8 +89,18 @@ app.whenReady().then(async () => {
   })
 })
 
-app.on('before-quit', () => {
-  void store?.flush()
+let flushing = false
+
+app.on('before-quit', (event) => {
+  // Quitting is otherwise faster than the store's write debounce, so a note
+  // typed a moment ago would never reach disk. Hold the quit until it has.
+  if (flushing || !store) return
+  event.preventDefault()
+  flushing = true
+  store
+    .flush()
+    .catch((error: unknown) => console.error('Failed to save on quit:', error))
+    .finally(() => app.quit())
 })
 
 app.on('window-all-closed', () => {

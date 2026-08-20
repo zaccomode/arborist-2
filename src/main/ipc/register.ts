@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { BrowserWindow, clipboard, dialog, ipcMain } from 'electron'
 import type { IpcArgs, IpcChannel, IpcReturn } from '../../shared/ipc-contract'
 import { serializeError } from '../../shared/errors'
 import { ok, err, type IpcResult } from '../../shared/result'
@@ -6,6 +6,7 @@ import type { GitRunner } from '../services/git/git-runner'
 import type { Store } from '../services/persistence/store'
 import type { ProjectService } from '../services/projects'
 import type { GitService } from '../services/git/git-service'
+import { worktreeNoteKey } from '../../shared/persisted'
 
 type Handler<C extends IpcChannel> = (...args: IpcArgs<C>) => Promise<IpcReturn<C>> | IpcReturn<C>
 
@@ -54,6 +55,29 @@ export function registerIpcHandlers({ gitRunner, store, projects, gitService }: 
   handle('worktrees:list', (repoPath) =>
     gitService.listWorktrees(repoPath, store.data.settings.refreshConcurrency)
   )
+
+  handle('notes:get', (repositoryId, worktreePath) => {
+    const { notes, worktreeNotes } = store.data
+    return worktreePath
+      ? (worktreeNotes[worktreeNoteKey(repositoryId, worktreePath)] ?? '')
+      : (notes[repositoryId] ?? '')
+  })
+
+  handle('notes:set', async (repositoryId, worktreePath, text) => {
+    const trimmed = text.trim()
+    await store.update((data) => {
+      const collection = worktreePath ? data.worktreeNotes : data.notes
+      const key = worktreePath ? worktreeNoteKey(repositoryId, worktreePath) : repositoryId
+      // An emptied note is a deleted note: storing a blank string would leave
+      // a record behind for every worktree anyone ever clicked into.
+      if (trimmed) collection[key] = trimmed
+      else delete collection[key]
+    })
+  })
+
+  handle('system:copyText', (text) => {
+    clipboard.writeText(text)
+  })
 
   handle('git:discover', () => gitRunner.locator.discover())
 

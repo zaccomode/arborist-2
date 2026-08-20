@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Sidebar } from '@/components/sidebar'
 import { NoProjects, ProjectDetail } from '@/components/detail-pane'
+import { WorktreeDetail } from '@/components/worktree-detail'
 import { WorktreeList } from '@/components/worktree-list'
 import { useAddProject, useProjects, useRemoveProject, useWorktrees } from '@/api/queries'
 import { invoke } from '@/api/client'
@@ -20,6 +21,7 @@ function App(): React.JSX.Element {
   const list = useMemo(() => projects.data ?? [], [projects.data])
   const selected = list.find((project) => project.id === projectId) ?? null
   const worktrees = useWorktrees(selected?.path ?? null)
+  const worktree = worktrees.data?.find((entry) => entry.path === selectedWorktree) ?? null
 
   useEffect(() => {
     // Land on something as soon as there is something to land on, including
@@ -78,13 +80,20 @@ function App(): React.JSX.Element {
         <ResizableHandle className="mx-1 bg-transparent" />
         <ResizablePanel>
           <main className="h-full rounded-lg border bg-card">
-            {selected ? (
+            {!selected && <NoProjects onAddProject={() => void handleAddProject()} />}
+            {selected && !worktree && (
               <ProjectDetail
                 project={selected}
                 onRemove={() => removeProject.mutate(selected.id)}
               />
-            ) : (
-              <NoProjects onAddProject={() => void handleAddProject()} />
+            )}
+            {selected && worktree && (
+              <WorktreeDetail
+                worktree={worktree}
+                repositoryId={selected.id}
+                refreshing={worktrees.isFetching}
+                onRefresh={() => void worktrees.refetch()}
+              />
             )}
           </main>
         </ResizablePanel>
