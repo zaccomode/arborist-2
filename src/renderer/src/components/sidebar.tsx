@@ -11,6 +11,8 @@ export function Sidebar({
   onNewWorktree,
   onOpenSettings,
   onOpenProjectSettings,
+  onPrune,
+  onRemoveProject,
   addError,
   children
 }: {
@@ -21,6 +23,8 @@ export function Sidebar({
   onNewWorktree: () => void
   onOpenSettings: () => void
   onOpenProjectSettings: () => void
+  onPrune: () => void
+  onRemoveProject: () => void
   /** Why the last add failed, shown where the user asked for it. */
   addError: string | null
   children?: React.ReactNode
@@ -33,6 +37,9 @@ export function Sidebar({
         onSelect={onSelect}
         onAddProject={onAddProject}
         onOpenSettings={onOpenSettings}
+        onOpenProjectSettings={onOpenProjectSettings}
+        onPrune={onPrune}
+        onRemoveProject={onRemoveProject}
       />
 
       {addError && (
@@ -55,8 +62,9 @@ export function Sidebar({
           </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">{children}</div>
-        {/* Project-scoped settings are also in the project detail's menu, but
-            that pane is only reachable with no worktree selected. */}
+        {/* Also in the project switcher's menu, alongside the rest of the
+            project actions; here because this is where the project's own
+            worktrees are, and it is one click rather than two. */}
         <div className="border-t p-2">
           <Button
             variant="ghost"

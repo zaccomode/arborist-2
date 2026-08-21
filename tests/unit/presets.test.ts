@@ -30,8 +30,6 @@ const builtIns: BuiltInPreset[] = [
   }
 ]
 
-const everythingAvailable = ['reveal', 'terminal', 'xcode']
-
 const config: PresetConfig = { disabledIds: [], overrides: {}, order: [] }
 
 function custom(overrides: Partial<Preset> = {}): Preset {
@@ -50,7 +48,6 @@ function custom(overrides: Partial<Preset> = {}): Preset {
 function resolve(input: Partial<Parameters<typeof resolvePresets>[0]> = {}): string[] {
   return resolvePresets({
     builtIns,
-    availableBuiltInIds: everythingAvailable,
     presets: [],
     config,
     projectId: null,
@@ -75,8 +72,12 @@ describe('resolvePresets', () => {
     expect(resolve({ platform: 'linux' })).toEqual([builtInPresetId('reveal')])
   })
 
-  it('hides a built-in whose target was not found on this machine', () => {
-    expect(resolve({ availableBuiltInIds: ['reveal'] })).toEqual([builtInPresetId('reveal')])
+  it('offers a built-in whether or not its app is installed', () => {
+    // Nothing probes the machine any more: the switch is the user's answer,
+    // and a preset that cannot launch says so when it is pressed.
+    expect(resolve({ config: { ...config, disabledIds: [] } })).toContain(
+      builtInPresetId('terminal')
+    )
   })
 
   it('respects an app-level switch-off', () => {

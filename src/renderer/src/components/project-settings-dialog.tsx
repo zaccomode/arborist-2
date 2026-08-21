@@ -14,6 +14,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { invoke } from '@/api/client'
+import { NotesEditor } from '@/components/notes-editor'
 import { ProjectPresetOverrides } from '@/components/settings/project-preset-overrides'
 
 /** What the preview substitutes into, so tokens can be seen doing something. */
@@ -70,7 +71,16 @@ export function ProjectSettingsDialog({
       >
         <DialogHeader>
           <DialogTitle>{project.name} settings</DialogTitle>
-          <DialogDescription>Settings for this project alone.</DialogDescription>
+          <DialogDescription asChild>
+            <button
+              type="button"
+              title="Copy path"
+              onClick={() => void invoke('system:copyText', project.path)}
+              className="block max-w-full truncate text-left font-mono text-xs hover:text-foreground"
+            >
+              {project.path}
+            </button>
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-2">
@@ -122,6 +132,16 @@ export function ProjectSettingsDialog({
         )}
 
         <ProjectPresetOverrides projectId={project.id} />
+
+        {/* The project's own note. The worktree pane keeps per-worktree ones;
+            this is the only place a note about the project itself belongs
+            now that the pane behind it is an empty state. */}
+        <NotesEditor
+          key={project.id}
+          repositoryId={project.id}
+          worktreePath={null}
+          heightClass="h-28"
+        />
 
         {error && <p className="text-sm text-destructive">{error}</p>}
 

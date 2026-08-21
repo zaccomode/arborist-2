@@ -94,7 +94,12 @@ app.whenReady().then(async () => {
     store,
     projects: new ProjectService(store, gitRunner),
     gitService: new GitService(gitRunner),
-    presets: new PresetService(store, gitRunner),
+    presets: new PresetService(store, gitRunner, (script, cwd, values) =>
+      // A shell preset is a one-command script with the worktree as its
+      // working directory, so it rides the automation runner rather than
+      // growing a second way to spawn a shell.
+      automation.start({ script, worktreePath: cwd, values })
+    ),
     automation
   })
 

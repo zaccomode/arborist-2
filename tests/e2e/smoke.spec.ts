@@ -34,9 +34,13 @@ test('adds a git repository as a project', async () => {
   await expect(window.getByTestId('no-projects')).toBeVisible()
   await addProject(app)
 
-  await expect(window.getByTestId('project-detail')).toBeVisible()
-  await expect(window.getByRole('heading', { name: 'Arborist' })).toBeVisible()
-  await expect(window.getByText(fixture.repoPath)).toBeVisible()
+  await expect(window.getByTestId('no-worktree-selected')).toBeVisible()
+  await expect(window.getByTestId('project-switcher')).toContainText('Arborist')
+
+  // The path it actually opened, which the project's own settings carry now
+  // that the pane behind them is an empty state.
+  await window.getByRole('button', { name: 'Project settings' }).click()
+  await expect(window.getByTestId('project-settings-dialog')).toContainText(fixture.repoPath)
 
   await app.close()
   await rm(root, { recursive: true, force: true })
@@ -85,6 +89,43 @@ test('keeps a worktree note across a relaunch', async () => {
   await expect(reopened.getByTestId('notes-editor')).toHaveValue('Rebase before review.')
 
   await second.close()
+  await rm(root, { recursive: true, force: true })
+})
+
+test('runs a shell preset in a console that shows it failing', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+
+  await window.getByTestId('project-switcher').click()
+  await window.getByRole('menuitem', { name: 'App settings…' }).click()
+  await window.getByRole('tab', { name: 'Presets' }).click()
+  await window.getByRole('button', { name: 'New preset' }).click()
+  await window.getByLabel('Name').fill('Build')
+  // `exit 2` is the one failing command that means the same thing to bash and
+  // to PowerShell, and this suite runs on both.
+  await window.getByLabel('Command').fill('exit 2')
+  await window.getByRole('button', { name: 'Save' }).click()
+  // Both dialogs carry a Close button while the editor is unmounting, so wait
+  // it out rather than closing whichever one wins the race.
+  await expect(window.getByTestId('preset-editor')).toBeHidden()
+  await window.keyboard.press('Escape')
+  await expect(window.getByTestId('settings-dialog')).toBeHidden()
+
+  await window.getByRole('button', { name: /main/ }).first().click()
+  await window.getByRole('button', { name: 'Build' }).click()
+
+  // The point of the console: a preset that fails says so, where a detached
+  // launch would have failed out of sight.
+  await expect(window.getByTestId('preset-console')).toBeVisible()
+  await expect(window.getByTestId('preset-console-status')).toHaveText('Failed')
+  await expect(window.getByTestId('preset-console')).toContainText('exit 2')
+
+  await app.close()
   await rm(root, { recursive: true, force: true })
 })
 

@@ -68,14 +68,7 @@ export function PresetSettings(): React.JSX.Element {
             return (
               <li key={preset.id} className="flex items-center gap-3 rounded-md border px-3 py-2">
                 <PresetIcon name={preset.icon} className="size-4 text-muted-foreground" />
-                <span className="flex-1 text-sm">
-                  {preset.name}
-                  {!preset.available && (
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      not found on this machine
-                    </span>
-                  )}
-                </span>
+                <span className="flex-1 text-sm">{preset.name}</span>
                 <Switch
                   checked={preset.enabled}
                   aria-label={preset.name}

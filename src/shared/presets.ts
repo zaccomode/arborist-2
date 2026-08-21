@@ -31,10 +31,18 @@ export interface ResolvedPreset {
 
 /** What the settings UI needs to show and edit presets, in one round trip. */
 export interface PresetCatalogue {
-  builtIns: Array<BuiltInPreset & { id: string; available: boolean; enabled: boolean }>
+  builtIns: Array<BuiltInPreset & { id: string; enabled: boolean }>
   presets: Preset[]
   config: PresetConfig
 }
+
+/**
+ * What running a preset did. A shell preset streams into a console rather
+ * than disappearing into a detached process, so the caller is told which run
+ * to attach to.
+ */
+export type PresetRunResult =
+  { kind: 'launched' } | { kind: 'console'; runId: string; presetName: string }
 
 export function builtInPresetId(builtinId: string): string {
   return `builtin:${builtinId}`
@@ -53,24 +61,26 @@ function enabledFor(
 }
 
 /**
- * App-level presets — built-ins the platform supports and could detect, then
- * the user's own — filtered by the project's tri-state overrides and ordered,
- * with the project's own presets appended.
+ * App-level presets — the built-ins this platform can run, then the user's
+ * own — filtered by the project's tri-state overrides and ordered, with the
+ * project's own presets appended.
+ *
+ * Nothing here asks whether the target is installed. A preset the user
+ * switched on stays on the screen whether or not this machine has the app
+ * behind it: guessing at what is installed makes buttons come and go for
+ * reasons the user cannot see, and the switch is the answer they gave.
  */
 export function resolvePresets(input: {
   builtIns: readonly BuiltInPreset[]
-  /** Built-ins whose target was actually found on this machine. */
-  availableBuiltInIds: readonly string[]
   presets: readonly Preset[]
   config: PresetConfig
   projectId: string | null
   platform: NodeJS.Platform
 }): ResolvedPreset[] {
-  const { builtIns, availableBuiltInIds, presets, config, projectId, platform } = input
+  const { builtIns, presets, config, projectId, platform } = input
 
   const builtInEntries = builtIns
     .filter((preset) => preset.platforms.length === 0 || preset.platforms.includes(platform))
-    .filter((preset) => availableBuiltInIds.includes(preset.builtinId))
     .map((preset) => ({
       resolved: {
         id: builtInPresetId(preset.builtinId),
@@ -128,8 +138,9 @@ function orderOf(id: string, rank: number, config: PresetConfig): number {
 
 /**
  * Turns an origin remote into the repository's GitHub URL, normalising the
- * ssh forms. Returns null for anything that isn't GitHub, which is what hides
- * the built-in rather than offering a link that goes nowhere.
+ * ssh forms. Returns null for anything that isn't GitHub, which is what turns
+ * pressing the button into "this project has no GitHub remote" rather than a
+ * link that goes nowhere.
  */
 export function githubUrlFromRemote(remote: string): string | null {
   const url = remote.trim().replace(/\.git$/, '')

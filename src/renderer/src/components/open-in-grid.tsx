@@ -1,14 +1,17 @@
+import { useState } from 'react'
 import { toast } from 'sonner'
 import type { Worktree } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
 import { PresetIcon } from '@/components/preset-icon'
+import { PresetConsole, type PresetRun } from '@/components/preset-console'
 import { usePresets } from '@/api/queries'
 import { invoke } from '@/api/client'
 
 /**
  * The macro buttons from the concept design: icon over label, wrapping to
- * further rows. What appears here is whatever the presets resolved to for
- * this project on this machine, so a missing editor is simply absent.
+ * further rows. Every preset switched on for this project is here whether or
+ * not the app behind it is installed — pressing one and being told what went
+ * wrong beats a button that quietly never appears.
  */
 export function OpenInGrid({
   project,
@@ -18,13 +21,14 @@ export function OpenInGrid({
   worktree: Worktree
 }): React.JSX.Element | null {
   const presets = usePresets(project.path, project.id)
+  const [consoleRun, setConsoleRun] = useState<PresetRun | null>(null)
   const list = presets.data ?? []
 
   if (list.length === 0) return null
 
   const run = async (presetId: string): Promise<void> => {
     try {
-      await invoke('presets:run', presetId, {
+      const result = await invoke('presets:run', presetId, {
         path: worktree.path,
         branch: worktree.branch,
         commitHash: worktree.status?.lastCommit?.hash ?? worktree.head,
@@ -32,6 +36,9 @@ export function OpenInGrid({
         repoPath: project.path,
         projectId: project.id
       })
+      // A shell preset runs somewhere the user can watch it; everything else
+      // has handed off to another application and has nothing more to show.
+      if (result.kind === 'console') setConsoleRun(result)
     } catch (error) {
       toast.error('Could not open', { description: (error as Error).message })
     }
@@ -58,6 +65,8 @@ export function OpenInGrid({
           )
         })}
       </div>
+
+      <PresetConsole run={consoleRun} onClose={() => setConsoleRun(null)} />
     </section>
   )
 }

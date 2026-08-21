@@ -53,6 +53,21 @@ export interface Scenario {
   keepPointer?: boolean
 }
 
+/**
+ * Fills a field and waits for the value to settle. Playwright's `fill` writes
+ * the DOM value directly, so a controlled input can still be rewritten by the
+ * render that follows — capturing in between catches an empty box.
+ */
+async function fillAndSettle(window: Page, testId: string, value: string): Promise<void> {
+  await window.getByTestId(testId).fill(value)
+  await window.waitForFunction(
+    ({ testId, value }) =>
+      (document.querySelector(`[data-testid="${testId}"]`) as HTMLTextAreaElement | null)?.value ===
+      value,
+    { testId, value }
+  )
+}
+
 export const scenarios: Scenario[] = [
   {
     name: 'shell',
@@ -76,26 +91,32 @@ export const scenarios: Scenario[] = [
       await window.getByRole('menu').waitFor({ state: 'visible' })
       await shot('menu')
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('project-detail').waitFor({ state: 'visible' })
+      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
       await shot('added')
     }
   },
   {
-    name: 'remove-project',
+    name: 'project-actions',
     description:
-      'The confirmation for removing a project, which says what it does and ' + 'does not touch.',
+      "The switcher menu carrying the project's own actions, and the " +
+      'confirmation for removing one, which says what it does and does not touch.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
-    drive: async (window) => {
+    drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('project-detail').waitFor({ state: 'visible' })
-      await window.getByRole('button', { name: 'Project actions' }).click()
+      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Remove project…' }).waitFor()
+      await shot('menu')
+
       await window.getByRole('menuitem', { name: 'Remove project…' }).click()
       await window.getByRole('alertdialog').waitFor({ state: 'visible' })
+      await shot('remove')
     }
   },
   {
@@ -132,7 +153,7 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       await shot('tracking')
 
-      await window.getByTestId('notes-editor').fill('Waiting on review before merging.')
+      await fillAndSettle(window, 'notes-editor', 'Waiting on review before merging.')
       await shot('notes')
 
       await window.getByRole('button', { name: /feature\/prunable/ }).click()
@@ -156,7 +177,7 @@ export const scenarios: Scenario[] = [
       await window.getByRole('button', { name: /main/ }).first().waitFor()
       await shot('before')
 
-      await window.getByRole('button', { name: 'New worktree' }).click()
+      await window.getByRole('button', { name: 'New worktree', exact: true }).click()
       await window.getByLabel('Branch').fill('git checkout -b feature/ABC-123')
       await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
       await shot('dialog')
@@ -205,8 +226,7 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
 
-      await window.getByRole('button', { name: 'Project actions' }).click()
-      await window.getByRole('menuitem', { name: 'Project settings…' }).click()
+      await window.getByRole('button', { name: 'Project settings' }).click()
       await window
         .getByTestId('automation-script')
         .fill('echo "Installing into {{path}}"\n# comments are skipped\nsleep 30')
@@ -235,10 +255,10 @@ export const scenarios: Scenario[] = [
     drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('project-detail').waitFor({ state: 'visible' })
+      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
 
       await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Settings…' }).click()
+      await window.getByRole('menuitem', { name: 'App settings…' }).click()
       await window.getByTestId('settings-dialog').waitFor({ state: 'visible' })
       await window.getByTestId('git-discovery').waitFor({ state: 'visible' })
       await shot('general')
@@ -268,8 +288,32 @@ export const scenarios: Scenario[] = [
     name: 'project-settings',
     description:
       'Project settings, opened from the button under the worktree list: the ' +
-      'automation script with its parsed preview, and the per-project preset ' +
-      'overrides underneath.',
+      'automation script with its parsed preview, the per-project preset ' +
+      'overrides, and the project note that used to live in the pane behind it.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'Project settings' }).click()
+      await fillAndSettle(window, 'automation-script', 'npm install\nnpm run build')
+      await window.getByTestId('project-preset-overrides').waitFor({ state: 'visible' })
+      await shot('automation')
+
+      await fillAndSettle(window, 'notes-editor', 'Release branches: squash merges only.')
+      await shot('notes')
+    }
+  },
+  {
+    name: 'preset-console',
+    description:
+      'A shell preset running in its own console: one command finished, the ' +
+      'next failed with its output. Presets used to launch detached, so a ' +
+      'command that failed did so out of sight.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -278,10 +322,23 @@ export const scenarios: Scenario[] = [
     drive: async (window) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('project-detail').waitFor({ state: 'visible' })
-      await window.getByRole('button', { name: 'Project settings' }).click()
-      await window.getByTestId('automation-script').fill('npm install\nnpm run build')
-      await window.getByTestId('project-preset-overrides').waitFor({ state: 'visible' })
+
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'App settings…' }).click()
+      await window.getByRole('tab', { name: 'Presets' }).click()
+      await window.getByRole('button', { name: 'New preset' }).click()
+      await window.getByLabel('Name').fill('Build')
+      await window
+        .getByLabel('Command')
+        .fill('echo "Building {{branch}}"\necho "no such target" >&2; exit 2')
+      await window.getByRole('button', { name: 'Save' }).click()
+      await window.getByTestId('preset-editor').waitFor({ state: 'detached' })
+      await window.keyboard.press('Escape')
+      await window.getByTestId('settings-dialog').waitFor({ state: 'detached' })
+
+      await window.getByRole('button', { name: /main/ }).first().click()
+      await window.getByRole('button', { name: 'Build' }).click()
+      await window.getByTestId('preset-console-status').filter({ hasText: 'Failed' }).waitFor()
     }
   },
   {

@@ -18,10 +18,13 @@ const SAVE_DEBOUNCE_MS = 400
  */
 export function NotesEditor({
   repositoryId,
-  worktreePath
+  worktreePath,
+  heightClass = 'h-56'
 }: {
   repositoryId: string
   worktreePath: string | null
+  /** Shorter where the note shares a dialog with everything else. */
+  heightClass?: string
 }): React.JSX.Element {
   const queryClient = useQueryClient()
   const saved = useNote(repositoryId, worktreePath)
@@ -67,7 +70,7 @@ export function NotesEditor({
           pane: notes are a side note, and anyone who wants more can drag. */}
       <Textarea
         data-testid="notes-editor"
-        className="mt-2 h-56 field-sizing-fixed resize-y bg-transparent"
+        className={`mt-2 ${heightClass} field-sizing-fixed resize-y bg-transparent`}
         placeholder="Anything worth remembering about this worktree…"
         value={text ?? saved.data ?? ''}
         onChange={(event) => {

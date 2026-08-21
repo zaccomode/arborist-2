@@ -1,4 +1,4 @@
-import { spawn } from 'child_process'
+import { execFile, spawn } from 'child_process'
 import { promises as fs } from 'fs'
 import { shell } from 'electron'
 import { AppError } from '../../shared/errors'
@@ -9,6 +9,7 @@ import {
   resolvePresets,
   type BuiltInPreset,
   type PresetCatalogue,
+  type PresetRunResult,
   type ResolvedPreset
 } from '../../shared/presets'
 import { substitute, type SubstitutionValues } from '../../shared/substitution'
@@ -84,47 +85,59 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-/** Runs a command detached, so closing Arborist doesn't take the editor with it. */
-function launchDetached(command: string, args: string[], cwd?: string): void {
-  const child = spawn(command, args, { detached: true, stdio: 'ignore', cwd, windowsHide: false })
-  child.on('error', (error) => {
-    throw new AppError(`Could not run ${command}: ${error.message}`, 'preset-launch-failed')
+/**
+ * Runs a command detached, so closing Arborist doesn't take the editor with
+ * it, but waits long enough to know the process actually started. Nothing
+ * pre-checks that a target is installed any more, so "the binary isn't there"
+ * has to come back as an error rather than as nothing happening.
+ */
+function launchDetached(command: string, args: string[], cwd?: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { detached: true, stdio: 'ignore', cwd, windowsHide: false })
+    child.once('error', (error) =>
+      reject(new AppError(`Could not run ${command}: ${error.message}`, 'preset-launch-failed'))
+    )
+    child.once('spawn', () => {
+      child.unref()
+      resolve()
+    })
   })
-  child.unref()
 }
+
+/**
+ * macOS app launches go through `open`, which returns as soon as
+ * LaunchServices has taken the request — so its exit code arrives promptly
+ * and says whether the app was there at all.
+ */
+function openApp(app: string, path: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile('open', ['-a', app, path], (error, _stdout, stderr) => {
+      if (error) {
+        reject(new AppError(stderr.trim() || `Could not open ${app}.`, 'preset-launch-failed'))
+      } else {
+        resolve()
+      }
+    })
+  })
+}
+
+/** Starts a shell preset's command as a run the console can attach to. */
+export type ShellRunner = (script: string, cwd: string, values: SubstitutionValues) => string
 
 export class PresetService {
   #store: Store
   #git: GitRunner
+  #runShell: ShellRunner
 
-  constructor(store: Store, git: GitRunner) {
+  constructor(store: Store, git: GitRunner, runShell: ShellRunner) {
     this.#store = store
     this.#git = git
+    this.#runShell = runShell
   }
 
-  /**
-   * Which built-ins this machine can actually offer. A missing editor or a
-   * repository with no GitHub remote hides its preset rather than presenting
-   * a button that fails when pressed.
-   */
-  async availableBuiltInIds(repoPath: string | null): Promise<string[]> {
-    const available = ['reveal']
-    if (process.platform !== 'linux') available.push('terminal')
-
-    if (await this.#vsCodeCommand()) available.push('vscode')
-    if (process.platform === 'darwin') {
-      if (await pathExists('/Applications/Xcode.app')) available.push('xcode')
-      if (await pathExists('/Applications/Warp.app')) available.push('warp')
-    }
-    if (repoPath && (await this.#githubUrl(repoPath))) available.push('github')
-
-    return available
-  }
-
-  async list(repoPath: string | null, projectId: string | null): Promise<ResolvedPreset[]> {
+  async list(_repoPath: string | null, projectId: string | null): Promise<ResolvedPreset[]> {
     return resolvePresets({
       builtIns: BUILT_IN_PRESETS,
-      availableBuiltInIds: await this.availableBuiltInIds(repoPath),
       presets: this.#store.data.presets,
       config: this.#store.data.presetConfig,
       projectId,
@@ -132,9 +145,8 @@ export class PresetService {
     })
   }
 
-  /** Every preset the settings UI can show, with what this machine supports. */
+  /** Every preset the settings UI can show for this platform. */
   async catalogue(): Promise<PresetCatalogue> {
-    const available = await this.availableBuiltInIds(null)
     const { presets, presetConfig } = this.#store.data
 
     return {
@@ -143,10 +155,6 @@ export class PresetService {
       ).map((preset) => ({
         ...preset,
         id: builtInPresetId(preset.builtinId),
-        // GitHub depends on the project's remote rather than on this
-        // machine, so it can't be judged from here; per-project resolution
-        // hides it where there is no GitHub remote.
-        available: available.includes(preset.builtinId) || preset.builtinId === 'github',
         enabled: presetConfig.disabledIds.includes(builtInPresetId(preset.builtinId))
           ? false
           : preset.enabledByDefault
@@ -200,11 +208,14 @@ export class PresetService {
     })
   }
 
-  async run(presetId: string, context: PresetContext): Promise<void> {
+  async run(presetId: string, context: PresetContext): Promise<PresetRunResult> {
     const builtIn = BUILT_IN_PRESETS.find(
       (preset) => builtInPresetId(preset.builtinId) === presetId
     )
-    if (builtIn) return this.#runBuiltIn(builtIn.builtinId, context)
+    if (builtIn) {
+      await this.#runBuiltIn(builtIn.builtinId, context)
+      return { kind: 'launched' }
+    }
 
     const custom = this.#store.data.presets.find((preset) => preset.id === presetId)
     if (!custom) throw new AppError(`No preset with id ${presetId}.`, 'preset-not-found')
@@ -223,15 +234,12 @@ export class PresetService {
       case 'vscode': {
         const command = await this.#vsCodeCommand()
         if (!command) throw new AppError('VS Code was not found.', 'preset-launch-failed')
-        launchDetached(command.command, [...command.args, context.path])
-        return
+        return launchDetached(command.command, [...command.args, context.path])
       }
       case 'xcode':
-        launchDetached('open', ['-a', '/Applications/Xcode.app', context.path])
-        return
+        return openApp('/Applications/Xcode.app', context.path)
       case 'warp':
-        launchDetached('open', ['-a', '/Applications/Warp.app', context.path])
-        return
+        return openApp('/Applications/Warp.app', context.path)
       case 'github': {
         const base = await this.#githubUrl(context.repoPath)
         if (!base) throw new AppError('This project has no GitHub remote.', 'preset-launch-failed')
@@ -244,18 +252,18 @@ export class PresetService {
     }
   }
 
-  async #runCustom(preset: Preset, context: PresetContext): Promise<void> {
+  async #runCustom(preset: Preset, context: PresetContext): Promise<PresetRunResult> {
     switch (preset.command.type) {
       case 'app': {
         // Values reach the app as argv entries, so nothing parses them and
         // nothing needs escaping.
         const target = substitute(preset.command.app, context, 'raw')
         if (process.platform === 'darwin' && target.endsWith('.app')) {
-          launchDetached('open', ['-a', target, context.path])
+          await openApp(target, context.path)
         } else {
-          launchDetached(target, [context.path])
+          await launchDetached(target, [context.path])
         }
-        return
+        return { kind: 'launched' }
       }
       case 'url': {
         const url = substitute(preset.command.url, context, 'url')
@@ -265,50 +273,31 @@ export class PresetService {
           throw new AppError(`${url} is not an http(s) URL.`, 'preset-launch-failed')
         }
         await shell.openExternal(url)
-        return
+        return { kind: 'launched' }
       }
       case 'shell': {
-        const powershell = process.platform === 'win32'
-        const script = substitute(
-          preset.command.script,
-          context,
-          powershell ? 'powershell' : 'posix'
-        )
-        if (powershell) {
-          launchDetached('powershell', ['-NoProfile', '-Command', script], context.path)
-        } else {
-          launchDetached('/bin/sh', ['-c', script], context.path)
-        }
-        return
+        // Through the automation runner rather than a detached process, so
+        // its output and its exit code have somewhere to go. A command that
+        // fails silently is worse than one that fails.
+        const runId = this.#runShell(preset.command.script, context.path, context)
+        return { kind: 'console', runId, presetName: preset.name }
       }
     }
   }
 
-  #openTerminal(path: string): void {
-    if (process.platform === 'darwin') {
-      launchDetached('open', ['-a', 'Terminal', path])
-      return
-    }
+  async #openTerminal(path: string): Promise<void> {
+    if (process.platform === 'darwin') return openApp('Terminal', path)
+
     // Windows Terminal is not on every machine, and the fallback is the
     // flakiest launch in the app — which is exactly why custom shell presets
     // exist as an escape hatch.
-    which('wt')
-      .then((wt) => {
-        if (wt) launchDetached('wt', ['-d', path])
-        else
-          launchDetached('powershell', [
-            '-NoExit',
-            '-Command',
-            `Set-Location -LiteralPath '${path.replace(/'/g, "''")}'`
-          ])
-      })
-      .catch(() => {
-        launchDetached('powershell', [
-          '-NoExit',
-          '-Command',
-          `Set-Location -LiteralPath '${path.replace(/'/g, "''")}'`
-        ])
-      })
+    const wt = await which('wt').catch(() => null)
+    if (wt) return launchDetached('wt', ['-d', path])
+    return launchDetached('powershell', [
+      '-NoExit',
+      '-Command',
+      `Set-Location -LiteralPath '${path.replace(/'/g, "''")}'`
+    ])
   }
 
   async #vsCodeCommand(): Promise<{ command: string; args: string[] } | null> {

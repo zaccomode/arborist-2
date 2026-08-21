@@ -4,7 +4,7 @@ import type { Repository } from '@shared/persisted'
 import { useQueryClient } from '@tanstack/react-query'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Sidebar } from '@/components/sidebar'
-import { NoProjects, ProjectDetail } from '@/components/detail-pane'
+import { NoProjects, NoWorktreeSelected } from '@/components/detail-pane'
 import { WorktreeDetail } from '@/components/worktree-detail'
 import { WorktreeList } from '@/components/worktree-list'
 import { CreateWorktreeDialog } from '@/components/create-worktree-dialog'
@@ -92,6 +92,12 @@ function App(): React.JSX.Element {
             onNewWorktree={() => setCreatingWorktree(true)}
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenProjectSettings={() => setProjectSettingsOpen(true)}
+            onPrune={async () => {
+              if (!selected) return
+              await invoke('worktrees:prune', selected.path)
+              await worktrees.refetch()
+            }}
+            onRemoveProject={() => selected && removeProject.mutate(selected.id)}
             addError={addError}
           >
             {selected && (
@@ -109,15 +115,7 @@ function App(): React.JSX.Element {
           <main className="h-full rounded-lg border bg-card">
             {!selected && <NoProjects onAddProject={() => void handleAddProject()} />}
             {selected && !worktree && (
-              <ProjectDetail
-                project={selected}
-                onRemove={() => removeProject.mutate(selected.id)}
-                onPrune={async () => {
-                  await invoke('worktrees:prune', selected.path)
-                  await worktrees.refetch()
-                }}
-                onOpenSettings={() => setProjectSettingsOpen(true)}
-              />
+              <NoWorktreeSelected onNewWorktree={() => setCreatingWorktree(true)} />
             )}
             {selected && worktree && (
               <WorktreeDetail

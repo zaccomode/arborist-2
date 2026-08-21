@@ -1,25 +1,5 @@
-import { useState } from 'react'
-import { FolderGit2, MoreVertical, TreePine } from 'lucide-react'
-import type { Repository } from '@shared/persisted'
+import { GitBranch, TreePine } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from '@/components/ui/alert-dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
-import { NotesEditor } from '@/components/notes-editor'
-import { invoke } from '@/api/client'
 
 export function NoProjects({ onAddProject }: { onAddProject: () => void }): React.JSX.Element {
   return (
@@ -37,71 +17,28 @@ export function NoProjects({ onAddProject }: { onAddProject: () => void }): Reac
 }
 
 /**
- * Shown when no worktree is selected. Project-scoped actions live in the
- * overflow menu here rather than in the sidebar, which is what lets the
- * sidebar stay a list of worktrees and nothing else.
+ * A project is open but no worktree is chosen. The pane says so and offers
+ * the one action worth taking from here; project-scoped settings and actions
+ * live in the sidebar and the project switcher, where the project itself is.
  */
-export function ProjectDetail({
-  project,
-  onRemove,
-  onPrune,
-  onOpenSettings
+export function NoWorktreeSelected({
+  onNewWorktree
 }: {
-  project: Repository
-  onRemove: () => void
-  onPrune: () => void
-  onOpenSettings: () => void
+  onNewWorktree: () => void
 }): React.JSX.Element {
-  const [confirmingRemove, setConfirmingRemove] = useState(false)
-
   return (
-    <div className="flex h-full flex-col p-6" data-testid="project-detail">
-      <div className="flex items-start gap-3">
-        <FolderGit2 className="mt-1.5 size-6 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-semibold">{project.name}</h1>
-          <button
-            type="button"
-            title="Copy path"
-            onClick={() => void invoke('system:copyText', project.path)}
-            className="block max-w-full truncate font-mono text-sm text-muted-foreground hover:text-foreground"
-          >
-            {project.path}
-          </button>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label="Project actions">
-              <MoreVertical />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={onOpenSettings}>Project settings…</DropdownMenuItem>
-            <DropdownMenuItem onSelect={onPrune}>Prune missing worktrees</DropdownMenuItem>
-            <DropdownMenuItem variant="destructive" onSelect={() => setConfirmingRemove(true)}>
-              Remove project…
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      <NotesEditor key={project.id} repositoryId={project.id} worktreePath={null} />
-
-      <AlertDialog open={confirmingRemove} onOpenChange={setConfirmingRemove}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove {project.name} from Arborist?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This only removes the project from Arborist. The repository, its worktrees and its
-              branches are left exactly as they are on disk.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={onRemove}>Remove</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+    <div
+      className="flex h-full flex-col items-center justify-center"
+      data-testid="no-worktree-selected"
+    >
+      <GitBranch className="size-10 text-muted-foreground" />
+      <h1 className="mt-4 text-lg font-semibold">No worktree selected</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Pick one from the list, or start a new one.
+      </p>
+      <Button variant="outline" className="mt-6" onClick={onNewWorktree}>
+        New worktree…
+      </Button>
     </div>
   )
 }

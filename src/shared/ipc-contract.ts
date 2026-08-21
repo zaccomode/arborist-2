@@ -10,7 +10,7 @@
 import type { GitDiscoveryResult, StoreStatus, Worktree } from './domain'
 import type { Preset, Repository, Settings } from './persisted'
 import type { AutomationEvent } from './automation'
-import type { PresetCatalogue, ResolvedPreset } from './presets'
+import type { PresetCatalogue, PresetRunResult, ResolvedPreset } from './presets'
 import type { SubstitutionValues } from './substitution'
 
 export interface IpcInvokeContract {
@@ -71,9 +71,10 @@ export interface IpcInvokeContract {
   'presets:save': { args: [preset: Preset]; result: void }
   'presets:delete': { args: [presetId: string]; result: void }
   'presets:reorder': { args: [orderedIds: string[]]; result: void }
+  /** Shell presets resolve to a run id to attach a console to; the rest launch. */
   'presets:run': {
     args: [presetId: string, context: SubstitutionValues & { projectId: string | null }]
-    result: void
+    result: PresetRunResult
   }
   'git:discover': { args: []; result: GitDiscoveryResult }
   /** Sets (or clears, with null) the manual git path and re-runs discovery. */

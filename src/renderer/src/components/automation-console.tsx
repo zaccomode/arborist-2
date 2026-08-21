@@ -1,6 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
-import { CheckCircle2, CircleDashed, CircleX, Loader2 } from 'lucide-react'
-import type { AutomationEvent, AutomationStatus } from '@shared/automation'
+import { useEffect, useState } from 'react'
 import type { SubstitutionValues } from '@shared/substitution'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,13 +9,9 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
+import { ConsoleOutput } from '@/components/console-output'
+import { useAutomationRun } from '@/state/automation-run'
 import { invoke } from '@/api/client'
-
-interface CommandState {
-  command: string
-  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped'
-  output: string
-}
 
 export interface AutomationTarget {
   repositoryId: string
@@ -39,74 +33,17 @@ export function AutomationConsole({
 }): React.JSX.Element | null {
   const [runId, setRunId] = useState<string | null>(null)
   // Events arrive for whichever run is current, and a retry starts a new one,
-  // so the filter has to read the latest id rather than the one captured when
-  // the subscription was made.
-  const runIdRef = useRef<string | null>(null)
-  const [commands, setCommands] = useState<CommandState[]>([])
-  const [status, setStatus] = useState<AutomationStatus>('running')
-  const [failedIndex, setFailedIndex] = useState<number | null>(null)
-  const outputRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    const applyEvent = (event: AutomationEvent): void => {
-      switch (event.type) {
-        case 'started':
-          setStatus('running')
-          setFailedIndex(null)
-          setCommands(
-            event.commands.map((command, index) => ({
-              command,
-              status: index < event.startIndex ? 'skipped' : 'pending',
-              output: ''
-            }))
-          )
-          break
-        case 'command-started':
-          setCommands((current) =>
-            current.map((entry, index) =>
-              index === event.index
-                ? // The substituted form, which is what actually ran.
-                  { ...entry, command: event.command, status: 'running', output: '' }
-                : entry
-            )
-          )
-          break
-        case 'output':
-          setCommands((current) =>
-            current.map((entry, index) =>
-              index === event.index ? { ...entry, output: entry.output + event.chunk } : entry
-            )
-          )
-          break
-        case 'command-finished':
-          setCommands((current) =>
-            current.map((entry, index) =>
-              index === event.index
-                ? { ...entry, status: event.exitCode === 0 ? 'succeeded' : 'failed' }
-                : entry
-            )
-          )
-          break
-        case 'finished':
-          setStatus(event.status)
-          setFailedIndex(event.failedIndex)
-          break
-      }
-    }
-
-    return window.arborist.subscribe('automation:event', (event: AutomationEvent) => {
-      if (runIdRef.current && event.runId !== runIdRef.current) return
-      applyEvent(event)
-    })
-  }, [])
+  // so the id has to be the latest rather than the one this began with.
+  const { commands, status, failedIndex } = useAutomationRun(runId)
 
   const start = (startIndex: number): void => {
     if (!target) return
-    setStatus('running')
-    void invoke('automation:start', { ...target, startIndex }).then((id) => {
-      runIdRef.current = id
-      setRunId(id)
-    })
+    void invoke('automation:start', {
+      repositoryId: target.repositoryId,
+      worktreePath: target.worktreePath,
+      values: target.values,
+      startIndex
+    }).then(setRunId)
   }
 
   useEffect(() => {
@@ -116,15 +53,8 @@ export function AutomationConsole({
       worktreePath: target.worktreePath,
       values: target.values,
       startIndex: 0
-    }).then((id) => {
-      runIdRef.current = id
-      setRunId(id)
-    })
+    }).then(setRunId)
   }, [target])
-
-  useEffect(() => {
-    outputRef.current?.scrollTo({ top: outputRef.current.scrollHeight })
-  }, [commands])
 
   if (!target) return null
 
@@ -156,21 +86,7 @@ export function AutomationConsole({
           <DialogDescription data-testid="automation-status">{heading}</DialogDescription>
         </DialogHeader>
 
-        <div ref={outputRef} className="max-h-[50vh] min-h-40 overflow-y-auto rounded-md border">
-          {commands.map((entry, index) => (
-            <div key={index} className="border-b p-3 last:border-b-0">
-              <div className="flex items-center gap-2 font-mono text-xs">
-                <StatusIcon status={entry.status} />
-                <span className="truncate">{entry.command}</span>
-              </div>
-              {entry.output && (
-                <pre className="mt-2 overflow-x-auto text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
-                  {entry.output}
-                </pre>
-              )}
-            </div>
-          ))}
-        </div>
+        <ConsoleOutput commands={commands} />
 
         <DialogFooter>
           {running ? (
@@ -197,17 +113,4 @@ export function AutomationConsole({
       </DialogContent>
     </Dialog>
   )
-}
-
-function StatusIcon({ status }: { status: CommandState['status'] }): React.JSX.Element {
-  switch (status) {
-    case 'running':
-      return <Loader2 className="size-3.5 shrink-0 animate-spin" />
-    case 'succeeded':
-      return <CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />
-    case 'failed':
-      return <CircleX className="size-3.5 shrink-0 text-destructive" />
-    default:
-      return <CircleDashed className="size-3.5 shrink-0 text-muted-foreground" />
-  }
 }
