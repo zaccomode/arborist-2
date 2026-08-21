@@ -3,18 +3,49 @@ import { dirname, join } from 'path'
 import { AppError } from '../../../shared/errors'
 import { sanitizeForFolder } from '../../../shared/branch-name'
 import { mapWithConcurrency } from '../../../shared/concurrency'
-import type { Worktree, WorktreeEntry, WorktreeStatus } from '../../../shared/domain'
+import type {
+  BranchInfo,
+  CommitLogEntry,
+  RemoteBranch,
+  Worktree,
+  WorktreeEntry,
+  WorktreeStatus
+} from '../../../shared/domain'
 import type { GitRunner } from './git-runner'
+import { FETCH_TIMEOUT_MS } from './git-executor'
 import {
   COMMIT_FORMAT,
   FIELD_SEPARATOR,
+  LOG_FORMAT,
+  LOG_RECORD_SEPARATOR,
+  parseBranchList,
   parseCommit,
+  parseCommitLog,
+  parseRemoteBranchList,
   parseStatus,
   parseUpstreamTrack,
   parseWorktreeList
 } from './porcelain'
 
 export const DEFAULT_REFRESH_CONCURRENCY = 6
+
+/**
+ * Whether a fetch failure looks like a credentials problem, as opposed to an
+ * unreachable host or a repository-side error. This is the one sanctioned
+ * use of stderr matching in the codebase: it only selects which message the
+ * user sees, never control flow, and `GIT_TERMINAL_PROMPT=0` (set app-wide in
+ * `gitEnv`) makes git's own phrasing for "would have prompted" quite stable.
+ */
+function isAuthFailure(stderr: string): boolean {
+  return /authentication failed|permission denied|could not read username|could not read password|terminal prompts disabled/i.test(
+    stderr
+  )
+}
+
+/** `origin/feature-x` -> `feature-x`: the name a local branch of the same branch would carry. */
+function shortRemoteName(ref: string): string {
+  return ref.slice(ref.indexOf('/') + 1)
+}
 
 /**
  * Turns a repository path into fully annotated worktree state: one
@@ -27,9 +58,40 @@ export const DEFAULT_REFRESH_CONCURRENCY = 6
  */
 export class GitService {
   #git: GitRunner
+  /** One in-flight fetch per repository, so concurrent callers share it. */
+  #fetching = new Map<string, Promise<void>>()
 
   constructor(git: GitRunner) {
     this.#git = git
+  }
+
+  /**
+   * `git fetch --all --prune`. Two rapid callers on the same repository
+   * coalesce into one running fetch rather than racing git's lock files.
+   */
+  async fetchAll(repoPath: string): Promise<void> {
+    const inFlight = this.#fetching.get(repoPath)
+    if (inFlight) return inFlight
+
+    const run = this.#runFetch(repoPath).finally(() => this.#fetching.delete(repoPath))
+    this.#fetching.set(repoPath, run)
+    return run
+  }
+
+  async #runFetch(repoPath: string): Promise<void> {
+    const result = await this.#git.run(['fetch', '--all', '--prune'], {
+      repoPath,
+      timeoutMs: FETCH_TIMEOUT_MS
+    })
+    if (result.exitCode === 0) return
+
+    if (isAuthFailure(result.stderr)) {
+      throw new AppError(
+        'Arborist uses your system git credentials; fetch from a terminal to check them.',
+        'fetch-auth-failed'
+      )
+    }
+    throw new AppError(result.stderr.trim() || 'git fetch failed', 'git-command-failed')
   }
 
   async listWorktrees(
@@ -58,6 +120,15 @@ export class GitService {
     return exitCode === 0
   }
 
+  /** Local branches, for the base-ref picker on create-worktree. */
+  async listLocalBranches(repoPath: string): Promise<BranchInfo[]> {
+    const { stdout } = await this.#git.runOrThrow(
+      ['branch', '--list', '--format=%(refname:short)%(HEAD)'],
+      { repoPath }
+    )
+    return parseBranchList(stdout)
+  }
+
   /**
    * Where a new worktree for `branch` goes by default: a sibling of the
    * repository, named after the branch, suffixed if something is already
@@ -84,7 +155,7 @@ export class GitService {
    */
   async createWorktree(
     repoPath: string,
-    options: { branch: string; path: string; baseRef?: string | null }
+    options: { branch: string; path: string; baseRef?: string | null; track?: boolean }
   ): Promise<string> {
     if (await exists(options.path)) {
       throw new AppError(`${options.path} already exists.`, 'path-already-exists')
@@ -95,6 +166,7 @@ export class GitService {
       : [
           'worktree',
           'add',
+          ...(options.track ? ['--track'] : []),
           '-b',
           options.branch,
           options.path,
@@ -129,6 +201,73 @@ export class GitService {
   /** Drops the entries for worktrees whose directories are gone. */
   async pruneWorktrees(repoPath: string): Promise<void> {
     await this.#git.runOrThrow(['worktree', 'prune'], { repoPath })
+  }
+
+  /**
+   * Remote branches with no local worktree of their own, tip commit
+   * included. The subtraction matches on short name — `origin/feature-x` is
+   * hidden once a worktree exists on `feature-x` — which misses a local
+   * branch deliberately tracking a differently-named remote branch. Rare
+   * enough to accept.
+   */
+  async listRemoteBranches(
+    repoPath: string,
+    concurrency: number = DEFAULT_REFRESH_CONCURRENCY
+  ): Promise<RemoteBranch[]> {
+    const [remotes, worktrees] = await Promise.all([
+      this.#git.runOrThrow(['branch', '-r', '--list', '--format=%(refname:short)'], { repoPath }),
+      this.#git.runOrThrow(['worktree', 'list', '--porcelain'], { repoPath })
+    ])
+
+    const localBranches = new Set(
+      parseWorktreeList(worktrees.stdout)
+        .map((entry) => entry.branch)
+        .filter((branch): branch is string => branch !== null)
+    )
+    const candidates = parseRemoteBranchList(remotes.stdout).filter(
+      (ref) => !localBranches.has(shortRemoteName(ref))
+    )
+
+    const commits = await mapWithConcurrency(candidates, concurrency, (ref) =>
+      this.#git.runOrThrow(['log', '-1', `--format=${COMMIT_FORMAT}`, ref], { repoPath })
+    )
+
+    return candidates.map((ref, index) => {
+      const result = commits[index]
+      return {
+        name: ref,
+        shortName: shortRemoteName(ref),
+        lastCommit: result.status === 'fulfilled' ? parseCommit(result.value.stdout) : null
+      }
+    })
+  }
+
+  /**
+   * Recent commits on `ref`, newest first, with `--shortstat` for the Recent
+   * Commits panel. `repoPath` only has to be somewhere inside the
+   * repository: it need not be the worktree `ref` belongs to, which is what
+   * lets this run against a remote branch that has no local checkout at all.
+   */
+  async commitLog(
+    repoPath: string,
+    ref: string,
+    limit: number,
+    skip: number
+  ): Promise<CommitLogEntry[]> {
+    const { stdout } = await this.#git.runOrThrow(
+      [
+        'log',
+        ref,
+        '-n',
+        String(limit),
+        `--skip=${skip}`,
+        '--date=iso-strict',
+        '--shortstat',
+        `--format=${LOG_RECORD_SEPARATOR}${LOG_FORMAT}`
+      ],
+      { repoPath }
+    )
+    return parseCommitLog(stdout)
   }
 
   async #enrich(entry: WorktreeEntry): Promise<WorktreeStatus> {

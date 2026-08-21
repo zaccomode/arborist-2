@@ -82,6 +82,8 @@ export function registerIpcHandlers({
   )
 
   handle('branches:exists', (repoPath, branch) => gitService.branchExists(repoPath, branch))
+  handle('branches:list', (repoPath) => gitService.listLocalBranches(repoPath))
+  handle('branches:remote', (repoPath) => gitService.listRemoteBranches(repoPath))
   handle('worktrees:suggestPath', (repoPath, branch) =>
     gitService.suggestWorktreePath(repoPath, branch)
   )
@@ -162,6 +164,11 @@ export function registerIpcHandlers({
   handle('presets:delete', (presetId) => presets.remove(presetId))
   handle('presets:reorder', (orderedIds) => presets.reorder(orderedIds))
   handle('presets:run', (presetId, context) => presets.run(presetId, context))
+
+  handle('repos:fetch', (repoPath) => gitService.fetchAll(repoPath))
+  handle('commits:recent', (repoPath, ref, limit, skip) =>
+    gitService.commitLog(repoPath, ref, limit, skip)
+  )
 
   handle('git:discover', () => gitRunner.locator.discover())
 

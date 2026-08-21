@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Worktree } from '@shared/domain'
+import { toast } from 'sonner'
+import type { RemoteBranch, Worktree } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
 import { useQueryClient } from '@tanstack/react-query'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
@@ -7,14 +8,24 @@ import { Sidebar } from '@/components/sidebar'
 import { NoProjects, NoWorktreeSelected } from '@/components/detail-pane'
 import { WorktreeDetail } from '@/components/worktree-detail'
 import { WorktreeList } from '@/components/worktree-list'
+import { RemoteBranchList } from '@/components/remote-branch-list'
+import { RemoteBranchDetail } from '@/components/remote-branch-detail'
 import { CreateWorktreeDialog } from '@/components/create-worktree-dialog'
 import { DeleteWorktreeDialogs } from '@/components/delete-worktree'
 import { ProjectSettingsDialog } from '@/components/project-settings-dialog'
 import { AutomationConsole, type AutomationTarget } from '@/components/automation-console'
 import { SettingsDialog } from '@/components/settings/settings-dialog'
-import { useAddProject, useProjects, useRemoveProject, useWorktrees } from '@/api/queries'
+import {
+  useAddProject,
+  useFetch,
+  useProjects,
+  useRemoteBranches,
+  useRemoveProject,
+  useSettings,
+  useWorktrees
+} from '@/api/queries'
 import { invoke } from '@/api/client'
-import { useSelection, useSelectedWorktree } from '@/state/selection'
+import { useSelection, useSelectedRemoteBranch, useSelectedWorktree } from '@/state/selection'
 
 function automationTarget(project: Repository, worktree: Worktree): AutomationTarget {
   return {
@@ -35,19 +46,30 @@ function App(): React.JSX.Element {
   const projects = useProjects()
   const addProject = useAddProject()
   const removeProject = useRemoveProject()
+  const fetchProject = useFetch()
+  const settings = useSettings()
   const [addError, setAddError] = useState<string | null>(null)
   const [creatingWorktree, setCreatingWorktree] = useState(false)
+  const [trackingRemote, setTrackingRemote] = useState<RemoteBranch | null>(null)
   const [deletingWorktree, setDeletingWorktree] = useState(false)
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false)
   const [automation, setAutomation] = useState<AutomationTarget | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
-  const { projectId, selectProject, selectWorktree } = useSelection()
+  const { projectId, selectProject, selectWorktree, selectRemoteBranch } = useSelection()
   const selectedWorktree = useSelectedWorktree()
+  const selectedRemoteBranchName = useSelectedRemoteBranch()
   const list = useMemo(() => projects.data ?? [], [projects.data])
   const selected = list.find((project) => project.id === projectId) ?? null
   const worktrees = useWorktrees(selected?.path ?? null)
   const worktree = worktrees.data?.find((entry) => entry.path === selectedWorktree) ?? null
+  const remoteBranches = useRemoteBranches(selected?.path ?? null)
+  const remoteBranch =
+    remoteBranches.data?.find((entry) => entry.name === selectedRemoteBranchName) ?? null
+  const mainWorktree = worktrees.data?.find((entry) => entry.isMain) ?? null
+  const headLabel = mainWorktree
+    ? (mainWorktree.branch ?? `detached at ${mainWorktree.head?.slice(0, 7)}`)
+    : null
 
   useEffect(() => {
     // Land on something as soon as there is something to land on, including
@@ -56,16 +78,42 @@ function App(): React.JSX.Element {
     if (list.length === 0 && projectId) selectProject(null)
   }, [list, selected, projectId, selectProject])
 
+  const openCreateWorktree = (): void => {
+    setTrackingRemote(null)
+    setCreatingWorktree(true)
+  }
+
   useEffect(() => {
     // The accelerators live in the application menu, which is the only way to
     // get platform-correct modifiers and, on macOS, working copy and paste.
     const unsubscribers = [
       window.arborist.subscribe('app:refresh', () => void queryClient.invalidateQueries()),
-      window.arborist.subscribe('app:newWorktree', () => setCreatingWorktree(true)),
+      window.arborist.subscribe('app:newWorktree', openCreateWorktree),
       window.arborist.subscribe('app:openSettings', () => setSettingsOpen(true))
     ]
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [queryClient])
+
+  const handleFetch = (path: string): void => {
+    fetchProject.mutate(path, {
+      onError: (error) => toast.error('Fetch failed', { description: error.message })
+    })
+  }
+  const fetchMutate = fetchProject.mutate
+
+  const intervalMinutes = settings.data?.autoFetchIntervalMinutes ?? 0
+  const repoPath = selected?.path ?? null
+  useEffect(() => {
+    // Off by default, and only while the app is focused: polling a corporate
+    // remote every few minutes from a window nobody is looking at is a way to
+    // get IT emails.
+    if (!intervalMinutes || !repoPath) return
+
+    const timer = setInterval(() => {
+      if (document.hasFocus()) fetchMutate(repoPath)
+    }, intervalMinutes * 60_000)
+    return () => clearInterval(timer)
+  }, [intervalMinutes, repoPath, fetchMutate])
 
   const handleAddProject = async (): Promise<void> => {
     setAddError(null)
@@ -89,7 +137,7 @@ function App(): React.JSX.Element {
             selectedId={selected?.id ?? null}
             onSelect={selectProject}
             onAddProject={() => void handleAddProject()}
-            onNewWorktree={() => setCreatingWorktree(true)}
+            onNewWorktree={openCreateWorktree}
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenProjectSettings={() => setProjectSettingsOpen(true)}
             onPrune={async () => {
@@ -99,6 +147,18 @@ function App(): React.JSX.Element {
             }}
             prunableCount={(worktrees.data ?? []).filter((entry) => entry.prunable).length}
             addError={addError}
+            onFetch={() => selected && handleFetch(selected.path)}
+            fetching={fetchProject.isPending}
+            remoteBranches={
+              selected && (
+                <RemoteBranchList
+                  branches={remoteBranches.data ?? []}
+                  loading={remoteBranches.isPending}
+                  selectedName={selectedRemoteBranchName}
+                  onSelect={selectRemoteBranch}
+                />
+              )
+            }
           >
             {selected && (
               <WorktreeList
@@ -114,8 +174,8 @@ function App(): React.JSX.Element {
         <ResizablePanel>
           <main className="h-full rounded-lg border bg-card">
             {!selected && <NoProjects onAddProject={() => void handleAddProject()} />}
-            {selected && !worktree && (
-              <NoWorktreeSelected onNewWorktree={() => setCreatingWorktree(true)} />
+            {selected && !worktree && !remoteBranch && (
+              <NoWorktreeSelected onNewWorktree={openCreateWorktree} />
             )}
             {selected && worktree && (
               <WorktreeDetail
@@ -125,6 +185,16 @@ function App(): React.JSX.Element {
                 onRefresh={() => void worktrees.refetch()}
                 onDelete={() => setDeletingWorktree(true)}
                 onRunSetup={() => setAutomation(automationTarget(selected, worktree))}
+              />
+            )}
+            {selected && !worktree && remoteBranch && (
+              <RemoteBranchDetail
+                branch={remoteBranch}
+                project={selected}
+                onCreateWorktree={() => {
+                  setTrackingRemote(remoteBranch)
+                  setCreatingWorktree(true)
+                }}
               />
             )}
           </main>
@@ -159,11 +229,19 @@ function App(): React.JSX.Element {
 
       {selected && (
         <CreateWorktreeDialog
+          key={trackingRemote?.name ?? 'new'}
           open={creatingWorktree}
-          onOpenChange={setCreatingWorktree}
+          onOpenChange={(next) => {
+            setCreatingWorktree(next)
+            if (!next) setTrackingRemote(null)
+          }}
           repoPath={selected.path}
+          headLabel={headLabel}
+          trackRemote={
+            trackingRemote && { ref: trackingRemote.name, shortName: trackingRemote.shortName }
+          }
           onCreated={async (worktreePath) => {
-            const { data } = await worktrees.refetch()
+            const [{ data }] = await Promise.all([worktrees.refetch(), remoteBranches.refetch()])
             selectWorktree(worktreePath)
 
             // A project with a setup script runs it on the worktree it was

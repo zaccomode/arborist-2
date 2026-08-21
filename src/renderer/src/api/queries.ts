@@ -1,13 +1,16 @@
 import {
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
   type UseMutationResult
 } from '@tanstack/react-query'
-import type { Worktree } from '@shared/domain'
+import type { BranchInfo, CommitLogEntry, RemoteBranch, Worktree } from '@shared/domain'
 import type { PresetCatalogue, ResolvedPreset } from '@shared/presets'
 import type { Repository, Settings } from '@shared/persisted'
 import { invoke } from '@/api/client'
+
+const COMMIT_PAGE_SIZE = 20
 
 export const queryKeys = {
   projects: ['projects'] as const,
@@ -17,7 +20,10 @@ export const queryKeys = {
   presets: (repoPath: string | null, projectId: string | null) =>
     ['presets', repoPath, projectId] as const,
   presetCatalogue: ['preset-catalogue'] as const,
-  settings: ['settings'] as const
+  settings: ['settings'] as const,
+  commits: (repoPath: string, ref: string) => ['commits', repoPath, ref] as const,
+  remoteBranches: (repoPath: string) => ['remote-branches', repoPath] as const,
+  localBranches: (repoPath: string) => ['local-branches', repoPath] as const
 }
 
 export function useProjects(): ReturnType<typeof useQuery<Repository[]>> {
@@ -37,6 +43,42 @@ export function useRemoveProject(): UseMutationResult<void, Error, string> {
   return useMutation({
     mutationFn: (id: string) => invoke('projects:remove', id),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.projects })
+  })
+}
+
+/**
+ * Fetches a repository's remotes, then invalidates everything a fetch can
+ * change: ahead/behind counts and remote-deleted flags live on the worktree
+ * list, and new or vanished remote branches live on the remote-branches list.
+ */
+export function useFetch(): UseMutationResult<void, Error, string> {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (repoPath: string) => invoke('repos:fetch', repoPath),
+    onSuccess: (_result, repoPath) => {
+      client.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
+      client.invalidateQueries({ queryKey: queryKeys.remoteBranches(repoPath) })
+    }
+  })
+}
+
+export function useRemoteBranches(
+  repoPath: string | null
+): ReturnType<typeof useQuery<RemoteBranch[]>> {
+  return useQuery({
+    queryKey: queryKeys.remoteBranches(repoPath ?? ''),
+    queryFn: () => invoke('branches:remote', repoPath!),
+    enabled: repoPath !== null
+  })
+}
+
+export function useLocalBranches(
+  repoPath: string | null
+): ReturnType<typeof useQuery<BranchInfo[]>> {
+  return useQuery({
+    queryKey: queryKeys.localBranches(repoPath ?? ''),
+    queryFn: () => invoke('branches:list', repoPath!),
+    enabled: repoPath !== null
   })
 }
 
@@ -80,4 +122,24 @@ export function usePresetCatalogue(): ReturnType<typeof useQuery<PresetCatalogue
 
 export function useSettings(): ReturnType<typeof useQuery<Settings>> {
   return useQuery({ queryKey: queryKeys.settings, queryFn: () => invoke('settings:get') })
+}
+
+/**
+ * Recent commits on `ref`, 20 at a time. `repoPath`/`ref` are nullable so a
+ * caller with nothing selected yet can call this unconditionally rather than
+ * branching around the hook.
+ */
+export function useCommitLog(
+  repoPath: string | null,
+  ref: string | null
+): ReturnType<typeof useInfiniteQuery<CommitLogEntry[]>> {
+  return useInfiniteQuery({
+    queryKey: queryKeys.commits(repoPath ?? '', ref ?? ''),
+    queryFn: ({ pageParam }) =>
+      invoke('commits:recent', repoPath!, ref!, COMMIT_PAGE_SIZE, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, pages) =>
+      lastPage.length === COMMIT_PAGE_SIZE ? pages.flat().length : undefined,
+    enabled: repoPath !== null && ref !== null
+  })
 }

@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
   FIELD_SEPARATOR,
+  LOG_FIELD_SEPARATOR,
+  LOG_RECORD_SEPARATOR,
   parseAheadBehind,
   parseBranchList,
   parseCommit,
+  parseCommitLog,
   normaliseGitPath,
   parseRemoteBranchList,
   parseStatus,
@@ -151,6 +154,12 @@ describe('parseRemoteBranchList', () => {
   it('keeps a branch merely ending in the word HEAD', () => {
     expect(parseRemoteBranchList('origin/fix-HEAD-parsing\n')).toEqual(['origin/fix-HEAD-parsing'])
   })
+
+  it('drops a bare remote name with no slash, as git 2.55 prints for the symbolic HEAD ref on some setups', () => {
+    const output = 'origin\norigin/main\norigin/feature/x\n'
+
+    expect(parseRemoteBranchList(output)).toEqual(['origin/main', 'origin/feature/x'])
+  })
 })
 
 describe('parseAheadBehind', () => {
@@ -238,6 +247,90 @@ describe('parseCommit', () => {
 
   it('returns null for an empty log, as in a repository with no commits', () => {
     expect(parseCommit('')).toBeNull()
+  })
+})
+
+describe('parseCommitLog', () => {
+  function record(
+    fields: [hash: string, shortHash: string, author: string, date: string, subject: string],
+    shortstat = ''
+  ): string {
+    const header = fields.join(LOG_FIELD_SEPARATOR)
+    return shortstat
+      ? `${LOG_RECORD_SEPARATOR}${header}\n\n ${shortstat}\n`
+      : `${LOG_RECORD_SEPARATOR}${header}\n`
+  }
+
+  it('reads every field, newest first', () => {
+    const output =
+      record(['aaa', 'aaa1234', 'Isaac Shea', '2026-08-20T14:00:00+10:00', 'First'], '') +
+      record(['bbb', 'bbb1234', 'Isaac Shea', '2026-08-19T09:00:00+10:00', 'Second'], '')
+
+    expect(parseCommitLog(output)).toEqual([
+      {
+        hash: 'aaa',
+        shortHash: 'aaa1234',
+        author: 'Isaac Shea',
+        date: '2026-08-20T14:00:00+10:00',
+        subject: 'First',
+        filesChanged: 0,
+        insertions: 0,
+        deletions: 0
+      },
+      {
+        hash: 'bbb',
+        shortHash: 'bbb1234',
+        author: 'Isaac Shea',
+        date: '2026-08-19T09:00:00+10:00',
+        subject: 'Second',
+        filesChanged: 0,
+        insertions: 0,
+        deletions: 0
+      }
+    ])
+  })
+
+  it('keeps a subject containing quotes and pipes', () => {
+    const output = record(
+      ['aaa', 'aaa1234', 'Isaac Shea', '2026-08-20T14:00:00Z', 'Fix: "quoted" | piped'],
+      '1 file changed, 1 insertion(+)'
+    )
+
+    expect(parseCommitLog(output)[0].subject).toBe('Fix: "quoted" | piped')
+  })
+
+  it('splits records correctly when the separator sits right against a newline', () => {
+    const output = `${LOG_RECORD_SEPARATOR}aaa${LOG_FIELD_SEPARATOR}aaa1234${LOG_FIELD_SEPARATOR}Isaac Shea${LOG_FIELD_SEPARATOR}2026-08-20T14:00:00Z${LOG_FIELD_SEPARATOR}One\n${LOG_RECORD_SEPARATOR}bbb${LOG_FIELD_SEPARATOR}bbb1234${LOG_FIELD_SEPARATOR}Isaac Shea${LOG_FIELD_SEPARATOR}2026-08-19T14:00:00Z${LOG_FIELD_SEPARATOR}Two\n`
+
+    expect(parseCommitLog(output).map((c) => c.hash)).toEqual(['aaa', 'bbb'])
+  })
+
+  it.each([
+    ['both counts', '3 files changed, 10 insertions(+), 2 deletions(-)', 3, 10, 2],
+    ['no insertions', '2 files changed, 3 deletions(-)', 2, 0, 3],
+    ['no deletions', '1 file changed, 4 insertions(+)', 1, 4, 0],
+    ['neither', '1 file changed', 1, 0, 0]
+  ])('reads a shortstat with %s', (_name, shortstat, filesChanged, insertions, deletions) => {
+    const output = record(
+      ['aaa', 'aaa1234', 'Isaac Shea', '2026-08-20T14:00:00Z', 'Change'],
+      shortstat
+    )
+
+    expect(parseCommitLog(output)[0]).toMatchObject({ filesChanged, insertions, deletions })
+  })
+
+  it('defaults every count to zero for a commit with no shortstat at all', () => {
+    const output = record(['aaa', 'aaa1234', 'Isaac Shea', '2026-08-20T14:00:00Z', 'Empty'])
+
+    expect(parseCommitLog(output)[0]).toMatchObject({
+      filesChanged: 0,
+      insertions: 0,
+      deletions: 0
+    })
+  })
+
+  it('returns nothing for a repository with no commits', () => {
+    expect(parseCommitLog('')).toEqual([])
   })
 })
 

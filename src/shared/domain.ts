@@ -70,6 +70,19 @@ export interface CommitSummary {
   subject: string
 }
 
+/**
+ * A commit as the Recent Commits panel shows it: `CommitSummary` plus the
+ * `--shortstat` line. Kept separate from `CommitSummary` because the
+ * single-commit format the refresh pipeline uses (`%H%x00%h%x00...`) has no
+ * shortstat, and giving every caller three more fields it never asked for
+ * would be its own kind of noise.
+ */
+export interface CommitLogEntry extends CommitSummary {
+  filesChanged: number
+  insertions: number
+  deletions: number
+}
+
 /** What a branch's upstream is doing, as git's `%(upstream:track)` reports it. */
 export interface UpstreamTrack {
   ahead: number
@@ -92,4 +105,17 @@ export interface WorktreeStatus extends WorkingTreeStatus, UpstreamTrack {
 export interface Worktree extends WorktreeEntry {
   status: WorktreeStatus | null
   statusError: string | null
+}
+
+/**
+ * A remote branch with no local worktree of its own — the Remote Branches
+ * sidebar section only ever lists these, so there is nothing here to say a
+ * worktree already exists.
+ */
+export interface RemoteBranch {
+  /** Full remote-tracking ref, e.g. `origin/feature-x`. */
+  name: string
+  /** `name` with its remote prefix stripped, e.g. `feature-x`. */
+  shortName: string
+  lastCommit: CommitSummary | null
 }

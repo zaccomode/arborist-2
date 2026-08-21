@@ -190,6 +190,37 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'recent-commits',
+    description:
+      'The Recent Commits panel: cards with the shortstat line, and load ' +
+      'more revealing the page behind it.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      for (let i = 0; i < 25; i++) {
+        await fixture.commit(`Change ${i}`, { [`file-${i}.txt`]: `${i}\n` })
+      }
+      // Long enough to wrap onto a second line rather than fit on one, so
+      // the capture shows the subject wrapping rather than truncating.
+      await fixture.commit(
+        'Rework the badge matrix fixture so every worktree state the sidebar can show — ahead/behind, dirty, locked, missing, deleted upstream, detached — has its own row and its own fixture helper',
+        { 'badge-matrix.txt': 'rework' }
+      )
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('button', { name: /main/ }).first().click()
+      await window.getByTestId('recent-commits').waitFor({ state: 'visible' })
+      await shot('list')
+
+      await window.getByRole('button', { name: 'Load more' }).click()
+      await window.getByRole('button', { name: 'Load more' }).waitFor({ state: 'detached' })
+      await shot('loaded-more')
+    }
+  },
+  {
     name: 'create-worktree',
     description:
       'The create dialog reading a pasted checkout command, and the worktree ' +
@@ -216,6 +247,47 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'base-ref-picker',
+    description:
+      'The base-ref combobox on create-worktree: HEAD labelled with what it ' +
+      'points at, the full list, filtering as you type, and the offer to ' +
+      'track a remote base once the typed branch matches its short name.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await fixture.commitFromElsewhere('feature-x', 'Pushed while nobody was fetching')
+      await fixture.git(['fetch', 'origin'])
+      await fixture.git(['branch', 'release/1.0'])
+      await fixture.git(['branch', 'release/2.0'])
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+
+      await window.getByRole('button', { name: 'New worktree', exact: true }).click()
+      await window.getByLabel('Branch').fill('some-topic')
+      await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
+      await shot('closed')
+
+      await window.getByRole('combobox').click()
+      await window.getByRole('option').first().waitFor({ state: 'visible' })
+      await shot('open')
+
+      await window.getByPlaceholder('Search branches…').fill('release')
+      await window.getByRole('option', { name: 'release/1.0' }).waitFor({ state: 'visible' })
+      await shot('filtered')
+
+      await window.getByRole('option', { name: 'release/1.0' }).click()
+      await window.getByLabel('Branch').fill('feature-x')
+      await window.getByRole('combobox').click()
+      await window.getByPlaceholder('Search branches…').fill('origin/feature-x')
+      await window.getByRole('option', { name: 'origin/feature-x' }).click()
+      await window.getByText(/matches origin\/feature-x/).waitFor({ state: 'visible' })
+      await shot('track-offer')
+    }
+  },
+  {
     name: 'delete-worktree',
     description:
       'Both confirmations for deleting a dirty worktree: the first says what ' +
@@ -238,6 +310,48 @@ export const scenarios: Scenario[] = [
       await window.getByRole('button', { name: 'Delete', exact: true }).click()
       await window.getByTestId('force-delete-worktree-dialog').waitFor({ state: 'visible' })
       await shot('force')
+    }
+  },
+  {
+    name: 'remote-branches',
+    description:
+      'The Remote Branches section: empty until a fetch reveals a branch ' +
+      'pushed elsewhere, its detail pane, and creating a tracking worktree ' +
+      'from it — which is what turns it back into an ordinary worktree.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      // Pushed to the bare remote before the app ever opens, so the local
+      // repo has not fetched it yet: the section starts empty, and only the
+      // in-app fetch action (not a refresh of anything already known)
+      // reveals it.
+      await fixture.commitFromElsewhere('feature-x', 'Pushed while nobody was fetching')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+      await window.getByText('No remote branches without worktrees.').waitFor({ state: 'visible' })
+      await shot('empty')
+
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Fetch' }).click()
+      await window.getByRole('button', { name: /origin\/feature-x/ }).waitFor({ state: 'visible' })
+      await shot('fetched')
+
+      await window.getByRole('button', { name: /origin\/feature-x/ }).click()
+      await window.getByTestId('remote-branch-detail').waitFor({ state: 'visible' })
+      await shot('detail')
+
+      await window.getByRole('button', { name: 'Create worktree from this branch' }).click()
+      await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
+      await shot('create-dialog')
+
+      await window.getByRole('button', { name: 'Create', exact: true }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await window.getByText('No remote branches without worktrees.').waitFor({ state: 'visible' })
+      await shot('after')
     }
   },
   {
@@ -267,6 +381,34 @@ export const scenarios: Scenario[] = [
       await window.getByRole('menuitem', { name: 'Run setup' }).click()
       await window.getByTestId('automation-status').filter({ hasText: 'Running 2 of 2' }).waitFor()
       await shot('console')
+    }
+  },
+  {
+    name: 'fetch',
+    description:
+      'Fetch, riding the project switcher as its one overflow action: the ' +
+      'menu item, and the toast when the remote cannot be reached — the one ' +
+      'friendly-message case, replacing raw stderr.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      // An address nothing listens on, so the fetch fails fast and the same
+      // way on every run rather than depending on real network timing.
+      await fixture.git(['remote', 'set-url', 'origin', 'https://127.0.0.1:1/nope.git'])
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Fetch' }).waitFor({ state: 'visible' })
+      await shot('menu')
+
+      await window.getByRole('menuitem', { name: 'Fetch' }).click()
+      await window.getByText('Fetch failed').waitFor({ state: 'visible' })
+      await shot('error')
     }
   },
   {

@@ -1,4 +1,4 @@
-import { Brush, Plus, SlidersHorizontal } from 'lucide-react'
+import { Brush, Plus, RefreshCw, SlidersHorizontal } from 'lucide-react'
 import type { Repository } from '@shared/persisted'
 import { Button } from '@/components/ui/button'
 import { ProjectSwitcher } from '@/components/project-switcher'
@@ -14,6 +14,9 @@ export function Sidebar({
   onPrune,
   prunableCount,
   addError,
+  onFetch,
+  fetching,
+  remoteBranches,
   children
 }: {
   projects: Repository[]
@@ -28,6 +31,10 @@ export function Sidebar({
   prunableCount: number
   /** Why the last add failed, shown where the user asked for it. */
   addError: string | null
+  onFetch: () => void
+  fetching: boolean
+  /** The Remote Branches section body, rendered under its own header. */
+  remoteBranches?: React.ReactNode
   children?: React.ReactNode
 }): React.JSX.Element {
   return (
@@ -38,6 +45,8 @@ export function Sidebar({
         onSelect={onSelect}
         onAddProject={onAddProject}
         onOpenSettings={onOpenSettings}
+        onFetch={onFetch}
+        fetching={fetching}
       />
 
       {addError && (
@@ -78,6 +87,21 @@ export function Sidebar({
             </Button>
           )}
         </div>
+
+        <div className="flex shrink-0 items-center justify-between border-t py-2 pr-2 pl-3">
+          <p className="text-xs font-medium text-muted-foreground">Remote Branches</p>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Fetch remotes"
+            disabled={!selectedId || fetching}
+            onClick={onFetch}
+          >
+            <RefreshCw className={fetching ? 'animate-spin' : undefined} />
+          </Button>
+        </div>
+        <div className="max-h-48 shrink-0 overflow-y-auto px-2 pb-2">{remoteBranches}</div>
+
         <div className="border-t p-2">
           <Button
             variant="ghost"

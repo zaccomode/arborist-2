@@ -7,7 +7,14 @@
  * types from it. Adding a channel means adding it here first.
  */
 
-import type { GitDiscoveryResult, StoreStatus, Worktree } from './domain'
+import type {
+  BranchInfo,
+  CommitLogEntry,
+  GitDiscoveryResult,
+  RemoteBranch,
+  StoreStatus,
+  Worktree
+} from './domain'
 import type { Preset, Repository, Settings } from './persisted'
 import type { AutomationEvent } from './automation'
 import type { PresetCatalogue, PresetRunResult, ResolvedPreset } from './presets'
@@ -24,10 +31,23 @@ export interface IpcInvokeContract {
   /** Lists a repository's worktrees, each enriched with its current status. */
   'worktrees:list': { args: [repoPath: string]; result: Worktree[] }
   'branches:exists': { args: [repoPath: string, branch: string]; result: boolean }
+  /** Local branches, for the base-ref picker on create-worktree. */
+  'branches:list': { args: [repoPath: string]; result: BranchInfo[] }
+  /** Remote branches with no local worktree of their own, tip commit included. */
+  'branches:remote': { args: [repoPath: string]; result: RemoteBranch[] }
   /** The default sibling folder for a new worktree, already de-duplicated. */
   'worktrees:suggestPath': { args: [repoPath: string, branch: string]; result: string }
   'worktrees:create': {
-    args: [repoPath: string, options: { branch: string; path: string; baseRef?: string | null }]
+    args: [
+      repoPath: string,
+      options: {
+        branch: string
+        path: string
+        baseRef?: string | null
+        /** Runs `worktree add --track`, so the new branch tracks `baseRef` from birth. */
+        track?: boolean
+      }
+    ]
     result: string
   }
   'worktrees:isDirty': { args: [worktreePath: string]; result: boolean }
@@ -78,6 +98,21 @@ export interface IpcInvokeContract {
     args: [presetId: string, context: SubstitutionValues & { projectId: string | null }]
     result: PresetRunResult
   }
+  /**
+   * `git fetch --all --prune`. Serialised per repository in the service
+   * layer, so two rapid clicks share one running fetch.
+   */
+  'repos:fetch': { args: [repoPath: string]; result: void }
+  /**
+   * Recent commits on `ref`, newest first. `repoPath` need only be somewhere
+   * inside the repository — for a remote branch with no local checkout it is
+   * the project's own path, since remote-tracking refs are visible from any
+   * worktree that shares the repository.
+   */
+  'commits:recent': {
+    args: [repoPath: string, ref: string, limit: number, skip: number]
+    result: CommitLogEntry[]
+  }
   'git:discover': { args: []; result: GitDiscoveryResult }
   /** Sets (or clears, with null) the manual git path and re-runs discovery. */
   'git:setPath': { args: [path: string | null]; result: GitDiscoveryResult }
@@ -108,6 +143,8 @@ const CHANNELS: Record<IpcChannel, true> = {
   'projects:remove': true,
   'worktrees:list': true,
   'branches:exists': true,
+  'branches:list': true,
+  'branches:remote': true,
   'worktrees:suggestPath': true,
   'worktrees:create': true,
   'worktrees:isDirty': true,
@@ -124,6 +161,8 @@ const CHANNELS: Record<IpcChannel, true> = {
   'presets:delete': true,
   'presets:reorder': true,
   'presets:run': true,
+  'repos:fetch': true,
+  'commits:recent': true,
   'automation:script': true,
   'automation:setScript': true,
   'automation:start': true,
