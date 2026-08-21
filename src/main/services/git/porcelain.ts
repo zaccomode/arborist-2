@@ -133,12 +133,17 @@ export function parseBranchList(output: string): BranchInfo[] {
 
 /**
  * Parses `git branch -r --list --format=%(refname:short)`, dropping the
- * symbolic `origin/HEAD` entries, which are not branches anyone can check out.
+ * symbolic `origin/HEAD` entries, which are not branches anyone can check
+ * out. Git 2.55 (unlike 2.43, where this app's own tests were first
+ * written) also prints a bare remote name — just `origin`, no slash — for
+ * that same symbolic ref on some setups; a real remote branch always has
+ * the shape `<remote>/<path>`, so requiring a slash drops it under either
+ * git version rather than chasing the exact string each one prints.
  */
 export function parseRemoteBranchList(output: string): string[] {
   return splitLines(output)
     .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !/(^|\/)HEAD$/.test(line))
+    .filter((line) => line.length > 0 && line.includes('/') && !/(^|\/)HEAD$/.test(line))
 }
 
 /**

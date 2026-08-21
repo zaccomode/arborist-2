@@ -154,6 +154,12 @@ describe('parseRemoteBranchList', () => {
   it('keeps a branch merely ending in the word HEAD', () => {
     expect(parseRemoteBranchList('origin/fix-HEAD-parsing\n')).toEqual(['origin/fix-HEAD-parsing'])
   })
+
+  it('drops a bare remote name with no slash, as git 2.55 prints for the symbolic HEAD ref on some setups', () => {
+    const output = 'origin\norigin/main\norigin/feature/x\n'
+
+    expect(parseRemoteBranchList(output)).toEqual(['origin/main', 'origin/feature/x'])
+  })
 })
 
 describe('parseAheadBehind', () => {
