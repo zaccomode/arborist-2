@@ -78,6 +78,11 @@ export interface IpcInvokeContract {
     args: [presetId: string, context: SubstitutionValues & { projectId: string | null }]
     result: PresetRunResult
   }
+  /**
+   * `git fetch --all --prune`. Serialised per repository in the service
+   * layer, so two rapid clicks share one running fetch.
+   */
+  'repos:fetch': { args: [repoPath: string]; result: void }
   'git:discover': { args: []; result: GitDiscoveryResult }
   /** Sets (or clears, with null) the manual git path and re-runs discovery. */
   'git:setPath': { args: [path: string | null]; result: GitDiscoveryResult }
@@ -124,6 +129,7 @@ const CHANNELS: Record<IpcChannel, true> = {
   'presets:delete': true,
   'presets:reorder': true,
   'presets:run': true,
+  'repos:fetch': true,
   'automation:script': true,
   'automation:setScript': true,
   'automation:start': true,

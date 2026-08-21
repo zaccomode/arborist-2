@@ -1,4 +1,4 @@
-import { ChevronDown, FolderGit2, FolderPlus, Settings } from 'lucide-react'
+import { ChevronDown, FolderGit2, FolderPlus, RefreshCw, Settings } from 'lucide-react'
 import type { Repository } from '@shared/persisted'
 import {
   DropdownMenu,
@@ -15,23 +15,30 @@ import {
  * sidebar at once; the concept design trades that overview for a view with
  * room for a worktree's detail, so the switcher carries the project list.
  *
- * Only the project list: switching project, adding one, and the app's own
+ * Mostly the project list — switching project, adding one, and the app's own
  * settings. What belongs to the open project is reachable where that project
  * already is — settings under the worktree list, removal inside those
- * settings, pruning beside the worktrees that need it.
+ * settings, pruning beside the worktrees that need it — with one exception:
+ * fetch has no natural home of its own yet, so it rides here as the open
+ * project's one overflow action until the Remote Branches section (which
+ * gets its own fetch trigger) lands.
  */
 export function ProjectSwitcher({
   projects,
   selectedId,
   onSelect,
   onAddProject,
-  onOpenSettings
+  onOpenSettings,
+  onFetch,
+  fetching
 }: {
   projects: Repository[]
   selectedId: string | null
   onSelect: (id: string) => void
   onAddProject: () => void
   onOpenSettings: () => void
+  onFetch: () => void
+  fetching: boolean
 }): React.JSX.Element {
   const selected = projects.find((project) => project.id === selectedId)
 
@@ -56,6 +63,15 @@ export function ProjectSwitcher({
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        {selected && (
+          <>
+            <DropdownMenuItem disabled={fetching} onSelect={onFetch}>
+              <RefreshCw className={fetching ? 'animate-spin' : undefined} />
+              Fetch
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
         )}

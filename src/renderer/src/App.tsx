@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import type { Worktree } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
 import { useQueryClient } from '@tanstack/react-query'
@@ -12,7 +13,14 @@ import { DeleteWorktreeDialogs } from '@/components/delete-worktree'
 import { ProjectSettingsDialog } from '@/components/project-settings-dialog'
 import { AutomationConsole, type AutomationTarget } from '@/components/automation-console'
 import { SettingsDialog } from '@/components/settings/settings-dialog'
-import { useAddProject, useProjects, useRemoveProject, useWorktrees } from '@/api/queries'
+import {
+  useAddProject,
+  useFetch,
+  useProjects,
+  useRemoveProject,
+  useSettings,
+  useWorktrees
+} from '@/api/queries'
 import { invoke } from '@/api/client'
 import { useSelection, useSelectedWorktree } from '@/state/selection'
 
@@ -35,6 +43,8 @@ function App(): React.JSX.Element {
   const projects = useProjects()
   const addProject = useAddProject()
   const removeProject = useRemoveProject()
+  const fetchProject = useFetch()
+  const settings = useSettings()
   const [addError, setAddError] = useState<string | null>(null)
   const [creatingWorktree, setCreatingWorktree] = useState(false)
   const [deletingWorktree, setDeletingWorktree] = useState(false)
@@ -66,6 +76,27 @@ function App(): React.JSX.Element {
     ]
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [queryClient])
+
+  const handleFetch = (path: string): void => {
+    fetchProject.mutate(path, {
+      onError: (error) => toast.error('Fetch failed', { description: error.message })
+    })
+  }
+  const fetchMutate = fetchProject.mutate
+
+  const intervalMinutes = settings.data?.autoFetchIntervalMinutes ?? 0
+  const repoPath = selected?.path ?? null
+  useEffect(() => {
+    // Off by default, and only while the app is focused: polling a corporate
+    // remote every few minutes from a window nobody is looking at is a way to
+    // get IT emails.
+    if (!intervalMinutes || !repoPath) return
+
+    const timer = setInterval(() => {
+      if (document.hasFocus()) fetchMutate(repoPath)
+    }, intervalMinutes * 60_000)
+    return () => clearInterval(timer)
+  }, [intervalMinutes, repoPath, fetchMutate])
 
   const handleAddProject = async (): Promise<void> => {
     setAddError(null)
@@ -99,6 +130,8 @@ function App(): React.JSX.Element {
             }}
             prunableCount={(worktrees.data ?? []).filter((entry) => entry.prunable).length}
             addError={addError}
+            onFetch={() => selected && handleFetch(selected.path)}
+            fetching={fetchProject.isPending}
           >
             {selected && (
               <WorktreeList

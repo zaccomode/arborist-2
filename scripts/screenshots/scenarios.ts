@@ -270,6 +270,34 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'fetch',
+    description:
+      'Fetch, riding the project switcher as its one overflow action: the ' +
+      'menu item, and the toast when the remote cannot be reached — the one ' +
+      'friendly-message case, replacing raw stderr.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      // An address nothing listens on, so the fetch fails fast and the same
+      // way on every run rather than depending on real network timing.
+      await fixture.git(['remote', 'set-url', 'origin', 'https://127.0.0.1:1/nope.git'])
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Fetch' }).waitFor({ state: 'visible' })
+      await shot('menu')
+
+      await window.getByRole('menuitem', { name: 'Fetch' }).click()
+      await window.getByText('Fetch failed').waitFor({ state: 'visible' })
+      await shot('error')
+    }
+  },
+  {
     name: 'settings',
     description:
       'Settings: the General tab with the detected git binary and the theme, ' +

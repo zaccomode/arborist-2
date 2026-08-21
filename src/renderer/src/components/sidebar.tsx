@@ -14,6 +14,8 @@ export function Sidebar({
   onPrune,
   prunableCount,
   addError,
+  onFetch,
+  fetching,
   children
 }: {
   projects: Repository[]
@@ -28,6 +30,8 @@ export function Sidebar({
   prunableCount: number
   /** Why the last add failed, shown where the user asked for it. */
   addError: string | null
+  onFetch: () => void
+  fetching: boolean
   children?: React.ReactNode
 }): React.JSX.Element {
   return (
@@ -38,6 +42,8 @@ export function Sidebar({
         onSelect={onSelect}
         onAddProject={onAddProject}
         onOpenSettings={onOpenSettings}
+        onFetch={onFetch}
+        fetching={fetching}
       />
 
       {addError && (

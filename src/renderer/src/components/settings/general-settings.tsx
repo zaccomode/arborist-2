@@ -50,6 +50,32 @@ export function GeneralSettings({
       </section>
 
       <section className="space-y-2">
+        <Label htmlFor="auto-fetch">Auto-fetch</Label>
+        <p className="text-xs text-muted-foreground">
+          Periodically fetches every open project&apos;s remotes while Arborist is focused. Off by
+          default.
+        </p>
+        <Select
+          value={String(settings.autoFetchIntervalMinutes)}
+          onValueChange={(value) =>
+            onChange({
+              autoFetchIntervalMinutes: Number(value) as Settings['autoFetchIntervalMinutes']
+            })
+          }
+        >
+          <SelectTrigger id="auto-fetch" className="w-48">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="0">Off</SelectItem>
+            <SelectItem value="5">Every 5 minutes</SelectItem>
+            <SelectItem value="15">Every 15 minutes</SelectItem>
+            <SelectItem value="60">Every hour</SelectItem>
+          </SelectContent>
+        </Select>
+      </section>
+
+      <section className="space-y-2">
         <Label htmlFor="git-path">Git</Label>
         <p className="text-xs text-muted-foreground" data-testid="git-discovery">
           {git.data?.found

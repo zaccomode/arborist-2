@@ -163,6 +163,8 @@ export function registerIpcHandlers({
   handle('presets:reorder', (orderedIds) => presets.reorder(orderedIds))
   handle('presets:run', (presetId, context) => presets.run(presetId, context))
 
+  handle('repos:fetch', (repoPath) => gitService.fetchAll(repoPath))
+
   handle('git:discover', () => gitRunner.locator.discover())
 
   handle('git:setPath', async (path) => {

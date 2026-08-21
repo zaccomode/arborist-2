@@ -75,7 +75,15 @@ export const settingsSchema = z.object({
   /** An explicit shell for automation, for pwsh and zsh users. */
   customShellPath: z.string().nullable().default(null),
   /** Arguments before the command, e.g. `["-c"]`. */
-  customShellArgs: z.array(z.string()).default([])
+  customShellArgs: z.array(z.string()).default([]),
+  /**
+   * Auto-fetch interval, in minutes; 0 means off, which is the default.
+   * Polling a corporate remote every few minutes from an app the user forgot
+   * is open is a way to get IT emails, so this is opt-in.
+   */
+  autoFetchIntervalMinutes: z
+    .union([z.literal(0), z.literal(5), z.literal(15), z.literal(60)])
+    .default(0)
 })
 
 export const persistedDataSchema = z.object({

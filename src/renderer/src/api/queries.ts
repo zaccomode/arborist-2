@@ -40,6 +40,20 @@ export function useRemoveProject(): UseMutationResult<void, Error, string> {
   })
 }
 
+/**
+ * Fetches a repository's remotes, then invalidates everything a fetch can
+ * change: ahead/behind counts and remote-deleted flags live on the worktree
+ * list.
+ */
+export function useFetch(): UseMutationResult<void, Error, string> {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (repoPath: string) => invoke('repos:fetch', repoPath),
+    onSuccess: (_result, repoPath) =>
+      client.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
+  })
+}
+
 export function useWorktrees(repoPath: string | null): ReturnType<typeof useQuery<Worktree[]>> {
   return useQuery({
     queryKey: queryKeys.worktrees(repoPath ?? ''),

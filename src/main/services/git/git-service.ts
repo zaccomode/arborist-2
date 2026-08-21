@@ -5,6 +5,7 @@ import { sanitizeForFolder } from '../../../shared/branch-name'
 import { mapWithConcurrency } from '../../../shared/concurrency'
 import type { Worktree, WorktreeEntry, WorktreeStatus } from '../../../shared/domain'
 import type { GitRunner } from './git-runner'
+import { FETCH_TIMEOUT_MS } from './git-executor'
 import {
   COMMIT_FORMAT,
   FIELD_SEPARATOR,
@@ -17,6 +18,19 @@ import {
 export const DEFAULT_REFRESH_CONCURRENCY = 6
 
 /**
+ * Whether a fetch failure looks like a credentials problem, as opposed to an
+ * unreachable host or a repository-side error. This is the one sanctioned
+ * use of stderr matching in the codebase: it only selects which message the
+ * user sees, never control flow, and `GIT_TERMINAL_PROMPT=0` (set app-wide in
+ * `gitEnv`) makes git's own phrasing for "would have prompted" quite stable.
+ */
+function isAuthFailure(stderr: string): boolean {
+  return /authentication failed|permission denied|could not read username|could not read password|terminal prompts disabled/i.test(
+    stderr
+  )
+}
+
+/**
  * Turns a repository path into fully annotated worktree state: one
  * `worktree list` call, then per-worktree enrichment through a
  * concurrency-capped pool.
@@ -27,9 +41,40 @@ export const DEFAULT_REFRESH_CONCURRENCY = 6
  */
 export class GitService {
   #git: GitRunner
+  /** One in-flight fetch per repository, so concurrent callers share it. */
+  #fetching = new Map<string, Promise<void>>()
 
   constructor(git: GitRunner) {
     this.#git = git
+  }
+
+  /**
+   * `git fetch --all --prune`. Two rapid callers on the same repository
+   * coalesce into one running fetch rather than racing git's lock files.
+   */
+  async fetchAll(repoPath: string): Promise<void> {
+    const inFlight = this.#fetching.get(repoPath)
+    if (inFlight) return inFlight
+
+    const run = this.#runFetch(repoPath).finally(() => this.#fetching.delete(repoPath))
+    this.#fetching.set(repoPath, run)
+    return run
+  }
+
+  async #runFetch(repoPath: string): Promise<void> {
+    const result = await this.#git.run(['fetch', '--all', '--prune'], {
+      repoPath,
+      timeoutMs: FETCH_TIMEOUT_MS
+    })
+    if (result.exitCode === 0) return
+
+    if (isAuthFailure(result.stderr)) {
+      throw new AppError(
+        'Arborist uses your system git credentials; fetch from a terminal to check them.',
+        'fetch-auth-failed'
+      )
+    }
+    throw new AppError(result.stderr.trim() || 'git fetch failed', 'git-command-failed')
   }
 
   async listWorktrees(
