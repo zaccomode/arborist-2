@@ -12,8 +12,15 @@ function send(channel: IpcEventChannel): void {
  * field, because a Mac app gets those from its menu rather than from the web
  * content.
  */
-export function buildAppMenu(): void {
+export function buildAppMenu(onCheckForUpdates: () => void): void {
   const isMac = process.platform === 'darwin'
+
+  // A check the user asked for always answers, even when the answer is "you
+  // are up to date" — a silent no-op reads as a broken menu item.
+  const checkForUpdatesItem: MenuItemConstructorOptions = {
+    label: 'Check for Updates…',
+    click: onCheckForUpdates
+  }
 
   const settingsItem: MenuItemConstructorOptions = {
     label: 'Settings…',
@@ -28,6 +35,7 @@ export function buildAppMenu(): void {
             label: app.name,
             submenu: [
               { role: 'about' },
+              checkForUpdatesItem,
               { type: 'separator' },
               settingsItem,
               { type: 'separator' },
@@ -87,7 +95,17 @@ export function buildAppMenu(): void {
       ? ([
           { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'front' }] }
         ] satisfies MenuItemConstructorOptions[])
-      : [])
+      : []),
+    // Windows and Linux have no application menu to hang About off, so they
+    // get the Help menu every app on those platforms has instead.
+    ...(isMac
+      ? []
+      : ([
+          {
+            label: 'Help',
+            submenu: [checkForUpdatesItem, { type: 'separator' }, { role: 'about' }]
+          }
+        ] satisfies MenuItemConstructorOptions[]))
   ]
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))

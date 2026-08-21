@@ -7,7 +7,6 @@ import {
   parseBranchList,
   parseCommit,
   parseCommitLog,
-  normaliseGitPath,
   parseRemoteBranchList,
   parseStatus,
   parseUpstreamTrack,
@@ -331,23 +330,5 @@ describe('parseCommitLog', () => {
 
   it('returns nothing for a repository with no commits', () => {
     expect(parseCommitLog('')).toEqual([])
-  })
-})
-
-describe('normaliseGitPath', () => {
-  it('turns git\u2019s forward slashes into the separator Windows paths use', () => {
-    expect(normaliseGitPath('C:/Users/iso/code/arborist', 'win32')).toBe(
-      'C:\\Users\\iso\\code\\arborist'
-    )
-  })
-
-  it('leaves a POSIX path alone', () => {
-    expect(normaliseGitPath('/Users/iso/code/arborist', 'darwin')).toBe('/Users/iso/code/arborist')
-  })
-
-  it('normalises the paths a worktree listing reports', () => {
-    const output = 'worktree C:/code/arborist\nHEAD aaa\nbranch refs/heads/main\n'
-
-    expect(parseWorktreeList(output, 'win32')[0].path).toBe('C:\\code\\arborist')
   })
 })

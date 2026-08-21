@@ -1,6 +1,7 @@
 import { GitBranch, House } from 'lucide-react'
 import type { Worktree } from '@shared/domain'
 import { formatRelativeDate, worktreeTitle } from '@shared/format'
+import { samePath } from '@/lib/paths'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { WorktreeBadges } from '@/components/worktree-badges'
@@ -41,7 +42,7 @@ export function WorktreeList({
   return (
     <ul className="space-y-0.5">
       {worktrees.map((worktree) => {
-        const selected = worktree.path === selectedPath
+        const selected = samePath(worktree.path, selectedPath)
         const metadata = metadataLine(worktree)
 
         return (

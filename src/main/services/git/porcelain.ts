@@ -15,23 +15,10 @@ import type {
   WorkingTreeStatus,
   WorktreeEntry
 } from '../../../shared/domain'
+import { normaliseGitPath } from '../../../shared/paths'
 
 function splitLines(output: string): string[] {
   return output.split(/\r?\n/)
-}
-
-/**
- * Git prints paths with forward slashes, even on Windows, while every path
- * the app builds itself uses backslashes. Normalising everything git says,
- * as it is read, is what lets the two compare equal — and they are compared
- * constantly: selecting a worktree, keying its note, deleting it, showing a
- * project's own location.
- */
-export function normaliseGitPath(
-  path: string,
-  platform: NodeJS.Platform = process.platform
-): string {
-  return platform === 'win32' ? path.replace(/\//g, '\\') : path
 }
 
 /** Splits `key value` where the value may itself contain spaces, or is absent. */

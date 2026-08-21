@@ -18,19 +18,38 @@ export function knownGitLocations(
   if (platform === 'win32') {
     const programFiles = env['ProgramFiles'] ?? 'C:\\Program Files'
     const programFilesX86 = env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'
+    const programData = env['ProgramData'] ?? 'C:\\ProgramData'
     const localAppData = env['LocalAppData'] ?? ''
     const userProfile = env['UserProfile'] ?? ''
+    // Ordered by how many machines have each: the Git for Windows installer
+    // first, then the package managers, then a portable unzip. Every one of
+    // these is a real-world install that puts nothing on PATH — scoop and
+    // choco shims are on PATH for a shell, not for a GUI app launched from
+    // Explorer, which inherits the PATH the session started with.
     return [
       `${programFiles}\\Git\\cmd\\git.exe`,
       `${programFilesX86}\\Git\\cmd\\git.exe`,
       localAppData ? `${localAppData}\\Programs\\Git\\cmd\\git.exe` : '',
-      userProfile ? `${userProfile}\\scoop\\shims\\git.exe` : ''
+      userProfile ? `${userProfile}\\scoop\\shims\\git.exe` : '',
+      `${programData}\\scoop\\shims\\git.exe`,
+      `${programData}\\chocolatey\\bin\\git.exe`,
+      userProfile ? `${userProfile}\\PortableGit\\cmd\\git.exe` : '',
+      'C:\\PortableGit\\cmd\\git.exe',
+      // `bin\git.exe` is the MSYS wrapper rather than the recommended entry
+      // point, so it comes last, but an install missing `cmd` still works.
+      `${programFiles}\\Git\\bin\\git.exe`
     ].filter(Boolean)
   }
   // /usr/bin/git exists on a Mac with no developer tools, but it is a stub
   // that prompts for the Xcode CLT rather than running, so it must pass a
   // real `--version` probe like every other candidate.
-  return ['/usr/bin/git', '/opt/homebrew/bin/git', '/usr/local/bin/git']
+  return [
+    '/usr/bin/git',
+    '/opt/homebrew/bin/git',
+    '/usr/local/bin/git',
+    '/opt/local/bin/git',
+    '/Applications/Xcode.app/Contents/Developer/usr/bin/git'
+  ]
 }
 
 const notFound: GitDiscoveryResult = {

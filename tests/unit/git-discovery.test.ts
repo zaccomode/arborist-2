@@ -103,21 +103,38 @@ describe('knownGitLocations', () => {
       'C:\\Program Files\\Git\\cmd\\git.exe',
       'C:\\Program Files (x86)\\Git\\cmd\\git.exe',
       'C:\\Users\\iso\\AppData\\Local\\Programs\\Git\\cmd\\git.exe',
-      'C:\\Users\\iso\\scoop\\shims\\git.exe'
+      'C:\\Users\\iso\\scoop\\shims\\git.exe',
+      'C:\\ProgramData\\scoop\\shims\\git.exe',
+      'C:\\ProgramData\\chocolatey\\bin\\git.exe',
+      'C:\\Users\\iso\\PortableGit\\cmd\\git.exe',
+      'C:\\PortableGit\\cmd\\git.exe',
+      'C:\\Program Files\\Git\\bin\\git.exe'
     ])
+  })
+
+  it('honours a relocated ProgramData', () => {
+    const locations = knownGitLocations('win32', { ProgramData: 'D:\\ProgramData' })
+    expect(locations).toContain('D:\\ProgramData\\scoop\\shims\\git.exe')
+    expect(locations).toContain('D:\\ProgramData\\chocolatey\\bin\\git.exe')
   })
 
   it('omits Windows locations whose environment variable is unset', () => {
     const locations = knownGitLocations('win32', {})
     expect(locations.every((path) => path.length > 0)).toBe(true)
-    expect(locations.some((path) => path.includes('scoop'))).toBe(false)
+    // The per-user scoop shim is the one under UserProfile; the machine-wide
+    // one under ProgramData has a usable default and stays.
+    expect(locations.some((path) => path.includes('\\scoop\\'))).toBe(true)
+    expect(locations.some((path) => path.includes('PortableGit\\cmd'))).toBe(true)
+    expect(locations.some((path) => path.startsWith('undefined'))).toBe(false)
   })
 
   it('lists the macOS locations with /usr/bin first', () => {
     expect(knownGitLocations('darwin', {})).toEqual([
       '/usr/bin/git',
       '/opt/homebrew/bin/git',
-      '/usr/local/bin/git'
+      '/usr/local/bin/git',
+      '/opt/local/bin/git',
+      '/Applications/Xcode.app/Contents/Developer/usr/bin/git'
     ])
   })
 })

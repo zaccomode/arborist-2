@@ -534,5 +534,27 @@ export const scenarios: Scenario[] = [
     drive: async (window) => {
       await window.getByText('Your Arborist data could not be read').waitFor({ state: 'visible' })
     }
+  },
+  {
+    name: 'update-ready',
+    description:
+      'The toast shown once an update has downloaded. It is the only place ' +
+      'the app offers to restart itself, and it has to read as an offer ' +
+      'rather than as a countdown: dismissing it is a supported answer, and ' +
+      'the update lands on the next ordinary quit instead.',
+    setup: async () => ({ ARBORIST_FAKE_UPDATE: 'ready' }),
+    drive: async (window) => {
+      await window.getByRole('button', { name: 'Restart now' }).waitFor({ state: 'visible' })
+    }
+  },
+  {
+    name: 'update-up-to-date',
+    description:
+      'The answer to a "Check for Updates…" that found nothing. It exists ' +
+      'because a menu item that silently does nothing reads as broken.',
+    setup: async () => ({ ARBORIST_FAKE_UPDATE: 'up-to-date' }),
+    drive: async (window) => {
+      await window.getByText("You're up to date").waitFor({ state: 'visible' })
+    }
   }
 ]

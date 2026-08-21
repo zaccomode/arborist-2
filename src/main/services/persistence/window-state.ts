@@ -11,6 +11,66 @@ export interface WindowState {
   maximized: boolean
 }
 
+/** A display's usable area, as Electron's `screen` module reports it. */
+export interface DisplayArea {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** Enough of the window has to land on a display for it to be grabbable. */
+const MIN_VISIBLE = 80
+
+function overlap(
+  state: WindowState & { x: number; y: number },
+  area: DisplayArea
+): { width: number; height: number } {
+  const width = Math.min(state.x + state.width, area.x + area.width) - Math.max(state.x, area.x)
+  const height = Math.min(state.y + state.height, area.y + area.height) - Math.max(state.y, area.y)
+  return { width, height }
+}
+
+/**
+ * Pulls remembered bounds back onto a display that currently exists.
+ *
+ * The case this is for is a laptop: undock it, and the window it remembers is
+ * at x=2400 on a monitor that is no longer there. Electron will happily open
+ * it there, entirely off-screen, and the app then looks like it failed to
+ * launch. A window that overlaps every display by less than a title bar's
+ * worth is treated as lost, and re-centred on the primary display at a size
+ * that fits it.
+ *
+ * A window that does reach a display is left exactly where it was, including
+ * one deliberately straddling two monitors — dragging it back onto one would
+ * be this function inventing a layout the user did not ask for.
+ *
+ * `displays[0]` is the primary; the caller passes them in that order.
+ */
+export function clampToDisplays(state: WindowState, displays: readonly DisplayArea[]): WindowState {
+  const primary = displays[0]
+  if (!primary) return state
+
+  if (state.x !== undefined && state.y !== undefined) {
+    const positioned = state as WindowState & { x: number; y: number }
+    const visible = displays.some((area) => {
+      const { width, height } = overlap(positioned, area)
+      return width >= MIN_VISIBLE && height >= MIN_VISIBLE
+    })
+    if (visible) return state
+  }
+
+  const width = Math.min(state.width, primary.width)
+  const height = Math.min(state.height, primary.height)
+  return {
+    ...state,
+    width,
+    height,
+    x: Math.round(primary.x + (primary.width - width) / 2),
+    y: Math.round(primary.y + (primary.height - height) / 2)
+  }
+}
+
 /**
  * Window bounds live in their own file. They change on every drag of the
  * window, and rewriting the main data file that often would put the notes and

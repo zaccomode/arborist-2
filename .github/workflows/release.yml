@@ -1,0 +1,104 @@
+name: Release
+
+# Tagging is the trigger, and the tag has to agree with package.json — the
+# version in the app's About panel and the version electron-updater compares
+# against both come from package.json, so a mismatched tag ships a build that
+# lies about what it is.
+on:
+  push:
+    tags: ['v*']
+  # Available by hand so a release can be re-cut without moving a tag, which
+  # would leave everyone who already downloaded the old one stranded.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build (e.g. v1.2.0)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - id: check
+        shell: bash
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          package="v$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$package" ]; then
+            echo "::error::Tag $tag does not match package.json ($package)." \
+                 "Bump the version in package.json and re-tag, or tag $package instead."
+            exit 1
+          fi
+          echo "version=${package#v}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            script: build:mac
+          - os: windows-latest
+            script: build:win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The same checks CI runs on every pull request. A release build is the
+      # worst place to discover a type error.
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit and integration tests
+        run: npm test
+
+      - name: Build, sign and publish a draft release
+        run: npm run ${{ matrix.script }} -- --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS signing and notarisation. Absent, electron-builder skips
+          # both and produces an unsigned build that Gatekeeper will block —
+          # so these are what make a mac release a release. See docs/release.md.
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Upload artifacts for the smoke check
+        uses: actions/upload-artifact@v4
+        with:
+          name: arborist-${{ needs.verify.outputs.version }}-${{ runner.os }}
+          # Both `latest*.yml` manifests go up alongside the installers: they
+          # are what electron-updater reads, and a release missing one updates
+          # nobody.
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest*.yml
+          if-no-files-found: error

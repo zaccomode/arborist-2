@@ -52,6 +52,13 @@ Every capture below is deterministic: a scenario builds its own fixture reposito
 | `git-not-found` — the blocking screen and manual path | ![](./git-not-found-dark.png) | ![](./git-not-found-light.png) |
 | `store-corrupt` — the data file could not be read     | ![](./store-corrupt-dark.png) | ![](./store-corrupt-light.png) |
 
+## Updates
+
+| Scenario                                                       | Dark                              | Light                              |
+| -------------------------------------------------------------- | --------------------------------- | ---------------------------------- |
+| `update-ready` — downloaded, offering a restart                | ![](./update-ready-dark.png)      | ![](./update-ready-light.png)      |
+| `update-up-to-date` — the answer to a check that found nothing | ![](./update-up-to-date-dark.png) | ![](./update-up-to-date-light.png) |
+
 ---
 
 Relative paths like the ones above only resolve inside repository files. A pull request body is rendered outside any file's directory, so embedding one there needs an absolute `github.com/.../blob/<sha>/...?raw=true` URL. On a private repository that blob URL is the only form that renders, since `raw.githubusercontent.com` serves private content only against a token the browser doesn't send.

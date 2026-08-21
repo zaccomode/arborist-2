@@ -25,6 +25,7 @@ import {
   useWorktrees
 } from '@/api/queries'
 import { invoke } from '@/api/client'
+import { samePath } from '@/lib/paths'
 import { useSelection, useSelectedRemoteBranch, useSelectedWorktree } from '@/state/selection'
 
 function automationTarget(project: Repository, worktree: Worktree): AutomationTarget {
@@ -62,7 +63,7 @@ function App(): React.JSX.Element {
   const list = useMemo(() => projects.data ?? [], [projects.data])
   const selected = list.find((project) => project.id === projectId) ?? null
   const worktrees = useWorktrees(selected?.path ?? null)
-  const worktree = worktrees.data?.find((entry) => entry.path === selectedWorktree) ?? null
+  const worktree = worktrees.data?.find((entry) => samePath(entry.path, selectedWorktree)) ?? null
   const remoteBranches = useRemoteBranches(selected?.path ?? null)
   const remoteBranch =
     remoteBranches.data?.find((entry) => entry.name === selectedRemoteBranchName) ?? null
@@ -247,7 +248,7 @@ function App(): React.JSX.Element {
             // A project with a setup script runs it on the worktree it was
             // written for, without anyone having to remember to.
             const script = await invoke('automation:script', selected.id)
-            const created = data?.find((entry) => entry.path === worktreePath)
+            const created = data?.find((entry) => samePath(entry.path, worktreePath))
             if (script.trim() && created) setAutomation(automationTarget(selected, created))
           }}
         />

@@ -9,6 +9,7 @@ import type { ProjectService } from '../services/projects'
 import type { GitService } from '../services/git/git-service'
 import type { PresetService } from '../services/presets'
 import type { AutomationRunner } from '../services/automation'
+import type { UpdateService } from '../services/updates'
 import { worktreeNoteKey } from '../../shared/persisted'
 import { applicationPickerOptions } from '../services/system/pickers'
 
@@ -35,6 +36,7 @@ export interface IpcDeps {
   gitService: GitService
   presets: PresetService
   automation: AutomationRunner
+  updates: UpdateService
 }
 
 export function registerIpcHandlers({
@@ -43,7 +45,8 @@ export function registerIpcHandlers({
   projects,
   gitService,
   presets,
-  automation
+  automation,
+  updates
 }: IpcDeps): void {
   handle('system:pickFolder', async () => {
     // A native dialog cannot be driven by Playwright, so e2e tests and
@@ -200,4 +203,9 @@ export function registerIpcHandlers({
     corruptWarning: store.corruptWarning,
     readOnlyReason: store.readOnlyReason
   }))
+
+  handle('updates:support', () => updates.support())
+  handle('updates:status', () => updates.status)
+  handle('updates:check', () => updates.check(true))
+  handle('updates:install', () => updates.install())
 }
