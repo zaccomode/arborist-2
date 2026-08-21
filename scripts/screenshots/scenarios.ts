@@ -190,6 +190,31 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'recent-commits',
+    description:
+      'The Recent Commits panel: cards with the shortstat line, and load ' +
+      'more revealing the page behind it.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      for (let i = 0; i < 25; i++) {
+        await fixture.commit(`Change ${i}`, { [`file-${i}.txt`]: `${i}\n` })
+      }
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('button', { name: /main/ }).first().click()
+      await window.getByTestId('recent-commits').waitFor({ state: 'visible' })
+      await shot('list')
+
+      await window.getByRole('button', { name: 'Load more' }).click()
+      await window.getByRole('button', { name: 'Load more' }).waitFor({ state: 'detached' })
+      await shot('loaded-more')
+    }
+  },
+  {
     name: 'create-worktree',
     description:
       'The create dialog reading a pasted checkout command, and the worktree ' +

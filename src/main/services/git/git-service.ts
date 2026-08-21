@@ -3,13 +3,21 @@ import { dirname, join } from 'path'
 import { AppError } from '../../../shared/errors'
 import { sanitizeForFolder } from '../../../shared/branch-name'
 import { mapWithConcurrency } from '../../../shared/concurrency'
-import type { Worktree, WorktreeEntry, WorktreeStatus } from '../../../shared/domain'
+import type {
+  CommitLogEntry,
+  Worktree,
+  WorktreeEntry,
+  WorktreeStatus
+} from '../../../shared/domain'
 import type { GitRunner } from './git-runner'
 import { FETCH_TIMEOUT_MS } from './git-executor'
 import {
   COMMIT_FORMAT,
   FIELD_SEPARATOR,
+  LOG_FORMAT,
+  LOG_RECORD_SEPARATOR,
   parseCommit,
+  parseCommitLog,
   parseStatus,
   parseUpstreamTrack,
   parseWorktreeList
@@ -174,6 +182,34 @@ export class GitService {
   /** Drops the entries for worktrees whose directories are gone. */
   async pruneWorktrees(repoPath: string): Promise<void> {
     await this.#git.runOrThrow(['worktree', 'prune'], { repoPath })
+  }
+
+  /**
+   * Recent commits on `ref`, newest first, with `--shortstat` for the Recent
+   * Commits panel. `repoPath` only has to be somewhere inside the
+   * repository: it need not be the worktree `ref` belongs to, which is what
+   * lets this run against a remote branch that has no local checkout at all.
+   */
+  async commitLog(
+    repoPath: string,
+    ref: string,
+    limit: number,
+    skip: number
+  ): Promise<CommitLogEntry[]> {
+    const { stdout } = await this.#git.runOrThrow(
+      [
+        'log',
+        ref,
+        '-n',
+        String(limit),
+        `--skip=${skip}`,
+        '--date=iso-strict',
+        '--shortstat',
+        `--format=${LOG_RECORD_SEPARATOR}${LOG_FORMAT}`
+      ],
+      { repoPath }
+    )
+    return parseCommitLog(stdout)
   }
 
   async #enrich(entry: WorktreeEntry): Promise<WorktreeStatus> {

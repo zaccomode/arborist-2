@@ -33,6 +33,47 @@ export function formatRelativeDate(iso: string, now: Date = new Date()): string 
   return then.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+/**
+ * A commit's age, compact enough to sit beside its absolute date: "4d",
+ * "2h", never a whole sentence the way `formatRelativeDate` reads in the
+ * sidebar, since the Recent Commits panel already spends words on the
+ * subject and author.
+ */
+function compactAge(iso: string, now: Date): string {
+  const then = new Date(iso)
+  if (Number.isNaN(then.getTime())) return ''
+
+  const elapsed = Math.max(0, now.getTime() - then.getTime())
+  if (elapsed < MINUTE) return 'now'
+  if (elapsed < HOUR) return `${Math.floor(elapsed / MINUTE)}m`
+  if (elapsed < DAY) return `${Math.floor(elapsed / HOUR)}h`
+  if (elapsed < 30 * DAY) return `${Math.floor(elapsed / DAY)}d`
+  if (elapsed < 365 * DAY) return `${Math.floor(elapsed / (30 * DAY))}mo`
+  return `${Math.floor(elapsed / (365 * DAY))}y`
+}
+
+/**
+ * A commit's timestamp for the Recent Commits panel: age and absolute date
+ * together, e.g. "4d (13 July 2026 at 21:19)", so the card reads at a glance
+ * without hiding exactly when the commit landed.
+ */
+export function formatCommitTimestamp(iso: string, now: Date = new Date()): string {
+  const then = new Date(iso)
+  if (Number.isNaN(then.getTime())) return ''
+
+  const date = then.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  })
+  const time = then.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  })
+  return `${compactAge(iso, now)} (${date} at ${time})`
+}
+
 /** What the sidebar and the detail pane call a worktree. */
 export function worktreeTitle(worktree: Worktree): string {
   if (worktree.branch) return worktree.branch

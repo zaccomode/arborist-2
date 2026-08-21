@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { NotesEditor } from '@/components/notes-editor'
 import { OpenInGrid } from '@/components/open-in-grid'
+import { RecentCommits } from '@/components/recent-commits'
 import { invoke } from '@/api/client'
 
 function Chip({
@@ -55,7 +56,7 @@ export function WorktreeDetail({
   const hash = worktree.status?.lastCommit?.shortHash ?? worktree.head?.slice(0, 7) ?? null
 
   return (
-    <div className="flex h-full flex-col p-6" data-testid="worktree-detail">
+    <div className="flex h-full flex-col overflow-y-auto p-6" data-testid="worktree-detail">
       <div className="flex items-start gap-3">
         {worktree.isMain ? (
           <House className="mt-1.5 size-6 shrink-0 text-muted-foreground" />
@@ -146,8 +147,14 @@ export function WorktreeDetail({
 
       <OpenInGrid project={project} worktree={worktree} />
 
+      <RecentCommits
+        key={`commits:${project.id}:${worktree.path}`}
+        repoPath={project.path}
+        gitRef={worktree.branch ?? worktree.head}
+      />
+
       <NotesEditor
-        key={`${project.id}:${worktree.path}`}
+        key={`notes:${project.id}:${worktree.path}`}
         repositoryId={project.id}
         worktreePath={worktree.path}
       />

@@ -9,6 +9,7 @@
 import type {
   AheadBehind,
   BranchInfo,
+  CommitLogEntry,
   CommitSummary,
   UpstreamTrack,
   WorkingTreeStatus,
@@ -193,6 +194,57 @@ export function parseCommit(output: string): CommitSummary | null {
     date: fields[3],
     subject: fields[4]
   }
+}
+
+/**
+ * Record and unit separators for `git log --shortstat`, where a commit
+ * subject can contain quotes, pipes, or anything else a human-typed
+ * delimiter would need escaping for. The record separator opens every
+ * commit, `%x1e`, so a chunk can be found and split off regardless of what
+ * the shortstat line under it says; the unit separator, `%x1f`, then splits
+ * that chunk's own fields.
+ */
+export const LOG_RECORD_SEPARATOR = '\u001e'
+export const LOG_FIELD_SEPARATOR = '\u001f'
+
+export const LOG_FORMAT = ['%H', '%h', '%an', '%ad', '%s'].join(LOG_FIELD_SEPARATOR)
+
+/**
+ * Matches `git --shortstat`'s one summary line. Each count is its own
+ * optional group because git omits whichever ones are zero: a rename-only
+ * commit prints just "1 file changed", with neither insertions nor
+ * deletions.
+ */
+const SHORTSTAT = /(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?/
+
+/**
+ * Parses `git log --shortstat --format=${LOG_RECORD_SEPARATOR}${LOG_FORMAT}`
+ * (see `commitLog` in `git-service.ts` for the full invocation) into one
+ * entry per commit, newest first.
+ */
+export function parseCommitLog(output: string): CommitLogEntry[] {
+  return output
+    .split(LOG_RECORD_SEPARATOR)
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => chunk.length > 0)
+    .map((chunk) => {
+      const [header = '', ...rest] = chunk.split(/\r?\n/)
+      const [hash, shortHash, author, date, subject] = header.split(LOG_FIELD_SEPARATOR)
+      if (!hash) return null
+
+      const stats = SHORTSTAT.exec(rest.join('\n'))
+      return {
+        hash,
+        shortHash: shortHash ?? '',
+        author: author ?? '',
+        date: date ?? '',
+        subject: subject ?? '',
+        filesChanged: Number(stats?.[1] ?? 0),
+        insertions: Number(stats?.[2] ?? 0),
+        deletions: Number(stats?.[3] ?? 0)
+      }
+    })
+    .filter((entry): entry is CommitLogEntry => entry !== null)
 }
 
 /**
