@@ -1,0 +1,169 @@
+/**
+ * How "Open in…" presets resolve for a given project and platform.
+ *
+ * Pure, so the settings UI can show what a tri-state override will actually
+ * do without asking the main process, and so the matrix below can be tested
+ * without a repository or a desktop.
+ */
+import type { Preset, PresetConfig } from './persisted'
+
+export type PresetOverride = 'on' | 'off'
+
+export interface BuiltInPreset {
+  builtinId: string
+  name: string
+  icon: string
+  /** Empty means every platform. */
+  platforms: NodeJS.Platform[]
+  enabledByDefault: boolean
+  sortOrder: number
+}
+
+/** A preset as the UI shows it, whether built in or the user's own. */
+export interface ResolvedPreset {
+  id: string
+  name: string
+  icon: string
+  builtinId: string | null
+  /** Project-specific presets are appended after the app-level ones. */
+  projectId: string | null
+}
+
+/** What the settings UI needs to show and edit presets, in one round trip. */
+export interface PresetCatalogue {
+  builtIns: Array<BuiltInPreset & { id: string; enabled: boolean }>
+  presets: Preset[]
+  config: PresetConfig
+}
+
+/**
+ * What running a preset did. A shell preset streams into a console rather
+ * than disappearing into a detached process, so the caller is told which run
+ * to attach to.
+ */
+export type PresetRunResult =
+  { kind: 'launched' } | { kind: 'console'; runId: string; presetName: string }
+
+export function builtInPresetId(builtinId: string): string {
+  return `builtin:${builtinId}`
+}
+
+/**
+ * What a preset resolves to at the app level: the switch in settings if it has
+ * been touched, the preset's own default if it has not.
+ */
+export function enabledAtAppLevel(
+  id: string,
+  defaultEnabled: boolean,
+  config: PresetConfig
+): boolean {
+  const override = config.appOverrides[id]
+  return override ? override === 'on' : defaultEnabled
+}
+
+/** The same, with the project's own switch taking precedence over both. */
+function enabledFor(
+  id: string,
+  defaultEnabled: boolean,
+  config: PresetConfig,
+  projectId: string | null
+): boolean {
+  const override = projectId ? config.overrides[projectId]?.[id] : undefined
+  if (override) return override === 'on'
+  return enabledAtAppLevel(id, defaultEnabled, config)
+}
+
+/**
+ * App-level presets — the built-ins this platform can run, then the user's
+ * own — filtered by the project's tri-state overrides and ordered, with the
+ * project's own presets appended.
+ *
+ * Nothing here asks whether the target is installed. A preset the user
+ * switched on stays on the screen whether or not this machine has the app
+ * behind it: guessing at what is installed makes buttons come and go for
+ * reasons the user cannot see, and the switch is the answer they gave.
+ */
+export function resolvePresets(input: {
+  builtIns: readonly BuiltInPreset[]
+  presets: readonly Preset[]
+  config: PresetConfig
+  projectId: string | null
+  platform: NodeJS.Platform
+}): ResolvedPreset[] {
+  const { builtIns, presets, config, projectId, platform } = input
+
+  const builtInEntries = builtIns
+    .filter((preset) => preset.platforms.length === 0 || preset.platforms.includes(platform))
+    .map((preset) => ({
+      resolved: {
+        id: builtInPresetId(preset.builtinId),
+        name: preset.name,
+        icon: preset.icon,
+        builtinId: preset.builtinId,
+        projectId: null
+      } satisfies ResolvedPreset,
+      rank: preset.sortOrder,
+      defaultEnabled: preset.enabledByDefault
+    }))
+
+  const customEntries = presets
+    .filter((preset) => preset.projectId === null)
+    .map((preset) => ({
+      resolved: {
+        id: preset.id,
+        name: preset.name,
+        icon: preset.icon,
+        builtinId: null,
+        projectId: null
+      } satisfies ResolvedPreset,
+      // Behind every built-in, whatever their own sortOrder values are.
+      rank: 1000 + preset.sortOrder,
+      defaultEnabled: preset.enabledByDefault
+    }))
+
+  const appLevel = [...builtInEntries, ...customEntries]
+    .filter((entry) => enabledFor(entry.resolved.id, entry.defaultEnabled, config, projectId))
+    .sort((a, b) => orderOf(a.resolved.id, a.rank, config) - orderOf(b.resolved.id, b.rank, config))
+    .map((entry) => entry.resolved)
+
+  const projectLevel = projectId
+    ? presets
+        .filter((preset) => preset.projectId === projectId)
+        .filter((preset) => enabledFor(preset.id, preset.enabledByDefault, config, projectId))
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((preset): ResolvedPreset => ({
+          id: preset.id,
+          name: preset.name,
+          icon: preset.icon,
+          builtinId: null,
+          projectId
+        }))
+    : []
+
+  return [...appLevel, ...projectLevel]
+}
+
+/** An explicit order wins; anything unlisted keeps its default rank, after. */
+function orderOf(id: string, rank: number, config: PresetConfig): number {
+  const index = config.order.indexOf(id)
+  return index === -1 ? 10_000 + rank : index
+}
+
+/**
+ * Turns an origin remote into the repository's GitHub URL, normalising the
+ * ssh forms. Returns null for anything that isn't GitHub, which is what turns
+ * pressing the button into "this project has no GitHub remote" rather than a
+ * link that goes nowhere.
+ */
+export function githubUrlFromRemote(remote: string): string | null {
+  const url = remote.trim().replace(/\.git$/, '')
+  if (!url) return null
+
+  const ssh = /^(?:ssh:\/\/)?git@github\.com[:/](.+)$/.exec(url)
+  if (ssh) return `https://github.com/${ssh[1]}`
+
+  const https = /^https?:\/\/(?:[^@]+@)?github\.com\/(.+)$/.exec(url)
+  if (https) return `https://github.com/${https[1]}`
+
+  return null
+}

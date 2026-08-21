@@ -33,7 +33,7 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Unit tests
+      - name: Unit and integration tests
         run: npm test
 
       - name: E2E smoke (builds first via pretest:e2e)

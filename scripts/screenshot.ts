@@ -39,7 +39,10 @@ function parseArgs(argv: string[]): { outDir: string; names: string[] } {
   return { outDir: resolve(outDir), names }
 }
 
-async function launch(userDataDir: string): Promise<ElectronApplication> {
+async function launch(
+  userDataDir: string,
+  env: Record<string, string>
+): Promise<ElectronApplication> {
   const args = [
     '.',
     // Keep each scenario off the real app's stored data, so captures can't
@@ -50,7 +53,7 @@ async function launch(userDataDir: string): Promise<ElectronApplication> {
   // containers. Harmless elsewhere, since this only ever runs locally.
   if (process.getuid?.() === 0) args.push('--no-sandbox')
 
-  return electron.launch({ args })
+  return electron.launch({ args, env: { ...(process.env as Record<string, string>), ...env } })
 }
 
 /** Captures the window as it stands, once per theme, as `<stem>-<theme>.png`. */
@@ -78,6 +81,17 @@ async function captureThemes(
       theme === 'dark'
     )
 
+    // Swapping the theme starts a colour transition on everything carrying
+    // `transition-[color]` — a textarea's own text among them, which lands
+    // near-invisible against the new background if it is caught halfway.
+    // Animations are excluded: a spinner never finishes.
+    await window.waitForFunction(() =>
+      document
+        .getAnimations()
+        .filter((animation) => animation instanceof CSSTransition)
+        .every((animation) => animation.playState !== 'running')
+    )
+
     const path = join(outDir, `${stem}-${theme}.png`)
     // Buttons carry `transition-all`, so swapping the theme animates their
     // colours. Without this the capture lands mid-transition and renders a
@@ -89,14 +103,23 @@ async function captureThemes(
 
 async function capture(scenario: Scenario, outDir: string): Promise<void> {
   const userDataDir = await mkdtemp(join(tmpdir(), 'arborist-shot-'))
-  const app = await launch(userDataDir)
+  // Deterministic, unlike the user-data dir, because whatever a scenario
+  // builds here can end up on screen: a random temp path would change the
+  // pixels on every run and make the whole comparison worthless.
+  const workDir = join(tmpdir(), 'arborist-shot-work', scenario.name)
+  await rm(workDir, { recursive: true, force: true })
+  await mkdir(workDir, { recursive: true })
+  const env = (await scenario.setup?.({ userDataDir, workDir })) ?? {}
+  const app = await launch(userDataDir, env)
 
   try {
     const window = await app.firstWindow()
     await window.waitForLoadState('domcontentloaded')
     // The window is created with show: false and revealed on ready-to-show,
     // so capturing before that lands catches a blank frame.
-    await window.waitForSelector('#root > *')
+    // `:not(script)` because the theme provider's no-flash script is the
+    // first child of #root, and waiting on an invisible element never settles.
+    await window.waitForSelector('#root > :not(script)')
 
     const steps = new Set<string>()
     const shot = async (step: string): Promise<void> => {
@@ -117,6 +140,7 @@ async function capture(scenario: Scenario, outDir: string): Promise<void> {
   } finally {
     await app.close()
     await rm(userDataDir, { recursive: true, force: true })
+    await rm(workDir, { recursive: true, force: true })
   }
 }
 

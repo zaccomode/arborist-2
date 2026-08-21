@@ -19,6 +19,17 @@ Plumbing that makes the CLI work here (don't break it):
 
 If the CLI misbehaves, diagnose and fix the plumbing — don't fall back to hand-copying component source.
 
+**One exception, for blocked containers.** Some cloud containers deny `ui.shadcn.com`, where the CLI fetches its registry, and the failure reads as `Request was cancelled`. Confirm it is the network rather than the plumbing (`curl -sS -o /dev/null -w '%{http_code}' https://ui.shadcn.com/r/styles/new-york-v4/input.json` returns `000`), then take the CLI's own payload from the upstream source tree, which is served from a host that is usually reachable:
+
+```bash
+curl -sS "https://raw.githubusercontent.com/shadcn-ui/ui/main/apps/v4/registry/new-york-v4/ui/<component>.tsx" \
+  | sed 's#@/registry/new-york-v4/ui/#@/components/ui/#g' \
+  > src/renderer/src/components/ui/<component>.tsx
+npx prettier --write src/renderer/src/components/ui/<component>.tsx
+```
+
+The result is what `shadcn add` writes, so a later `--overwrite` from a machine with access is a no-op. Install the component's npm dependencies by hand, since nothing reads the registry's dependency list — check its imports.
+
 ## Before opening a pull request
 
 Every PR that touches behaviour or UI needs all four of these. Do them in order, before opening the PR, not after review asks for them.
@@ -103,10 +114,11 @@ Wait on the end state, as above, rather than sleeping: a capture that races the 
 
 Each call writes `<scenario>-<step>-<theme>.png`, so the example produces six images. A scenario that never calls `shot` is captured once at the end, as `<scenario>-<theme>.png`. Reusing a step name within a scenario is an error rather than a silent overwrite.
 
-Four things the runner handles that are easy to get wrong in a hand-rolled capture. All four produce a plausible-looking wrong image rather than an error, which is the dangerous kind:
+Five things the runner handles that are easy to get wrong in a hand-rolled capture. All five produce a plausible-looking wrong image rather than an error, which is the dangerous kind:
 
 - **Wait for the theme class, not just `emulateMedia`.** `main.tsx` mirrors `prefers-color-scheme` onto a `.dark` class from a change listener, so the class lands a tick after `emulateMedia` resolves.
 - **Screenshot with `animations: 'disabled'`.** Buttons carry `transition-all`, so a theme swap animates their colours. Capturing mid-transition renders a blend of both themes — a `bg-primary` button came out mid-grey in both schemes, which reads as a styling bug that isn't there.
+- **Wait for the colour transitions to finish, as well.** `animations: 'disabled'` does not save every element: a textarea carries `transition-[color]`, so after a theme swap its own text fades from one theme's colour to the other's, and a capture in between shows a note as near-invisible against the new background — an empty-looking box rather than an obviously wrong colour. The runner waits for every `CSSTransition` to stop running, and excludes animations, since a spinner never finishes.
 - **Park the pointer after clicking.** It otherwise rests on whatever was clicked and the capture picks up its `hover:` styling: the ping button measured RGB 209 hovered against 229 at rest. Set `keepPointer` on the scenario to capture a hover state deliberately.
 - **Wait for `#root > *`.** The window is created with `show: false` and revealed on `ready-to-show`, so capturing earlier catches a blank frame.
 
