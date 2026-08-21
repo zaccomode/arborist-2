@@ -8,6 +8,7 @@
  */
 
 import type {
+  BranchInfo,
   CommitLogEntry,
   GitDiscoveryResult,
   RemoteBranch,
@@ -30,6 +31,8 @@ export interface IpcInvokeContract {
   /** Lists a repository's worktrees, each enriched with its current status. */
   'worktrees:list': { args: [repoPath: string]; result: Worktree[] }
   'branches:exists': { args: [repoPath: string, branch: string]; result: boolean }
+  /** Local branches, for the base-ref picker on create-worktree. */
+  'branches:list': { args: [repoPath: string]; result: BranchInfo[] }
   /** Remote branches with no local worktree of their own, tip commit included. */
   'branches:remote': { args: [repoPath: string]; result: RemoteBranch[] }
   /** The default sibling folder for a new worktree, already de-duplicated. */
@@ -140,6 +143,7 @@ const CHANNELS: Record<IpcChannel, true> = {
   'projects:remove': true,
   'worktrees:list': true,
   'branches:exists': true,
+  'branches:list': true,
   'branches:remote': true,
   'worktrees:suggestPath': true,
   'worktrees:create': true,

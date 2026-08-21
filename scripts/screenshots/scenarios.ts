@@ -241,6 +241,47 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'base-ref-picker',
+    description:
+      'The base-ref combobox on create-worktree: HEAD labelled with what it ' +
+      'points at, the full list, filtering as you type, and the offer to ' +
+      'track a remote base once the typed branch matches its short name.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await fixture.commitFromElsewhere('feature-x', 'Pushed while nobody was fetching')
+      await fixture.git(['fetch', 'origin'])
+      await fixture.git(['branch', 'release/1.0'])
+      await fixture.git(['branch', 'release/2.0'])
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+
+      await window.getByRole('button', { name: 'New worktree', exact: true }).click()
+      await window.getByLabel('Branch').fill('some-topic')
+      await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
+      await shot('closed')
+
+      await window.getByRole('combobox').click()
+      await window.getByRole('option').first().waitFor({ state: 'visible' })
+      await shot('open')
+
+      await window.getByPlaceholder('Search branches…').fill('release')
+      await window.getByRole('option', { name: 'release/1.0' }).waitFor({ state: 'visible' })
+      await shot('filtered')
+
+      await window.getByRole('option', { name: 'release/1.0' }).click()
+      await window.getByLabel('Branch').fill('feature-x')
+      await window.getByRole('combobox').click()
+      await window.getByPlaceholder('Search branches…').fill('origin/feature-x')
+      await window.getByRole('option', { name: 'origin/feature-x' }).click()
+      await window.getByText(/matches origin\/feature-x/).waitFor({ state: 'visible' })
+      await shot('track-offer')
+    }
+  },
+  {
     name: 'delete-worktree',
     description:
       'Both confirmations for deleting a dirty worktree: the first says what ' +

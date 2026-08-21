@@ -163,6 +163,80 @@ test('reaches the application picker from an application preset', async () => {
   await rm(root, { recursive: true, force: true })
 })
 
+test('creates a new branch from a base ref picked on the create-worktree dialog', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+  // The main worktree sits on a branch other than main, with a commit
+  // origin/main does not have, so basing on HEAD (the old default) and
+  // basing on origin/main (picked explicitly) would diverge — proof the
+  // picked ref is what actually got used, not silently ignored.
+  await fixture.git(['checkout', '-b', 'other'])
+  await fixture.commit('Only on other', { 'other.txt': 'other' })
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+
+  await window.getByRole('button', { name: 'New worktree', exact: true }).click()
+  await window.getByLabel('Branch').fill('from-origin-main')
+  await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
+
+  await window.getByRole('combobox').click()
+  await window.getByPlaceholder('Search branches…').fill('origin/main')
+  await window.getByRole('option', { name: 'origin/main' }).click()
+  await expect(window.getByRole('combobox')).toHaveText('origin/main')
+  await expect(window.getByTestId('branch-existence')).toContainText('created from origin/main')
+
+  await window.getByRole('button', { name: 'Create' }).click()
+  await expect(window.getByTestId('worktree-detail')).toBeVisible()
+
+  // `worktree add -b <branch> <path> <baseRef>` only moves the branch
+  // pointer to baseRef — it makes no commit of its own — so the base has to
+  // be read off the first commit made afterwards, in the worktree the app
+  // just created.
+  const originMain = (await fixture.git(['rev-parse', 'origin/main'])).trim()
+  const otherTip = (await fixture.git(['rev-parse', 'other'])).trim()
+  await fixture.commit(
+    'First commit on the new branch',
+    { 'new.txt': 'new' },
+    join(fixture.root, 'from-origin-main')
+  )
+  const parent = (await fixture.git(['log', '-1', '--format=%P', 'from-origin-main'])).trim()
+  expect(parent).toBe(originMain)
+  expect(parent).not.toBe(otherTip)
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})
+
+test('filters the base-ref combobox as you type, against a fixture with 30 branches', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+  for (let i = 1; i <= 30; i++) {
+    await fixture.git(['branch', `topic/${i}`])
+  }
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+
+  await window.getByRole('button', { name: 'New worktree', exact: true }).click()
+  await window.getByLabel('Branch').fill('feature/x')
+  await window.getByRole('combobox').click()
+
+  const options = window.getByRole('option')
+  await expect(options).toHaveCount(32) // HEAD, main, and the 30 topic branches.
+
+  await window.getByPlaceholder('Search branches…').fill('topic/17')
+  await expect(options).toHaveCount(1)
+  await expect(options.first()).toHaveText('topic/17')
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})
+
 test('walks both confirmations to delete a dirty worktree', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
   const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')

@@ -66,6 +66,10 @@ function App(): React.JSX.Element {
   const remoteBranches = useRemoteBranches(selected?.path ?? null)
   const remoteBranch =
     remoteBranches.data?.find((entry) => entry.name === selectedRemoteBranchName) ?? null
+  const mainWorktree = worktrees.data?.find((entry) => entry.isMain) ?? null
+  const headLabel = mainWorktree
+    ? (mainWorktree.branch ?? `detached at ${mainWorktree.head?.slice(0, 7)}`)
+    : null
 
   useEffect(() => {
     // Land on something as soon as there is something to land on, including
@@ -232,6 +236,7 @@ function App(): React.JSX.Element {
             if (!next) setTrackingRemote(null)
           }}
           repoPath={selected.path}
+          headLabel={headLabel}
           trackRemote={
             trackingRemote && { ref: trackingRemote.name, shortName: trackingRemote.shortName }
           }

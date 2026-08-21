@@ -82,6 +82,7 @@ export function registerIpcHandlers({
   )
 
   handle('branches:exists', (repoPath, branch) => gitService.branchExists(repoPath, branch))
+  handle('branches:list', (repoPath) => gitService.listLocalBranches(repoPath))
   handle('branches:remote', (repoPath) => gitService.listRemoteBranches(repoPath))
   handle('worktrees:suggestPath', (repoPath, branch) =>
     gitService.suggestWorktreePath(repoPath, branch)

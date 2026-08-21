@@ -5,7 +5,7 @@ import {
   useQueryClient,
   type UseMutationResult
 } from '@tanstack/react-query'
-import type { CommitLogEntry, RemoteBranch, Worktree } from '@shared/domain'
+import type { BranchInfo, CommitLogEntry, RemoteBranch, Worktree } from '@shared/domain'
 import type { PresetCatalogue, ResolvedPreset } from '@shared/presets'
 import type { Repository, Settings } from '@shared/persisted'
 import { invoke } from '@/api/client'
@@ -22,7 +22,8 @@ export const queryKeys = {
   presetCatalogue: ['preset-catalogue'] as const,
   settings: ['settings'] as const,
   commits: (repoPath: string, ref: string) => ['commits', repoPath, ref] as const,
-  remoteBranches: (repoPath: string) => ['remote-branches', repoPath] as const
+  remoteBranches: (repoPath: string) => ['remote-branches', repoPath] as const,
+  localBranches: (repoPath: string) => ['local-branches', repoPath] as const
 }
 
 export function useProjects(): ReturnType<typeof useQuery<Repository[]>> {
@@ -67,6 +68,16 @@ export function useRemoteBranches(
   return useQuery({
     queryKey: queryKeys.remoteBranches(repoPath ?? ''),
     queryFn: () => invoke('branches:remote', repoPath!),
+    enabled: repoPath !== null
+  })
+}
+
+export function useLocalBranches(
+  repoPath: string | null
+): ReturnType<typeof useQuery<BranchInfo[]>> {
+  return useQuery({
+    queryKey: queryKeys.localBranches(repoPath ?? ''),
+    queryFn: () => invoke('branches:list', repoPath!),
     enabled: repoPath !== null
   })
 }

@@ -4,6 +4,7 @@ import { AppError } from '../../../shared/errors'
 import { sanitizeForFolder } from '../../../shared/branch-name'
 import { mapWithConcurrency } from '../../../shared/concurrency'
 import type {
+  BranchInfo,
   CommitLogEntry,
   RemoteBranch,
   Worktree,
@@ -17,6 +18,7 @@ import {
   FIELD_SEPARATOR,
   LOG_FORMAT,
   LOG_RECORD_SEPARATOR,
+  parseBranchList,
   parseCommit,
   parseCommitLog,
   parseRemoteBranchList,
@@ -116,6 +118,15 @@ export class GitService {
       { repoPath }
     )
     return exitCode === 0
+  }
+
+  /** Local branches, for the base-ref picker on create-worktree. */
+  async listLocalBranches(repoPath: string): Promise<BranchInfo[]> {
+    const { stdout } = await this.#git.runOrThrow(
+      ['branch', '--list', '--format=%(refname:short)%(HEAD)'],
+      { repoPath }
+    )
+    return parseBranchList(stdout)
   }
 
   /**

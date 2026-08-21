@@ -95,6 +95,26 @@ describe('GitService.fetchAll', () => {
   })
 })
 
+describe('GitService.listLocalBranches', () => {
+  it('parses git branch --list --format=%(refname:short)%(HEAD)', async () => {
+    const calls: string[][] = []
+    const service = new GitService(
+      fakeGit((args) => {
+        calls.push([...args])
+        return { exitCode: 0, stdout: 'main*\nfeature/x\n' }
+      })
+    )
+
+    const branches = await service.listLocalBranches('/repo')
+
+    expect(calls[0]).toEqual(['branch', '--list', '--format=%(refname:short)%(HEAD)'])
+    expect(branches).toEqual([
+      { name: 'main', current: true },
+      { name: 'feature/x', current: false }
+    ])
+  })
+})
+
 describe('GitService.listRemoteBranches', () => {
   it('hides a remote branch that already has a local worktree, matching by short name', async () => {
     const service = new GitService(
