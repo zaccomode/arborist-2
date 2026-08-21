@@ -200,6 +200,12 @@ export const scenarios: Scenario[] = [
       for (let i = 0; i < 25; i++) {
         await fixture.commit(`Change ${i}`, { [`file-${i}.txt`]: `${i}\n` })
       }
+      // Long enough to wrap onto a second line rather than fit on one, so
+      // the capture shows the subject wrapping rather than truncating.
+      await fixture.commit(
+        'Rework the badge matrix fixture so every worktree state the sidebar can show — ahead/behind, dirty, locked, missing, deleted upstream, detached — has its own row and its own fixture helper',
+        { 'badge-matrix.txt': 'rework' }
+      )
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {

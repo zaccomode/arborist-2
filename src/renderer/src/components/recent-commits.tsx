@@ -21,7 +21,7 @@ function CommitRow({ commit }: { commit: CommitLogEntry }): React.JSX.Element {
             {formatCommitTimestamp(commit.date)}
           </span>
         </p>
-        <p className="truncate text-sm">{commit.subject}</p>
+        <p className="text-sm break-words">{commit.subject}</p>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
           <button
             type="button"
