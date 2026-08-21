@@ -5,7 +5,7 @@ import {
   useQueryClient,
   type UseMutationResult
 } from '@tanstack/react-query'
-import type { CommitLogEntry, Worktree } from '@shared/domain'
+import type { CommitLogEntry, RemoteBranch, Worktree } from '@shared/domain'
 import type { PresetCatalogue, ResolvedPreset } from '@shared/presets'
 import type { Repository, Settings } from '@shared/persisted'
 import { invoke } from '@/api/client'
@@ -21,7 +21,8 @@ export const queryKeys = {
     ['presets', repoPath, projectId] as const,
   presetCatalogue: ['preset-catalogue'] as const,
   settings: ['settings'] as const,
-  commits: (repoPath: string, ref: string) => ['commits', repoPath, ref] as const
+  commits: (repoPath: string, ref: string) => ['commits', repoPath, ref] as const,
+  remoteBranches: (repoPath: string) => ['remote-branches', repoPath] as const
 }
 
 export function useProjects(): ReturnType<typeof useQuery<Repository[]>> {
@@ -47,14 +48,26 @@ export function useRemoveProject(): UseMutationResult<void, Error, string> {
 /**
  * Fetches a repository's remotes, then invalidates everything a fetch can
  * change: ahead/behind counts and remote-deleted flags live on the worktree
- * list.
+ * list, and new or vanished remote branches live on the remote-branches list.
  */
 export function useFetch(): UseMutationResult<void, Error, string> {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (repoPath: string) => invoke('repos:fetch', repoPath),
-    onSuccess: (_result, repoPath) =>
+    onSuccess: (_result, repoPath) => {
       client.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
+      client.invalidateQueries({ queryKey: queryKeys.remoteBranches(repoPath) })
+    }
+  })
+}
+
+export function useRemoteBranches(
+  repoPath: string | null
+): ReturnType<typeof useQuery<RemoteBranch[]>> {
+  return useQuery({
+    queryKey: queryKeys.remoteBranches(repoPath ?? ''),
+    queryFn: () => invoke('branches:remote', repoPath!),
+    enabled: repoPath !== null
   })
 }
 

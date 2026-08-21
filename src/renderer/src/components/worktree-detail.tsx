@@ -9,34 +9,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { Chip } from '@/components/chip'
 import { NotesEditor } from '@/components/notes-editor'
 import { OpenInGrid } from '@/components/open-in-grid'
 import { RecentCommits } from '@/components/recent-commits'
 import { invoke } from '@/api/client'
-
-function Chip({
-  children,
-  onClick,
-  title
-}: {
-  children: React.ReactNode
-  onClick?: () => void
-  title?: string
-}): React.JSX.Element {
-  const className =
-    'flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs text-muted-foreground'
-  if (!onClick) return <span className={className}>{children}</span>
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      className={`${className} hover:bg-accent`}
-    >
-      {children}
-    </button>
-  )
-}
 
 export function WorktreeDetail({
   worktree,

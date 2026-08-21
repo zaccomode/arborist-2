@@ -1,0 +1,66 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { GitLocator } from '../../src/main/services/git/git-discovery'
+import { GitRunner } from '../../src/main/services/git/git-runner'
+import { GitService } from '../../src/main/services/git/git-service'
+import { makeFixtureRepo, type GitFixture } from './fixtures/git-fixture'
+
+const service = new GitService(new GitRunner(new GitLocator()))
+
+let fixture: GitFixture
+
+beforeEach(async () => {
+  fixture = await makeFixtureRepo()
+}, 60_000)
+
+afterEach(async () => {
+  await fixture?.cleanup()
+})
+
+describe('listRemoteBranches, against a bare-remote fixture', () => {
+  it('lists nothing beyond main, which already has the main worktree', async () => {
+    expect(await service.listRemoteBranches(fixture.repoPath)).toEqual([])
+  }, 30_000)
+
+  it('lists a branch pushed from elsewhere, once fetched, and never lists origin/HEAD', async () => {
+    await fixture.commitFromElsewhere('feature-x', 'Pushed from elsewhere')
+    await service.fetchAll(fixture.repoPath)
+
+    const branches = await service.listRemoteBranches(fixture.repoPath)
+
+    expect(branches.map((branch) => branch.name)).toEqual(['origin/feature-x'])
+    expect(branches[0].shortName).toBe('feature-x')
+    expect(branches[0].lastCommit).toMatchObject({ subject: 'Pushed from elsewhere' })
+  }, 30_000)
+
+  it('hides a remote branch once a local worktree exists on its short name', async () => {
+    await fixture.commitFromElsewhere('feature-y', 'Pushed from elsewhere')
+    await service.fetchAll(fixture.repoPath)
+    expect(await service.listRemoteBranches(fixture.repoPath)).toHaveLength(1)
+
+    await fixture.addWorktree('feature-y', { branch: 'feature-y', startPoint: 'origin/feature-y' })
+
+    expect(await service.listRemoteBranches(fixture.repoPath)).toEqual([])
+  }, 30_000)
+
+  it('creating a worktree from a remote branch removes it from the list and gives it a working upstream', async () => {
+    await fixture.commitFromElsewhere('feature-z', 'Pushed from elsewhere')
+    await service.fetchAll(fixture.repoPath)
+
+    const path = await service.suggestWorktreePath(fixture.repoPath, 'feature-z')
+    await service.createWorktree(fixture.repoPath, {
+      branch: 'feature-z',
+      path,
+      baseRef: 'origin/feature-z',
+      track: true
+    })
+
+    expect(await service.listRemoteBranches(fixture.repoPath)).toEqual([])
+
+    const worktrees = await service.listWorktrees(fixture.repoPath)
+    const created = worktrees.find((worktree) => worktree.path === path)
+    expect(created?.status?.upstream).toBe('origin/feature-z')
+
+    const upstream = await fixture.git(['rev-parse', '--abbrev-ref', 'feature-z@{upstream}'])
+    expect(upstream.trim()).toBe('origin/feature-z')
+  }, 30_000)
+})

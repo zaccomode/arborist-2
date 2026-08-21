@@ -7,7 +7,13 @@
  * types from it. Adding a channel means adding it here first.
  */
 
-import type { CommitLogEntry, GitDiscoveryResult, StoreStatus, Worktree } from './domain'
+import type {
+  CommitLogEntry,
+  GitDiscoveryResult,
+  RemoteBranch,
+  StoreStatus,
+  Worktree
+} from './domain'
 import type { Preset, Repository, Settings } from './persisted'
 import type { AutomationEvent } from './automation'
 import type { PresetCatalogue, PresetRunResult, ResolvedPreset } from './presets'
@@ -24,10 +30,21 @@ export interface IpcInvokeContract {
   /** Lists a repository's worktrees, each enriched with its current status. */
   'worktrees:list': { args: [repoPath: string]; result: Worktree[] }
   'branches:exists': { args: [repoPath: string, branch: string]; result: boolean }
+  /** Remote branches with no local worktree of their own, tip commit included. */
+  'branches:remote': { args: [repoPath: string]; result: RemoteBranch[] }
   /** The default sibling folder for a new worktree, already de-duplicated. */
   'worktrees:suggestPath': { args: [repoPath: string, branch: string]; result: string }
   'worktrees:create': {
-    args: [repoPath: string, options: { branch: string; path: string; baseRef?: string | null }]
+    args: [
+      repoPath: string,
+      options: {
+        branch: string
+        path: string
+        baseRef?: string | null
+        /** Runs `worktree add --track`, so the new branch tracks `baseRef` from birth. */
+        track?: boolean
+      }
+    ]
     result: string
   }
   'worktrees:isDirty': { args: [worktreePath: string]; result: boolean }
@@ -123,6 +140,7 @@ const CHANNELS: Record<IpcChannel, true> = {
   'projects:remove': true,
   'worktrees:list': true,
   'branches:exists': true,
+  'branches:remote': true,
   'worktrees:suggestPath': true,
   'worktrees:create': true,
   'worktrees:isDirty': true,

@@ -106,3 +106,16 @@ export interface Worktree extends WorktreeEntry {
   status: WorktreeStatus | null
   statusError: string | null
 }
+
+/**
+ * A remote branch with no local worktree of its own — the Remote Branches
+ * sidebar section only ever lists these, so there is nothing here to say a
+ * worktree already exists.
+ */
+export interface RemoteBranch {
+  /** Full remote-tracking ref, e.g. `origin/feature-x`. */
+  name: string
+  /** `name` with its remote prefix stripped, e.g. `feature-x`. */
+  shortName: string
+  lastCommit: CommitSummary | null
+}

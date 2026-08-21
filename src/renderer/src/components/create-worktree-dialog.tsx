@@ -19,14 +19,27 @@ export function CreateWorktreeDialog({
   open,
   onOpenChange,
   repoPath,
-  onCreated
+  onCreated,
+  trackRemote
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   repoPath: string
   onCreated: (worktreePath: string) => void
+  /**
+   * Set for "Create worktree from this branch" on a remote-branch detail
+   * pane: prefills the branch field with the remote's short name, and
+   * creation tracks `ref` from birth regardless of what the branch field
+   * ends up saying, since that is the entire point of opening the dialog
+   * this way.
+   *
+   * The caller keys this component on `trackRemote`'s identity, so a fresh
+   * mount is what seeds the field — there is no effect here reacting to it
+   * changing after that.
+   */
+  trackRemote?: { ref: string; shortName: string } | null
 }): React.JSX.Element {
-  const [raw, setRaw] = useState('')
+  const [raw, setRaw] = useState(trackRemote?.shortName ?? '')
   const [path, setPath] = useState('')
   // Null while the user hasn't touched the location, so it keeps following
   // the branch name until they take it over.
@@ -68,7 +81,11 @@ export function CreateWorktreeDialog({
     setError(null)
     setCreating(true)
     try {
-      const created = await invoke('worktrees:create', repoPath, { branch, path })
+      const created = await invoke('worktrees:create', repoPath, {
+        branch,
+        path,
+        ...(trackRemote ? { baseRef: trackRemote.ref, track: true } : {})
+      })
       onCreated(created)
       setOpen(false)
     } catch (cause) {
@@ -87,7 +104,9 @@ export function CreateWorktreeDialog({
           <DialogHeader>
             <DialogTitle>New worktree</DialogTitle>
             <DialogDescription>
-              Paste a branch name, or the whole checkout command it came in.
+              {trackRemote
+                ? `Creates a local branch tracking ${trackRemote.ref}.`
+                : 'Paste a branch name, or the whole checkout command it came in.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -115,7 +134,9 @@ export function CreateWorktreeDialog({
               <p data-testid="branch-existence" className="text-xs text-muted-foreground">
                 {checked.exists
                   ? 'Branch exists, and will be checked out here.'
-                  : 'New branch, created from the current HEAD.'}
+                  : trackRemote
+                    ? `New branch, tracking ${trackRemote.ref}.`
+                    : 'New branch, created from the current HEAD.'}
               </p>
             )}
           </div>

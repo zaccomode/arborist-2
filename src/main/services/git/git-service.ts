@@ -5,6 +5,7 @@ import { sanitizeForFolder } from '../../../shared/branch-name'
 import { mapWithConcurrency } from '../../../shared/concurrency'
 import type {
   CommitLogEntry,
+  RemoteBranch,
   Worktree,
   WorktreeEntry,
   WorktreeStatus
@@ -18,6 +19,7 @@ import {
   LOG_RECORD_SEPARATOR,
   parseCommit,
   parseCommitLog,
+  parseRemoteBranchList,
   parseStatus,
   parseUpstreamTrack,
   parseWorktreeList
@@ -36,6 +38,11 @@ function isAuthFailure(stderr: string): boolean {
   return /authentication failed|permission denied|could not read username|could not read password|terminal prompts disabled/i.test(
     stderr
   )
+}
+
+/** `origin/feature-x` -> `feature-x`: the name a local branch of the same branch would carry. */
+function shortRemoteName(ref: string): string {
+  return ref.slice(ref.indexOf('/') + 1)
 }
 
 /**
@@ -137,7 +144,7 @@ export class GitService {
    */
   async createWorktree(
     repoPath: string,
-    options: { branch: string; path: string; baseRef?: string | null }
+    options: { branch: string; path: string; baseRef?: string | null; track?: boolean }
   ): Promise<string> {
     if (await exists(options.path)) {
       throw new AppError(`${options.path} already exists.`, 'path-already-exists')
@@ -148,6 +155,7 @@ export class GitService {
       : [
           'worktree',
           'add',
+          ...(options.track ? ['--track'] : []),
           '-b',
           options.branch,
           options.path,
@@ -182,6 +190,45 @@ export class GitService {
   /** Drops the entries for worktrees whose directories are gone. */
   async pruneWorktrees(repoPath: string): Promise<void> {
     await this.#git.runOrThrow(['worktree', 'prune'], { repoPath })
+  }
+
+  /**
+   * Remote branches with no local worktree of their own, tip commit
+   * included. The subtraction matches on short name — `origin/feature-x` is
+   * hidden once a worktree exists on `feature-x` — which misses a local
+   * branch deliberately tracking a differently-named remote branch. Rare
+   * enough to accept.
+   */
+  async listRemoteBranches(
+    repoPath: string,
+    concurrency: number = DEFAULT_REFRESH_CONCURRENCY
+  ): Promise<RemoteBranch[]> {
+    const [remotes, worktrees] = await Promise.all([
+      this.#git.runOrThrow(['branch', '-r', '--list', '--format=%(refname:short)'], { repoPath }),
+      this.#git.runOrThrow(['worktree', 'list', '--porcelain'], { repoPath })
+    ])
+
+    const localBranches = new Set(
+      parseWorktreeList(worktrees.stdout)
+        .map((entry) => entry.branch)
+        .filter((branch): branch is string => branch !== null)
+    )
+    const candidates = parseRemoteBranchList(remotes.stdout).filter(
+      (ref) => !localBranches.has(shortRemoteName(ref))
+    )
+
+    const commits = await mapWithConcurrency(candidates, concurrency, (ref) =>
+      this.#git.runOrThrow(['log', '-1', `--format=${COMMIT_FORMAT}`, ref], { repoPath })
+    )
+
+    return candidates.map((ref, index) => {
+      const result = commits[index]
+      return {
+        name: ref,
+        shortName: shortRemoteName(ref),
+        lastCommit: result.status === 'fulfilled' ? parseCommit(result.value.stdout) : null
+      }
+    })
   }
 
   /**
