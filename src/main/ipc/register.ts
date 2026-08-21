@@ -10,6 +10,7 @@ import type { GitService } from '../services/git/git-service'
 import type { PresetService } from '../services/presets'
 import type { AutomationRunner } from '../services/automation'
 import { worktreeNoteKey } from '../../shared/persisted'
+import { applicationPickerOptions } from '../services/system/pickers'
 
 type Handler<C extends IpcChannel> = (...args: IpcArgs<C>) => Promise<IpcReturn<C>> | IpcReturn<C>
 
@@ -57,6 +58,18 @@ export function registerIpcHandlers({
           title: 'Choose a git repository'
         })
       : await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+
+  handle('system:pickApplication', async () => {
+    const scripted = process.env['ARBORIST_PICK_APPLICATION']
+    if (scripted) return scripted
+
+    const options = applicationPickerOptions(process.platform)
+    const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const result = window
+      ? await dialog.showOpenDialog(window, options)
+      : await dialog.showOpenDialog(options)
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
 

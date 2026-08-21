@@ -180,7 +180,7 @@ export function PresetEditor({
                 <Button
                   variant="outline"
                   onClick={async () => {
-                    const chosen = await invoke('system:pickFolder')
+                    const chosen = await invoke('system:pickApplication')
                     if (chosen) setDraft({ ...draft, command: withValue('app', chosen) })
                   }}
                 >

@@ -16,6 +16,8 @@ import type { SubstitutionValues } from './substitution'
 export interface IpcInvokeContract {
   /** Native folder picker. Resolves null when the user cancels. */
   'system:pickFolder': { args: []; result: string | null }
+  /** Native application picker: a bundle on macOS, an executable on Windows. */
+  'system:pickApplication': { args: []; result: string | null }
   'projects:list': { args: []; result: Repository[] }
   'projects:add': { args: [path: string]; result: Repository }
   'projects:remove': { args: [id: string]; result: void }
@@ -91,6 +93,7 @@ export type IpcReturn<C extends IpcChannel> = IpcInvokeContract[C]['result']
 
 export const IPC_CHANNELS: readonly IpcChannel[] = [
   'system:pickFolder',
+  'system:pickApplication',
   'projects:list',
   'projects:add',
   'projects:remove',

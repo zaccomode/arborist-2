@@ -81,6 +81,17 @@ async function captureThemes(
       theme === 'dark'
     )
 
+    // Swapping the theme starts a colour transition on everything carrying
+    // `transition-[color]` — a textarea's own text among them, which lands
+    // near-invisible against the new background if it is caught halfway.
+    // Animations are excluded: a spinner never finishes.
+    await window.waitForFunction(() =>
+      document
+        .getAnimations()
+        .filter((animation) => animation instanceof CSSTransition)
+        .every((animation) => animation.playState !== 'running')
+    )
+
     const path = join(outDir, `${stem}-${theme}.png`)
     // Buttons carry `transition-all`, so swapping the theme animates their
     // colours. Without this the capture lands mid-transition and renders a

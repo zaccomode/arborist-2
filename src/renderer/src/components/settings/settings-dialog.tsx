@@ -38,21 +38,30 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-testid="settings-dialog" className="sm:max-w-2xl">
-        <DialogHeader>
+      {/* A fixed height, so switching tabs moves nothing but the contents:
+          the dialog used to resize to whichever tab was open, which threw the
+          tab row itself around under the pointer. */}
+      <DialogContent
+        data-testid="settings-dialog"
+        className="flex h-[560px] max-h-[calc(100vh-4rem)] flex-col sm:max-w-2xl"
+      >
+        <DialogHeader className="shrink-0">
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>Applies to every project.</DialogDescription>
         </DialogHeader>
 
         {/* The tab row spans the dialog's full width, past its padding, so the
             rule under it separates the header from whichever tab is open. */}
-        <Tabs defaultValue="general" className="gap-0">
-          <TabsList variant="line" className="-mx-6 w-[calc(100%+3rem)] rounded-none border-b px-6">
+        <Tabs defaultValue="general" className="flex min-h-0 flex-1 flex-col gap-0">
+          <TabsList
+            variant="line"
+            className="-mx-6 w-[calc(100%+3rem)] shrink-0 rounded-none border-b px-6"
+          >
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="presets">Presets</TabsTrigger>
             <TabsTrigger value="developer">Developer</TabsTrigger>
           </TabsList>
-          <TabsContent value="general" className="pt-4">
+          <TabsContent value="general" className="min-h-0 flex-1 overflow-y-auto pt-4">
             {settings.data && (
               <GeneralSettings
                 settings={settings.data}
@@ -60,10 +69,10 @@ export function SettingsDialog({
               />
             )}
           </TabsContent>
-          <TabsContent value="presets" className="pt-4">
+          <TabsContent value="presets" className="min-h-0 flex-1 overflow-y-auto pt-4">
             <PresetSettings />
           </TabsContent>
-          <TabsContent value="developer" className="pt-4">
+          <TabsContent value="developer" className="min-h-0 flex-1 overflow-y-auto pt-4">
             {settings.data && (
               <DeveloperSettings
                 settings={settings.data}
