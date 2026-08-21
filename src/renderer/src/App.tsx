@@ -97,7 +97,7 @@ function App(): React.JSX.Element {
               await invoke('worktrees:prune', selected.path)
               await worktrees.refetch()
             }}
-            onRemoveProject={() => selected && removeProject.mutate(selected.id)}
+            prunableCount={(worktrees.data ?? []).filter((entry) => entry.prunable).length}
             addError={addError}
           >
             {selected && (
@@ -149,6 +149,7 @@ function App(): React.JSX.Element {
           project={selected}
           open={projectSettingsOpen}
           onOpenChange={setProjectSettingsOpen}
+          onRemove={() => removeProject.mutate(selected.id)}
         />
       )}
 

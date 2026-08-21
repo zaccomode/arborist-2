@@ -17,6 +17,30 @@ export const migrations: Record<number, Migration> = {
     delete rest.repositories
     delete rest.settings
     return rest
+  },
+
+  /**
+   * 2 → 3: app-level preset switches were a list of ids switched off, which
+   * could only ever say "off" — so a preset that defaults to off could not be
+   * switched on. They are a tri-state map now, matching the per-project
+   * overrides beside them. Every id in the old list was an explicit "off", so
+   * it carries over exactly; anything absent falls back to its default, which
+   * is what the old shape meant by absent too.
+   */
+  2: (data) => {
+    const config = data.presetConfig
+    if (!config || typeof config !== 'object') return data
+
+    const { disabledIds, ...rest } = config as Record<string, unknown>
+    const ids = Array.isArray(disabledIds) ? disabledIds.filter((id) => typeof id === 'string') : []
+
+    return {
+      ...data,
+      presetConfig: {
+        ...rest,
+        appOverrides: Object.fromEntries(ids.map((id: string) => [id, 'off']))
+      }
+    }
   }
 }
 

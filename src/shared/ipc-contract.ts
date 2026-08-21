@@ -91,40 +91,51 @@ export type IpcChannel = keyof IpcInvokeContract
 export type IpcArgs<C extends IpcChannel> = IpcInvokeContract[C]['args']
 export type IpcReturn<C extends IpcChannel> = IpcInvokeContract[C]['result']
 
-export const IPC_CHANNELS: readonly IpcChannel[] = [
-  'system:pickFolder',
-  'system:pickApplication',
-  'projects:list',
-  'projects:add',
-  'projects:remove',
-  'worktrees:list',
-  'branches:exists',
-  'worktrees:suggestPath',
-  'worktrees:create',
-  'worktrees:isDirty',
-  'worktrees:remove',
-  'worktrees:prune',
-  'notes:get',
-  'notes:set',
-  'system:copyText',
-  'presets:list',
-  'presets:catalogue',
-  'presets:setEnabled',
-  'presets:setOverride',
-  'presets:save',
-  'presets:delete',
-  'presets:reorder',
-  'presets:run',
-  'automation:script',
-  'automation:setScript',
-  'automation:start',
-  'automation:cancel',
-  'git:discover',
-  'git:setPath',
-  'store:status',
-  'settings:get',
-  'settings:update'
-]
+/**
+ * The preload whitelists exactly these channels, so a channel declared above
+ * and missing here fails at run time with "IPC channel not in contract" — the
+ * one thing the compiler cannot see, because a `readonly IpcChannel[]` only
+ * says every entry is a channel, never that every channel is an entry.
+ *
+ * `Record<IpcChannel, true>` says both. Adding a channel to the contract and
+ * forgetting it here is a type error now, at the point of the omission.
+ */
+const CHANNELS: Record<IpcChannel, true> = {
+  'system:pickFolder': true,
+  'system:pickApplication': true,
+  'projects:list': true,
+  'projects:add': true,
+  'projects:remove': true,
+  'worktrees:list': true,
+  'branches:exists': true,
+  'worktrees:suggestPath': true,
+  'worktrees:create': true,
+  'worktrees:isDirty': true,
+  'worktrees:remove': true,
+  'worktrees:prune': true,
+  'notes:get': true,
+  'notes:set': true,
+  'system:copyText': true,
+  'presets:list': true,
+  'presets:catalogue': true,
+  'presets:setEnabled': true,
+  'presets:setOverride': true,
+  'presets:save': true,
+  'presets:delete': true,
+  'presets:reorder': true,
+  'presets:run': true,
+  'automation:script': true,
+  'automation:setScript': true,
+  'automation:start': true,
+  'automation:cancel': true,
+  'git:discover': true,
+  'git:setPath': true,
+  'store:status': true,
+  'settings:get': true,
+  'settings:update': true
+}
+
+export const IPC_CHANNELS: readonly IpcChannel[] = Object.keys(CHANNELS) as IpcChannel[]
 
 /**
  * Pushes from main to renderer. Unlike invokes these carry no reply, so the
@@ -140,9 +151,14 @@ export interface IpcEventContract {
 
 export type IpcEventChannel = keyof IpcEventContract
 
-export const IPC_EVENT_CHANNELS: readonly IpcEventChannel[] = [
-  'automation:event',
-  'app:refresh',
-  'app:newWorktree',
-  'app:openSettings'
-]
+/** Exhaustive for the same reason, and for the same failure. */
+const EVENT_CHANNELS: Record<IpcEventChannel, true> = {
+  'automation:event': true,
+  'app:refresh': true,
+  'app:newWorktree': true,
+  'app:openSettings': true
+}
+
+export const IPC_EVENT_CHANNELS: readonly IpcEventChannel[] = Object.keys(
+  EVENT_CHANNELS
+) as IpcEventChannel[]

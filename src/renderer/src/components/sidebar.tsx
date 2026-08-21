@@ -1,4 +1,4 @@
-import { Plus, SlidersHorizontal } from 'lucide-react'
+import { Brush, Plus, SlidersHorizontal } from 'lucide-react'
 import type { Repository } from '@shared/persisted'
 import { Button } from '@/components/ui/button'
 import { ProjectSwitcher } from '@/components/project-switcher'
@@ -12,7 +12,7 @@ export function Sidebar({
   onOpenSettings,
   onOpenProjectSettings,
   onPrune,
-  onRemoveProject,
+  prunableCount,
   addError,
   children
 }: {
@@ -24,7 +24,8 @@ export function Sidebar({
   onOpenSettings: () => void
   onOpenProjectSettings: () => void
   onPrune: () => void
-  onRemoveProject: () => void
+  /** How many worktrees git still lists whose folder has gone. */
+  prunableCount: number
   /** Why the last add failed, shown where the user asked for it. */
   addError: string | null
   children?: React.ReactNode
@@ -37,9 +38,6 @@ export function Sidebar({
         onSelect={onSelect}
         onAddProject={onAddProject}
         onOpenSettings={onOpenSettings}
-        onOpenProjectSettings={onOpenProjectSettings}
-        onPrune={onPrune}
-        onRemoveProject={onRemoveProject}
       />
 
       {addError && (
@@ -61,10 +59,25 @@ export function Sidebar({
             <Plus />
           </Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">{children}</div>
-        {/* Also in the project switcher's menu, alongside the rest of the
-            project actions; here because this is where the project's own
-            worktrees are, and it is one click rather than two. */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          {children}
+
+          {/* Under the rows it is about, and only when there is something to
+              prune. Pruning is a reaction to what the list is showing, not a
+              standing menu item nobody needs most days. */}
+          {prunableCount > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="prune-worktrees"
+              className="mt-1 w-full justify-start font-normal text-muted-foreground"
+              onClick={onPrune}
+            >
+              <Brush />
+              Prune {prunableCount} missing worktree{prunableCount > 1 ? 's' : ''}
+            </Button>
+          )}
+        </div>
         <div className="border-t p-2">
           <Button
             variant="ghost"

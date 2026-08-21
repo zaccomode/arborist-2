@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
+import { enabledAtAppLevel } from '@shared/presets'
 import {
   Select,
   SelectContent,
@@ -36,7 +37,9 @@ export function ProjectPresetOverrides({ projectId }: { projectId: string }): Re
         id: preset.id,
         name: preset.name,
         icon: preset.icon,
-        appLevel: !(catalogue.data?.config.disabledIds ?? []).includes(preset.id)
+        appLevel: catalogue.data
+          ? enabledAtAppLevel(preset.id, preset.enabledByDefault, catalogue.data.config)
+          : preset.enabledByDefault
       }))
   ]
 

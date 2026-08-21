@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 export const repositorySchema = z.object({
   id: z.string(),
@@ -37,14 +37,21 @@ export const presetSchema = z.object({
   projectId: z.string().nullable().default(null)
 })
 
+export const presetOverrideSchema = z.enum(['on', 'off'])
+
 export const presetConfigSchema = z.object({
-  /** Presets, built-in or custom, switched off at the app level. */
-  disabledIds: z.array(z.string()).default([]),
+  /**
+   * App-level switches, keyed by preset id: `on`, `off`, or absent to take the
+   * preset's own default. This was a list of ids switched off, which could
+   * only say "off" — so a preset that defaults to off, as Xcode and Warp do,
+   * had no way to be switched on.
+   */
+  appOverrides: z.record(z.string(), presetOverrideSchema).default({}),
   /**
    * Per-project tri-state overrides: `on`, `off`, or absent for inherit.
    * Keyed by project id, then preset id.
    */
-  overrides: z.record(z.string(), z.record(z.string(), z.enum(['on', 'off']))).default({}),
+  overrides: z.record(z.string(), z.record(z.string(), presetOverrideSchema)).default({}),
   /** Preset ids in display order; anything unlisted follows, in its own order. */
   order: z.array(z.string()).default([])
 })
@@ -80,7 +87,7 @@ export const persistedDataSchema = z.object({
   worktreeNotes: z.record(z.string(), z.string()).default({}),
   automationScripts: z.array(automationScriptSchema).default([]),
   presets: z.array(presetSchema).default([]),
-  presetConfig: presetConfigSchema.default({ disabledIds: [], overrides: {}, order: [] }),
+  presetConfig: presetConfigSchema.default({ appOverrides: {}, overrides: {}, order: [] }),
   settings: settingsSchema.default(() => settingsSchema.parse({}))
 })
 

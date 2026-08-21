@@ -5,6 +5,7 @@ import { AppError } from '../../shared/errors'
 import type { Preset } from '../../shared/persisted'
 import {
   builtInPresetId,
+  enabledAtAppLevel,
   githubUrlFromRemote,
   resolvePresets,
   type BuiltInPreset,
@@ -155,21 +156,27 @@ export class PresetService {
       ).map((preset) => ({
         ...preset,
         id: builtInPresetId(preset.builtinId),
-        enabled: presetConfig.disabledIds.includes(builtInPresetId(preset.builtinId))
-          ? false
-          : preset.enabledByDefault
+        enabled: enabledAtAppLevel(
+          builtInPresetId(preset.builtinId),
+          preset.enabledByDefault,
+          presetConfig
+        )
       })),
       presets: [...presets],
       config: presetConfig
     }
   }
 
+  /**
+   * Records the switch, both ways. Recording only the offs meant a preset that
+   * defaults to off — Xcode, Warp — could be switched on and read back off.
+   */
   async setEnabled(presetId: string, enabled: boolean): Promise<void> {
     await this.#store.update((data) => {
-      const disabled = new Set(data.presetConfig.disabledIds)
-      if (enabled) disabled.delete(presetId)
-      else disabled.add(presetId)
-      data.presetConfig.disabledIds = [...disabled]
+      data.presetConfig.appOverrides = {
+        ...data.presetConfig.appOverrides,
+        [presetId]: enabled ? 'on' : 'off'
+      }
     })
   }
 

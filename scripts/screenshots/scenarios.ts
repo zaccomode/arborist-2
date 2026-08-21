@@ -98,8 +98,10 @@ export const scenarios: Scenario[] = [
   {
     name: 'project-actions',
     description:
-      "The switcher menu carrying the project's own actions, and the " +
-      'confirmation for removing one, which says what it does and does not touch.',
+      'The switcher menu, which now carries the project list and nothing ' +
+      'else, and the removal that used to sit in it — at the foot of the ' +
+      "project's own settings, behind a confirmation that says what it does " +
+      'and does not touch.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -111,12 +113,38 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
 
       await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Remove project…' }).waitFor()
+      await window.getByRole('menuitem', { name: 'App settings…' }).waitFor()
       await shot('menu')
+      await window.keyboard.press('Escape')
+      await window.getByRole('menu').waitFor({ state: 'detached' })
 
-      await window.getByRole('menuitem', { name: 'Remove project…' }).click()
-      await window.getByRole('alertdialog').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'Project settings' }).click()
+      await window.getByRole('button', { name: 'Remove…' }).click()
+      await window.getByTestId('remove-project-dialog').waitFor({ state: 'visible' })
       await shot('remove')
+    }
+  },
+  {
+    name: 'prune-worktrees',
+    description:
+      'Pruning, which used to be a permanent menu item and is now a button ' +
+      'under the rows it is about, present only while git is still listing a ' +
+      'worktree whose folder has gone. Before and after.',
+    setup: async ({ workDir }) => {
+      const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('prune-worktrees').waitFor({ state: 'visible' })
+      await shot('offered')
+
+      await window.getByTestId('prune-worktrees').click()
+      // The button goes with the row it was about, which is the whole point
+      // of it being conditional.
+      await window.getByTestId('prune-worktrees').waitFor({ state: 'detached' })
+      await shot('pruned')
     }
   },
   {

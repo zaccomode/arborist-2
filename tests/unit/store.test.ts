@@ -48,7 +48,7 @@ describe('Store.load', () => {
         enabledByDefault: true,
         projectId: null
       })
-      data.presetConfig.disabledIds.push('builtin:terminal')
+      data.presetConfig.appOverrides['builtin:terminal'] = 'off'
       data.settings.theme = 'dark'
     })
 
@@ -61,7 +61,7 @@ describe('Store.load', () => {
       type: 'app',
       app: '/Applications/Visual Studio Code.app'
     })
-    expect(reloaded.data.presetConfig.disabledIds).toEqual(['builtin:terminal'])
+    expect(reloaded.data.presetConfig.appOverrides).toEqual({ 'builtin:terminal': 'off' })
     expect(reloaded.data.settings.theme).toBe('dark')
   })
 
@@ -79,6 +79,26 @@ describe('Store.load', () => {
       data.notes['r1'] = 'kept'
     })
     expect((await readFile()).schemaVersion).toBe(SCHEMA_VERSION)
+  })
+
+  it('carries a schema 2 file’s switched-off presets into the tri-state', async () => {
+    const v2 = {
+      schemaVersion: 2,
+      presetConfig: {
+        disabledIds: ['builtin:github'],
+        overrides: { p1: { 'builtin:terminal': 'on' } },
+        order: ['builtin:reveal']
+      }
+    }
+    await fs.writeFile(filePath, JSON.stringify(v2), 'utf8')
+
+    const { store, warning } = await Store.load(filePath)
+
+    expect(warning).toBeUndefined()
+    expect(store.data.presetConfig.appOverrides).toEqual({ 'builtin:github': 'off' })
+    // Everything beside it survives the reshaping.
+    expect(store.data.presetConfig.overrides).toEqual({ p1: { 'builtin:terminal': 'on' } })
+    expect(store.data.presetConfig.order).toEqual(['builtin:reveal'])
   })
 
   it('backs up a corrupt file, starts fresh, and keeps the warning available', async () => {

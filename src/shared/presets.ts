@@ -48,6 +48,20 @@ export function builtInPresetId(builtinId: string): string {
   return `builtin:${builtinId}`
 }
 
+/**
+ * What a preset resolves to at the app level: the switch in settings if it has
+ * been touched, the preset's own default if it has not.
+ */
+export function enabledAtAppLevel(
+  id: string,
+  defaultEnabled: boolean,
+  config: PresetConfig
+): boolean {
+  const override = config.appOverrides[id]
+  return override ? override === 'on' : defaultEnabled
+}
+
+/** The same, with the project's own switch taking precedence over both. */
 function enabledFor(
   id: string,
   defaultEnabled: boolean,
@@ -56,8 +70,7 @@ function enabledFor(
 ): boolean {
   const override = projectId ? config.overrides[projectId]?.[id] : undefined
   if (override) return override === 'on'
-  if (config.disabledIds.includes(id)) return false
-  return defaultEnabled
+  return enabledAtAppLevel(id, defaultEnabled, config)
 }
 
 /**

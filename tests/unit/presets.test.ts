@@ -30,7 +30,7 @@ const builtIns: BuiltInPreset[] = [
   }
 ]
 
-const config: PresetConfig = { disabledIds: [], overrides: {}, order: [] }
+const config: PresetConfig = { appOverrides: {}, overrides: {}, order: [] }
 
 function custom(overrides: Partial<Preset> = {}): Preset {
   return {
@@ -75,14 +75,20 @@ describe('resolvePresets', () => {
   it('offers a built-in whether or not its app is installed', () => {
     // Nothing probes the machine any more: the switch is the user's answer,
     // and a preset that cannot launch says so when it is pressed.
-    expect(resolve({ config: { ...config, disabledIds: [] } })).toContain(
-      builtInPresetId('terminal')
-    )
+    expect(resolve()).toContain(builtInPresetId('terminal'))
   })
 
   it('respects an app-level switch-off', () => {
-    const disabled = { ...config, disabledIds: [builtInPresetId('terminal')] }
-    expect(resolve({ config: disabled })).toEqual([builtInPresetId('reveal')])
+    const off = { ...config, appOverrides: { [builtInPresetId('terminal')]: 'off' as const } }
+    expect(resolve({ config: off })).toEqual([builtInPresetId('reveal')])
+  })
+
+  it('switches on a built-in that is off by default', () => {
+    // Xcode and Warp default to off, and the app-level state used to be a
+    // list of ids switched *off* — so switching one on had nothing to record
+    // and it read back off, which is exactly how it behaved in the app.
+    const on = { ...config, appOverrides: { [builtInPresetId('xcode')]: 'on' as const } }
+    expect(resolve({ config: on })).toContain(builtInPresetId('xcode'))
   })
 
   it('lets a project override win over the app-level setting, both ways', () => {
@@ -107,7 +113,7 @@ describe('resolvePresets', () => {
   it('turns a preset back on for one project that is off for the app', () => {
     const disabled = {
       ...config,
-      disabledIds: [builtInPresetId('terminal')],
+      appOverrides: { [builtInPresetId('terminal')]: 'off' as const },
       overrides: { p1: { [builtInPresetId('terminal')]: 'on' as const } }
     }
 

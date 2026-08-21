@@ -6,14 +6,18 @@ import { GitFixture } from '../integration/fixtures/git-fixture'
 
 // Requires a prior `electron-vite build` (the pretest:e2e script handles it):
 // launching `.` resolves package.json "main" -> out/main/index.js.
-async function launch(root: string, pickFolder: string): Promise<ElectronApplication> {
+async function launch(
+  root: string,
+  pickFolder: string,
+  extraEnv: Record<string, string> = {}
+): Promise<ElectronApplication> {
   const userDataDir = join(root, 'user-data')
   await mkdir(userDataDir, { recursive: true })
   return electron.launch({
     args: ['.', `--user-data-dir=${userDataDir}`],
     // The folder picker is a native dialog Playwright cannot drive, so the
     // app is told what the user would have chosen.
-    env: { ...process.env, ARBORIST_PICK_FOLDER: pickFolder }
+    env: { ...process.env, ARBORIST_PICK_FOLDER: pickFolder, ...extraEnv }
   })
 }
 
@@ -124,6 +128,36 @@ test('runs a shell preset in a console that shows it failing', async () => {
   await expect(window.getByTestId('preset-console')).toBeVisible()
   await expect(window.getByTestId('preset-console-status')).toHaveText('Failed')
   await expect(window.getByTestId('preset-console')).toContainText('exit 2')
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})
+
+test('reaches the application picker from an application preset', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+
+  // Two pickers, two answers, so the assertion says which one was reached.
+  // `applicationPickerOptions` is unit-tested for what it asks the panel for;
+  // this is the other half — that the button gets as far as asking. It did
+  // not: the channel was declared in the contract and missing from the
+  // preload's whitelist, so the click threw before main ever heard about it.
+  const app = await launch(root, fixture.repoPath, {
+    ARBORIST_PICK_APPLICATION: '/Applications/Sublime Text.app'
+  })
+  const window = await app.firstWindow()
+  await addProject(app)
+
+  await window.getByTestId('project-switcher').click()
+  await window.getByRole('menuitem', { name: 'App settings…' }).click()
+  await window.getByRole('tab', { name: 'Presets' }).click()
+  await window.getByRole('button', { name: 'New preset' }).click()
+  await window.getByLabel('Opens').click()
+  await window.getByRole('option', { name: 'An application' }).click()
+  await window.getByRole('button', { name: 'Choose…' }).click()
+
+  await expect(window.getByLabel('Application')).toHaveValue('/Applications/Sublime Text.app')
 
   await app.close()
   await rm(root, { recursive: true, force: true })
