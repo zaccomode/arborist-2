@@ -86,21 +86,23 @@ export function Sidebar({
               Prune {prunableCount} missing worktree{prunableCount > 1 ? 's' : ''}
             </Button>
           )}
-        </div>
 
-        <div className="flex shrink-0 items-center justify-between border-t py-2 pr-2 pl-3">
-          <p className="text-xs font-medium text-muted-foreground">Remote Branches</p>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Fetch remotes"
-            disabled={!selectedId || fetching}
-            onClick={onFetch}
-          >
-            <RefreshCw className={fetching ? 'animate-spin' : undefined} />
-          </Button>
+          {/* Directly below the worktrees rather than its own scrolling
+              slice, so the two lists move together. */}
+          <div className="mt-4 flex items-center justify-between py-2 pl-1">
+            <p className="text-xs font-medium text-muted-foreground">Remote Branches</p>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Fetch remotes"
+              disabled={!selectedId || fetching}
+              onClick={onFetch}
+            >
+              <RefreshCw className={fetching ? 'animate-spin' : undefined} />
+            </Button>
+          </div>
+          {remoteBranches}
         </div>
-        <div className="max-h-48 shrink-0 overflow-y-auto px-2 pb-2">{remoteBranches}</div>
 
         <div className="border-t p-2">
           <Button
