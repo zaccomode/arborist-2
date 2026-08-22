@@ -16,7 +16,15 @@ release workflow needs.
    parallel and uploads a **draft** release.
 4. Download the artifacts from the draft and install one on each platform.
    `docs/manual-checklist.md` is the pass to run.
-5. Publish the release in the GitHub UI.
+5. Publish the release in the GitHub UI. Tick **Set as a pre-release** for
+   anything with a prerelease version, so it never becomes the release that
+   stable installs update to.
+
+There should be exactly **one** draft per tag, holding both platforms' artifacts
+and both `*.yml` manifests. Two drafts for the same tag means the build jobs
+raced to create it, which `max-parallel: 1` in the workflow exists to prevent;
+publishing either one on its own ships an update that half the users cannot
+install.
 
 The draft step is the whole safety mechanism, so it is worth saying why it is
 there: `electron-updater` serves whatever the latest **published** release says.
@@ -41,6 +49,19 @@ Download through a browser rather than with `curl`. The browser attaches the
 quarantine attribute, and Gatekeeper only does its full check on a quarantined
 file — a `curl`ed dmg opens cleanly whether or not notarisation worked, which
 makes it a test that always passes.
+
+**A tag whose release is still a draft breaks the updater.** The releases Atom
+feed lists bare tags as well as releases, so `electron-updater` sees a tag the
+moment it is pushed, takes it as the newest version, and then asks for a
+manifest under a release that does not exist yet. The result is a 404 on
+`rc-mac.yml` followed by a 404 on `latest-mac.yml`, since it falls back to the
+default channel and the error it reports is the fallback's rather than the first
+one's. Nothing is wrong with the build; the release simply has not been
+published.
+
+The consequence for rehearsals: publish the draft, or delete the tag. Leaving a
+tag sitting in front of an unpublished draft points every installed prerelease
+build at a version it cannot fetch.
 
 **The update path cannot be rehearsed from a draft.** `electron-updater` reads
 the releases Atom feed, which drafts never appear in, so an app pointed at a

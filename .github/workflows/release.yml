@@ -56,6 +56,14 @@ jobs:
     environment: release
     strategy:
       fail-fast: false
+      # One at a time, deliberately. Each job asks electron-builder to publish
+      # into the draft release for this tag, and electron-builder creates that
+      # draft when it cannot find one. Run in parallel, both jobs look before
+      # either has created it, both create one, and the tag ends up with two
+      # half-filled drafts: the mac manifest in one, the Windows manifest in
+      # the other, and an update that 404s whichever gets published. Serialised,
+      # the first job creates the draft and the second finds it.
+      max-parallel: 1
       matrix:
         include:
           # Pinned rather than macos-latest because the icon is an Icon
