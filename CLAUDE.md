@@ -49,13 +49,13 @@ Then **open each changed PNG and look at it**. Git reports a binary blob changed
 
 Captures are deterministic within one environment: re-running a scenario unchanged reproduces byte-identical PNGs, which is what makes this check meaningful. **Across** environments they are not, because font rasterisation differs between macOS and Linux. The committed baselines are generated in the Linux cloud container, so regenerate them there too. Regenerating on macOS will diff every image at once, which is the signature of this problem rather than of a real regression.
 
-**4. Put the screenshots in the PR body.** Embed the captures the change affects, before and after where there's a meaningful pair, so the visual can be reviewed without launching the app. This repository is private, so the only URL form that renders is the committed blob:
+**4. Put the screenshots in the PR body.** Embed the captures the change affects, before and after where there's a meaningful pair, so the visual can be reviewed without launching the app. Use the committed blob:
 
 ```markdown
 ![Shell, dark](https://github.com/zaccomode/arborist-2/blob/<sha>/docs/screenshots/shell-dark.png?raw=true)
 ```
 
-Pin `<sha>` to a commit rather than the branch, so the images survive the branch being deleted after merge. `raw.githubusercontent.com` URLs and relative paths both fail here: the former serves private content only against a token the browser doesn't send, and the latter has no directory to resolve against in a PR body.
+Pin `<sha>` to a commit rather than the branch, so the images survive the branch being deleted after merge. A relative path does not work in a PR body, which has no directory to resolve against — that one is about where the body is rendered, not about who can read the repository, so it holds either way.
 
 ## Design reference
 
