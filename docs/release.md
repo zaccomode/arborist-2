@@ -126,11 +126,28 @@ release, so check that the mac job's log says it signed before publishing.
    base64 -i certificate.p12 | pbcopy
    ```
 4. Put the `.p12` password in `MAC_CSC_KEY_PASSWORD`.
-5. Create an app-specific password at [appleid.apple.com](https://appleid.apple.com)
+5. `APPLE_ID` is an email address rather than a number: the Apple Account you
+   sign in to the developer portal with, the one enrolled in the Developer
+   Program. That is what `notarytool` means by "Apple ID".
+6. Create an app-specific password at [appleid.apple.com](https://appleid.apple.com)
    under **Sign-In and Security → App-Specific Passwords**, and put it in
-   `APPLE_APP_SPECIFIC_PASSWORD`. Your real Apple ID password will not work.
-6. `APPLE_TEAM_ID` is the ten-character team id in the developer portal's
-   membership page. Arborist v1 used `NAVFGLVP2P`.
+   `APPLE_APP_SPECIFIC_PASSWORD`. Your real Apple ID password will not work, and
+   neither will one created under a different Apple Account than `APPLE_ID`.
+7. `APPLE_TEAM_ID` is a ten-character string at
+   [developer.apple.com/account](https://developer.apple.com/account) under
+   **Membership details**. Arborist v1 used `NAVFGLVP2P`.
+
+Worth checking the team id against the certificate rather than against the
+portal, since the portal tells you what teams the account belongs to and the
+secret has to name the one the certificate was issued to:
+
+```bash
+security find-identity -v -p codesigning
+```
+
+That prints the identity as `Developer ID Application: Your Name (NAVFGLVP2P)`,
+and the part in brackets is the team id. A disagreement between the two shows up
+as a notarisation failure that does not mention team ids at all.
 
 The certificate expires after five years and the release job will start failing
 on the day it does, with an error about no identity being found. Worth a
