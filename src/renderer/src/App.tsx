@@ -171,7 +171,7 @@ function App(): React.JSX.Element {
             )}
           </Sidebar>
         </ResizablePanel>
-        <ResizableHandle className="mx-1 bg-transparent" />
+        <ResizableHandle className="mx-1 w-0 bg-transparent" />
         <ResizablePanel>
           <main className="h-full rounded-lg border bg-card">
             {!selected && <NoProjects onAddProject={() => void handleAddProject()} />}
