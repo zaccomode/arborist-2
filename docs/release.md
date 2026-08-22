@@ -21,10 +21,18 @@ release workflow needs.
    stable installs update to.
 
 There should be exactly **one** draft per tag, holding both platforms' artifacts
-and both `*.yml` manifests. Two drafts for the same tag means the build jobs
-raced to create it, which `max-parallel: 1` in the workflow exists to prevent;
-publishing either one on its own ships an update that half the users cannot
-install.
+and both `*.yml` manifests. Publishing a half-filled one ships an update that
+some users cannot install, so it is worth opening the assets list and counting
+before pressing publish.
+
+The `verify` job creates that draft before either build starts, and fails if it
+finds more than one for the tag. Both exist because electron-builder creates a
+release when it cannot find one, and looks for it behind an async cache: two
+artifacts finishing at the same moment both miss, both build a publisher, and
+both create a draft. The mac build alone produces four artifacts in parallel
+(dmg and zip, arm64 and x64), so it races itself, and no amount of serialising
+the jobs helps. An existing draft is found rather than created, which is what
+makes creating it up front the fix.
 
 The draft step is the whole safety mechanism, so it is worth saying why it is
 there: `electron-updater` serves whatever the latest **published** release says.

@@ -45,6 +45,38 @@ jobs:
           fi
           echo "version=${package#v}" >> "$GITHUB_OUTPUT"
 
+      # Created here so the build jobs never have to. electron-builder caches
+      # its publisher behind an async lookup, so two artifacts finishing at the
+      # same moment both miss the cache, both construct a publisher, and both
+      # create a draft — the mac build alone produces four (dmg and zip, arm64
+      # and x64), so it races itself and splits its artifacts across two
+      # releases. Serialising the jobs does not help, because the race is
+      # inside one of them. An existing draft is found rather than created, so
+      # making it up front is what removes the race.
+      - name: Create the draft release the build jobs publish into
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          count=$(gh api "repos/${{ github.repository }}/releases" --paginate \
+            --jq "[.[] | select(.tag_name == \"$tag\")] | length" | awk '{s+=$1} END {print s+0}')
+          if [ "$count" -gt 1 ]; then
+            echo "::error::$count releases already exist for $tag, which is the" \
+                 "duplicate-draft state this step exists to prevent. Delete all but" \
+                 "one in the Releases UI and re-run."
+            exit 1
+          fi
+          if [ "$count" -eq 1 ]; then
+            echo "Reusing the existing release for $tag."
+            exit 0
+          fi
+          # HEAD rather than the tag ref: checkout fetches a single commit by
+          # default, so the tag object itself may not be in the local repo.
+          gh release create "$tag" --draft --title "$tag" \
+            --notes "$(git log -1 --pretty=%s HEAD)"
+
   build:
     needs: verify
     # The signing credentials live on this environment rather than on the
@@ -56,14 +88,6 @@ jobs:
     environment: release
     strategy:
       fail-fast: false
-      # One at a time, deliberately. Each job asks electron-builder to publish
-      # into the draft release for this tag, and electron-builder creates that
-      # draft when it cannot find one. Run in parallel, both jobs look before
-      # either has created it, both create one, and the tag ends up with two
-      # half-filled drafts: the mac manifest in one, the Windows manifest in
-      # the other, and an update that 404s whichever gets published. Serialised,
-      # the first job creates the draft and the second finds it.
-      max-parallel: 1
       matrix:
         include:
           # Pinned rather than macos-latest because the icon is an Icon
