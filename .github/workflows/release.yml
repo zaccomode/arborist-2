@@ -98,6 +98,43 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
+      # electron-builder skips signing rather than failing when it cannot find
+      # an identity, so a green job says nothing about whether the build is
+      # signed. Without this step the only evidence is a line in a log nobody
+      # reads on the release that goes out unsigned.
+      - name: Assert the macOS build is signed
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          found=0
+          while IFS= read -r app; do
+            found=1
+            echo "Checking $app"
+            codesign --verify --deep --strict --verbose=2 "$app"
+            if ! codesign -dvv "$app" 2>&1 | grep -q '^Authority=Developer ID Application'; then
+              echo "::error::$app carries no Developer ID Application authority." \
+                   "electron-builder signed it ad-hoc or skipped signing, which means" \
+                   "MAC_CSC_LINK and MAC_CSC_KEY_PASSWORD did not reach this job." \
+                   "Check they are on the 'release' environment rather than the repository."
+              exit 1
+            fi
+            # Notarisation is reported rather than enforced: the ticket is
+            # stapled by a separate step of electron-builder's and this check
+            # has never been watched failing, so it is not yet trusted to gate
+            # a release. Promote it to an error once it has proven itself.
+            if xcrun stapler validate "$app" >/dev/null 2>&1; then
+              echo "Notarisation ticket stapled to $app"
+            else
+              echo "::warning::No stapled notarisation ticket on $app." \
+                   "Gatekeeper will need a network round trip on first launch," \
+                   "and will block the app outright if notarisation did not happen."
+            fi
+          done < <(find dist -maxdepth 2 -name '*.app' -type d)
+          if [ "$found" -eq 0 ]; then
+            echo "::error::No .app found under dist/ to check."
+            exit 1
+          fi
+
       - name: Upload artifacts for the smoke check
         uses: actions/upload-artifact@v4
         with:
