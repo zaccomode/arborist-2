@@ -38,11 +38,12 @@ test('adds a git repository as a project', async () => {
   await expect(window.getByTestId('no-projects')).toBeVisible()
   await addProject(app)
 
-  await expect(window.getByTestId('no-worktree-selected')).toBeVisible()
+  // Lands on the main worktree rather than an empty state, since nothing was
+  // ever selected for this project before.
+  await expect(window.getByTestId('worktree-detail')).toBeVisible()
   await expect(window.getByTestId('project-switcher')).toContainText('Arborist')
 
-  // The path it actually opened, which the project's own settings carry now
-  // that the pane behind them is an empty state.
+  // The path it actually opened, which the project's own settings carry.
   await window.getByRole('button', { name: 'Project settings' }).click()
   await expect(window.getByTestId('project-settings-dialog')).toContainText(fixture.repoPath)
 
@@ -91,6 +92,52 @@ test('keeps a worktree note across a relaunch', async () => {
   const reopened = await second.firstWindow()
   await reopened.getByRole('button', { name: /feature\/x/ }).click()
   await expect(reopened.getByTestId('notes-editor')).toHaveValue('Rebase before review.')
+
+  await second.close()
+  await rm(root, { recursive: true, force: true })
+})
+
+test('remembers the selected worktree and sidebar width across a relaunch', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+  await fixture.addWorktree('feature-x', { branch: 'feature/x' })
+
+  const first = await launch(root, fixture.repoPath)
+  const window = await first.firstWindow()
+  await addProject(first)
+  // Lands on main by default; switching away is what there is to remember.
+  await window.getByRole('button', { name: /feature\/x/ }).click()
+  await window.getByTestId('worktree-detail').filter({ hasText: 'feature/x' }).waitFor()
+
+  const handle = window.locator('[data-slot="resizable-handle"]')
+  const box = await handle.boundingBox()
+  if (!box) throw new Error('resizable handle not found')
+  await window.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await window.mouse.down()
+  await window.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 5 })
+  await window.mouse.up()
+
+  const dataFile = join(root, 'user-data', 'arborist-data.json')
+  await expect
+    .poll(async () => JSON.parse(await readFile(dataFile, 'utf8')).selection?.projectId, {
+      timeout: 5000
+    })
+    .toBeTruthy()
+  await expect
+    .poll(async () => JSON.parse(await readFile(dataFile, 'utf8')).settings?.sidebarWidth, {
+      timeout: 5000
+    })
+    .toBeGreaterThan(260)
+  await first.close()
+
+  const second = await launch(root, fixture.repoPath)
+  const reopened = await second.firstWindow()
+  // No "Add project…" click: the project, the worktree selected within it,
+  // and the sidebar width all come back without being asked for again.
+  await expect(reopened.getByTestId('worktree-detail')).toContainText('feature/x')
+  const sidebar = await reopened.locator('[data-panel]').first().boundingBox()
+  expect(sidebar?.width).toBeGreaterThan(260)
 
   await second.close()
   await rm(root, { recursive: true, force: true })
@@ -163,6 +210,34 @@ test('reaches the application picker from an application preset', async () => {
   await rm(root, { recursive: true, force: true })
 })
 
+test('adds a preset from project settings and it shows up under Open In', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+
+  // Lands on main already, per the auto-select fallback — no extra click
+  // needed to reach the Open In grid this preset should appear under.
+  await window.getByRole('button', { name: 'Project settings' }).click()
+  await window.getByRole('tab', { name: 'Presets' }).click()
+  await window.getByTestId('project-presets').waitFor({ state: 'visible' })
+  await window.getByRole('button', { name: 'New preset' }).click()
+  await window.getByLabel('Name').fill('Storybook')
+  await window.getByLabel('Command').fill('npm run storybook')
+  await window.getByRole('button', { name: 'Save' }).click()
+  await expect(window.getByTestId('preset-editor')).toBeHidden()
+  await window.keyboard.press('Escape')
+  await expect(window.getByTestId('project-settings-dialog')).toBeHidden()
+
+  await expect(window.getByRole('button', { name: 'Storybook' })).toBeVisible()
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})
+
 test('creates a new branch from a base ref picked on the create-worktree dialog', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
   const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
@@ -189,7 +264,20 @@ test('creates a new branch from a base ref picked on the create-worktree dialog'
   await expect(window.getByTestId('branch-existence')).toContainText('created from origin/main')
 
   await window.getByRole('button', { name: 'Create' }).click()
-  await expect(window.getByTestId('worktree-detail')).toBeVisible()
+  // Landing on main already (the auto-select fallback) means the detail pane
+  // is visible before this click, too — waiting for it to reappear proves
+  // nothing. Waiting for the new branch's own name in it is what actually
+  // confirms the app has moved on to the worktree just created, rather than
+  // still showing main while everything below races ahead of it.
+  await expect(window.getByTestId('worktree-detail')).toContainText('from-origin-main')
+
+  // The path actually used, read back from the app rather than assumed as
+  // the sibling-of-repoPath convention `worktrees:suggestPath` happens to
+  // follow: reconstructing it independently is a second implementation of
+  // that convention, and the two can disagree about exactly the same string
+  // without either being wrong — e.g. a short-form vs. long-form temp path
+  // on Windows, which both resolve to the same directory but compare unequal.
+  const worktreePath = await window.getByTitle('Copy path').innerText()
 
   // `worktree add -b <branch> <path> <baseRef>` only moves the branch
   // pointer to baseRef — it makes no commit of its own — so the base has to
@@ -197,11 +285,7 @@ test('creates a new branch from a base ref picked on the create-worktree dialog'
   // just created.
   const originMain = (await fixture.git(['rev-parse', 'origin/main'])).trim()
   const otherTip = (await fixture.git(['rev-parse', 'other'])).trim()
-  await fixture.commit(
-    'First commit on the new branch',
-    { 'new.txt': 'new' },
-    join(fixture.root, 'from-origin-main')
-  )
+  await fixture.commit('First commit on the new branch', { 'new.txt': 'new' }, worktreePath)
   const parent = (await fixture.git(['log', '-1', '--format=%P', 'from-origin-main'])).trim()
   expect(parent).toBe(originMain)
   expect(parent).not.toBe(otherTip)

@@ -22,10 +22,12 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { invoke } from '@/api/client'
 import { NotesEditor } from '@/components/notes-editor'
 import { ProjectPresetOverrides } from '@/components/settings/project-preset-overrides'
+import { ProjectPresets } from '@/components/settings/project-presets'
 
 /** What the preview substitutes into, so tokens can be seen doing something. */
 function sampleValues(project: Repository): Parameters<typeof substitute>[1] {
@@ -78,11 +80,13 @@ export function ProjectSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {/* A fixed height, matching app settings, so switching tabs moves
+          nothing but the contents. */}
       <DialogContent
         data-testid="project-settings-dialog"
-        className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+        className="flex h-[560px] max-h-[calc(100vh-4rem)] flex-col sm:max-w-2xl"
       >
-        <DialogHeader>
+        <DialogHeader className="shrink-0">
           <DialogTitle>{project.name} settings</DialogTitle>
           <DialogDescription asChild>
             <button
@@ -96,84 +100,106 @@ export function ProjectSettingsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2">
-          <Label htmlFor="automation-script">Setup automation</Label>
-          <Textarea
-            id="automation-script"
-            data-testid="automation-script"
-            className="min-h-32 font-mono text-xs"
-            spellCheck={false}
-            placeholder={'npm install\n# comments and blank lines are skipped'}
-            value={script}
-            onChange={(event) => setScript(event.target.value)}
-          />
-          <p className="text-xs text-muted-foreground">
-            Each line is its own command, run in order with the new worktree as its working
-            directory. That means a <span className="font-mono">cd</span> on one line does not
-            affect the next, and multi-line constructs will not work. Tokens:{' '}
-            <span className="font-mono">
-              {'{{path}} {{branch}} {{commitHash}} {{repoName}} {{repoPath}}'}
-            </span>
-            .
-          </p>
-        </div>
+        <Tabs defaultValue="automation" className="flex min-h-0 flex-1 flex-col gap-0">
+          <TabsList
+            variant="line"
+            className="-mx-6 w-[calc(100%+3rem)] shrink-0 rounded-none border-b px-6"
+          >
+            <TabsTrigger value="automation">Automation</TabsTrigger>
+            <TabsTrigger value="presets">Presets</TabsTrigger>
+            <TabsTrigger value="notes">Notes</TabsTrigger>
+            <TabsTrigger value="danger">Danger zone</TabsTrigger>
+          </TabsList>
 
-        {unknown.length > 0 && (
-          <p data-testid="unknown-tokens" className="text-xs text-amber-500">
-            Unknown token{unknown.length > 1 ? 's' : ''}: {unknown.join(', ')}. They will be left as
-            written.
-          </p>
-        )}
-
-        {lines.some((line) => line.command) && (
-          <div className="rounded-md border p-3" data-testid="automation-preview">
-            <p className="text-xs font-medium text-muted-foreground">Preview</p>
-            <ol className="mt-2 space-y-1">
-              {lines.map((line) =>
-                line.command === null ? (
-                  <li key={line.lineNumber} className="font-mono text-[11px] text-muted-foreground">
-                    {line.raw.trim() ? `${line.raw.trim()} — skipped` : '— blank line, skipped'}
-                  </li>
-                ) : (
-                  <li key={line.lineNumber} className="font-mono text-[11px]">
-                    {substitute(line.command, values, 'posix')}
-                  </li>
-                )
-              )}
-            </ol>
-          </div>
-        )}
-
-        <ProjectPresetOverrides projectId={project.id} />
-
-        {/* The project's own note. The worktree pane keeps per-worktree ones;
-            this is the only place a note about the project itself belongs
-            now that the pane behind it is an empty state. */}
-        <NotesEditor
-          key={project.id}
-          repositoryId={project.id}
-          worktreePath={null}
-          heightClass="h-28"
-        />
-
-        {/* Removing the project is a project setting, and the last one anyone
-            reaches for — so it sits at the bottom, behind a confirmation,
-            rather than one slip away in the switcher's menu. */}
-        <div className="mt-2 flex items-center gap-3 rounded-md border border-destructive/40 px-3 py-2">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm">Remove from Arborist</p>
+          <TabsContent value="automation" className="min-h-0 flex-1 space-y-2 overflow-y-auto pt-4">
+            <Label htmlFor="automation-script">Setup automation</Label>
+            <Textarea
+              id="automation-script"
+              data-testid="automation-script"
+              className="min-h-32 font-mono text-xs"
+              spellCheck={false}
+              placeholder={'npm install\n# comments and blank lines are skipped'}
+              value={script}
+              onChange={(event) => setScript(event.target.value)}
+            />
             <p className="text-xs text-muted-foreground">
-              The repository and its worktrees are left as they are on disk.
+              Each line is its own command, run in order with the new worktree as its working
+              directory. That means a <span className="font-mono">cd</span> on one line does not
+              affect the next, and multi-line constructs will not work. Tokens:{' '}
+              <span className="font-mono">
+                {'{{path}} {{branch}} {{commitHash}} {{repoName}} {{repoPath}}'}
+              </span>
+              .
             </p>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => setConfirmingRemove(true)}>
-            Remove…
-          </Button>
-        </div>
+
+            {unknown.length > 0 && (
+              <p data-testid="unknown-tokens" className="text-xs text-amber-500">
+                Unknown token{unknown.length > 1 ? 's' : ''}: {unknown.join(', ')}. They will be
+                left as written.
+              </p>
+            )}
+
+            {lines.some((line) => line.command) && (
+              <div className="rounded-md border p-3" data-testid="automation-preview">
+                <p className="text-xs font-medium text-muted-foreground">Preview</p>
+                <ol className="mt-2 space-y-1">
+                  {lines.map((line) =>
+                    line.command === null ? (
+                      <li
+                        key={line.lineNumber}
+                        className="font-mono text-[11px] text-muted-foreground"
+                      >
+                        {line.raw.trim() ? `${line.raw.trim()} — skipped` : '— blank line, skipped'}
+                      </li>
+                    ) : (
+                      <li key={line.lineNumber} className="font-mono text-[11px]">
+                        {substitute(line.command, values, 'posix')}
+                      </li>
+                    )
+                  )}
+                </ol>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="presets" className="min-h-0 flex-1 space-y-6 overflow-y-auto pt-4">
+            <ProjectPresetOverrides projectId={project.id} />
+            <ProjectPresets projectId={project.id} />
+          </TabsContent>
+
+          <TabsContent value="notes" className="min-h-0 flex-1 overflow-y-auto pt-4">
+            {/* The project's own note. The worktree pane keeps per-worktree
+                ones; this is the only place a note about the project itself
+                belongs now that the pane behind it is an empty state. */}
+            <NotesEditor
+              key={project.id}
+              repositoryId={project.id}
+              worktreePath={null}
+              heightClass="h-64"
+            />
+          </TabsContent>
+
+          <TabsContent value="danger" className="min-h-0 flex-1 overflow-y-auto pt-4">
+            {/* Removing the project is a project setting, and the last one
+                anyone reaches for — so it lives behind a confirmation, rather
+                than one slip away in the switcher's menu. */}
+            <div className="flex items-center gap-3 rounded-md border border-destructive/40 px-3 py-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm">Remove from Arborist</p>
+                <p className="text-xs text-muted-foreground">
+                  The repository and its worktrees are left as they are on disk.
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setConfirmingRemove(true)}>
+                Remove…
+              </Button>
+            </div>
+          </TabsContent>
+        </Tabs>
 
         {error && <p className="text-sm text-destructive">{error}</p>}
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

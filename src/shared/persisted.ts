@@ -43,8 +43,8 @@ export const presetConfigSchema = z.object({
   /**
    * App-level switches, keyed by preset id: `on`, `off`, or absent to take the
    * preset's own default. This was a list of ids switched off, which could
-   * only say "off" — so a preset that defaults to off, as Xcode and Warp do,
-   * had no way to be switched on.
+   * only say "off" — so a preset that defaults to off had no way to be
+   * switched on.
    */
   appOverrides: z.record(z.string(), presetOverrideSchema).default({}),
   /**
@@ -83,7 +83,18 @@ export const settingsSchema = z.object({
    */
   autoFetchIntervalMinutes: z
     .union([z.literal(0), z.literal(5), z.literal(15), z.literal(60)])
-    .default(0)
+    .default(0),
+  /** Sidebar panel width, in pixels. Fixed rather than relative to the window. */
+  sidebarWidth: z.number().int().min(200).max(420).default(260)
+})
+
+export const selectionSchema = z.object({
+  /** The last project the user had open. */
+  projectId: z.string().nullable().default(null),
+  /** Project id → the worktree path last selected within it. */
+  worktreeByProject: z.record(z.string(), z.string()).default({}),
+  /** Project id → the remote branch name last selected within it. */
+  remoteBranchByProject: z.record(z.string(), z.string()).default({})
 })
 
 export const persistedDataSchema = z.object({
@@ -96,7 +107,8 @@ export const persistedDataSchema = z.object({
   automationScripts: z.array(automationScriptSchema).default([]),
   presets: z.array(presetSchema).default([]),
   presetConfig: presetConfigSchema.default({ appOverrides: {}, overrides: {}, order: [] }),
-  settings: settingsSchema.default(() => settingsSchema.parse({}))
+  settings: settingsSchema.default(() => settingsSchema.parse({})),
+  selection: selectionSchema.default(() => selectionSchema.parse({}))
 })
 
 export type Repository = z.infer<typeof repositorySchema>
@@ -105,6 +117,7 @@ export type Preset = z.infer<typeof presetSchema>
 export type PresetConfig = z.infer<typeof presetConfigSchema>
 export type AutomationScript = z.infer<typeof automationScriptSchema>
 export type Settings = z.infer<typeof settingsSchema>
+export type SelectionState = z.infer<typeof selectionSchema>
 export type PersistedData = z.infer<typeof persistedDataSchema>
 
 /** Key for a worktree note. Worktree paths are unique within a repository. */
