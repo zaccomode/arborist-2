@@ -30,6 +30,11 @@ in the About panel and the version `electron-updater` compares against both come
 from `package.json`, so a mismatched tag ships a build that lies about what it
 is.
 
+To re-cut a release without moving the tag, run the workflow by hand from
+**Actions → Release → Run workflow** and pick the tag in the ref picker. Picking
+a branch there fails in the first job with a message saying so, because the
+signing environment below is reachable only from a tag.
+
 ## Rolling Back a Bad Release
 
 `electron-updater` follows the latest published release, so pulling a bad one is
@@ -76,8 +81,9 @@ first use. The result carries 16 through 1024 including the retina variants for
 
 ## Secrets the Workflow Needs
 
-These are repository secrets under **Settings → Secrets and variables →
-Actions**. `GH_TOKEN` is the built-in `GITHUB_TOKEN` and needs no setup.
+These belong to a **deployment environment**, not to the repository. Create it
+under **Settings → Environments → New environment**, name it `release`, and add
+the secrets there. `GH_TOKEN` is the built-in `GITHUB_TOKEN` and needs no setup.
 
 | Secret                        | What it is                                              |
 | ----------------------------- | ------------------------------------------------------- |
@@ -86,6 +92,22 @@ Actions**. `GH_TOKEN` is the built-in `GITHUB_TOKEN` and needs no setup.
 | `APPLE_ID`                    | The Apple ID that owns the certificate                  |
 | `APPLE_APP_SPECIFIC_PASSWORD` | An app-specific password for that Apple ID              |
 | `APPLE_TEAM_ID`               | The team the certificate belongs to                     |
+
+Give the environment one protection rule: under **Deployment branches and
+tags**, select **Selected branches and tags**, add a rule of type **tag** with
+the pattern `v*`, and add no branch rule at all.
+
+That rule is the reason for the environment. A repository secret is readable by
+any workflow run on any ref, so a workflow added on a throwaway branch could
+print the certificate. An environment secret is readable only by a job that
+names the environment, and only from a ref the policy allows — which here means
+a release tag and nothing else. The `build` job names it; `verify` does not,
+because it has no need of a certificate to compare two strings.
+
+Required reviewers are deliberately not enabled. The gate that matters is
+already there in the draft release, and a second approval click on a project
+with one maintainer is ceremony rather than a control. That changes the day
+somebody else gets push access.
 
 **Without these, the macOS job still succeeds and produces an unsigned,
 un-notarised build that Gatekeeper will refuse to open.** electron-builder skips
