@@ -254,7 +254,14 @@ export const scenarios: Scenario[] = [
       await shot('dialog')
 
       await window.getByRole('button', { name: 'Create' }).click()
-      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      // Landing on main already (the auto-select fallback) means the detail
+      // pane is visible before this click too, so waiting for its content
+      // rather than its visibility is what actually waits for the new
+      // worktree.
+      await window
+        .getByTestId('worktree-detail')
+        .filter({ hasText: 'feature/ABC-123' })
+        .waitFor({ state: 'visible' })
       await shot('after')
     }
   },
@@ -361,7 +368,13 @@ export const scenarios: Scenario[] = [
       await shot('create-dialog')
 
       await window.getByRole('button', { name: 'Create', exact: true }).click()
-      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      // As above: main is already selected by the time this dialog opens, so
+      // the detail pane's content is what proves this is the new worktree,
+      // not just its visibility.
+      await window
+        .getByTestId('worktree-detail')
+        .filter({ hasText: 'feature-x' })
+        .waitFor({ state: 'visible' })
       await window.getByText('No remote branches without worktrees.').waitFor({ state: 'visible' })
       await shot('after')
     }

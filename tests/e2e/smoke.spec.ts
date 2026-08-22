@@ -264,7 +264,20 @@ test('creates a new branch from a base ref picked on the create-worktree dialog'
   await expect(window.getByTestId('branch-existence')).toContainText('created from origin/main')
 
   await window.getByRole('button', { name: 'Create' }).click()
-  await expect(window.getByTestId('worktree-detail')).toBeVisible()
+  // Landing on main already (the auto-select fallback) means the detail pane
+  // is visible before this click, too — waiting for it to reappear proves
+  // nothing. Waiting for the new branch's own name in it is what actually
+  // confirms the app has moved on to the worktree just created, rather than
+  // still showing main while everything below races ahead of it.
+  await expect(window.getByTestId('worktree-detail')).toContainText('from-origin-main')
+
+  // The path actually used, read back from the app rather than assumed as
+  // the sibling-of-repoPath convention `worktrees:suggestPath` happens to
+  // follow: reconstructing it independently is a second implementation of
+  // that convention, and the two can disagree about exactly the same string
+  // without either being wrong — e.g. a short-form vs. long-form temp path
+  // on Windows, which both resolve to the same directory but compare unequal.
+  const worktreePath = await window.getByTitle('Copy path').innerText()
 
   // `worktree add -b <branch> <path> <baseRef>` only moves the branch
   // pointer to baseRef — it makes no commit of its own — so the base has to
@@ -272,11 +285,7 @@ test('creates a new branch from a base ref picked on the create-worktree dialog'
   // just created.
   const originMain = (await fixture.git(['rev-parse', 'origin/main'])).trim()
   const otherTip = (await fixture.git(['rev-parse', 'other'])).trim()
-  await fixture.commit(
-    'First commit on the new branch',
-    { 'new.txt': 'new' },
-    join(fixture.root, 'from-origin-main')
-  )
+  await fixture.commit('First commit on the new branch', { 'new.txt': 'new' }, worktreePath)
   const parent = (await fixture.git(['log', '-1', '--format=%P', 'from-origin-main'])).trim()
   expect(parent).toBe(originMain)
   expect(parent).not.toBe(otherTip)
