@@ -43,8 +43,8 @@ export const presetConfigSchema = z.object({
   /**
    * App-level switches, keyed by preset id: `on`, `off`, or absent to take the
    * preset's own default. This was a list of ids switched off, which could
-   * only say "off" — so a preset that defaults to off, as Xcode and Warp do,
-   * had no way to be switched on.
+   * only say "off" — so a preset that defaults to off had no way to be
+   * switched on.
    */
   appOverrides: z.record(z.string(), presetOverrideSchema).default({}),
   /**
