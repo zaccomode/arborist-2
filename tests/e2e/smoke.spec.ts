@@ -38,11 +38,12 @@ test('adds a git repository as a project', async () => {
   await expect(window.getByTestId('no-projects')).toBeVisible()
   await addProject(app)
 
-  await expect(window.getByTestId('no-worktree-selected')).toBeVisible()
+  // Lands on the main worktree rather than an empty state, since nothing was
+  // ever selected for this project before.
+  await expect(window.getByTestId('worktree-detail')).toBeVisible()
   await expect(window.getByTestId('project-switcher')).toContainText('Arborist')
 
-  // The path it actually opened, which the project's own settings carry now
-  // that the pane behind them is an empty state.
+  // The path it actually opened, which the project's own settings carry.
   await window.getByRole('button', { name: 'Project settings' }).click()
   await expect(window.getByTestId('project-settings-dialog')).toContainText(fixture.repoPath)
 
@@ -91,6 +92,52 @@ test('keeps a worktree note across a relaunch', async () => {
   const reopened = await second.firstWindow()
   await reopened.getByRole('button', { name: /feature\/x/ }).click()
   await expect(reopened.getByTestId('notes-editor')).toHaveValue('Rebase before review.')
+
+  await second.close()
+  await rm(root, { recursive: true, force: true })
+})
+
+test('remembers the selected worktree and sidebar width across a relaunch', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+  await fixture.addWorktree('feature-x', { branch: 'feature/x' })
+
+  const first = await launch(root, fixture.repoPath)
+  const window = await first.firstWindow()
+  await addProject(first)
+  // Lands on main by default; switching away is what there is to remember.
+  await window.getByRole('button', { name: /feature\/x/ }).click()
+  await window.getByTestId('worktree-detail').filter({ hasText: 'feature/x' }).waitFor()
+
+  const handle = window.locator('[data-slot="resizable-handle"]')
+  const box = await handle.boundingBox()
+  if (!box) throw new Error('resizable handle not found')
+  await window.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await window.mouse.down()
+  await window.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 5 })
+  await window.mouse.up()
+
+  const dataFile = join(root, 'user-data', 'arborist-data.json')
+  await expect
+    .poll(async () => JSON.parse(await readFile(dataFile, 'utf8')).selection?.projectId, {
+      timeout: 5000
+    })
+    .toBeTruthy()
+  await expect
+    .poll(async () => JSON.parse(await readFile(dataFile, 'utf8')).settings?.sidebarWidth, {
+      timeout: 5000
+    })
+    .toBeGreaterThan(260)
+  await first.close()
+
+  const second = await launch(root, fixture.repoPath)
+  const reopened = await second.firstWindow()
+  // No "Add project…" click: the project, the worktree selected within it,
+  // and the sidebar width all come back without being asked for again.
+  await expect(reopened.getByTestId('worktree-detail')).toContainText('feature/x')
+  const sidebar = await reopened.locator('[data-panel]').first().boundingBox()
+  expect(sidebar?.width).toBeGreaterThan(260)
 
   await second.close()
   await rm(root, { recursive: true, force: true })

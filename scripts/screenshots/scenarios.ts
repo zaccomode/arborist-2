@@ -91,7 +91,9 @@ export const scenarios: Scenario[] = [
       await window.getByRole('menu').waitFor({ state: 'visible' })
       await shot('menu')
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+      // Lands on the main worktree rather than an empty state, since nothing
+      // was ever selected for this project before.
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       await shot('added')
     }
   },
@@ -110,7 +112,7 @@ export const scenarios: Scenario[] = [
     drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
 
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'App settings…' }).waitFor()
@@ -331,7 +333,7 @@ export const scenarios: Scenario[] = [
     drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       await window.getByText('No remote branches without worktrees.').waitFor({ state: 'visible' })
       await shot('empty')
 
@@ -400,7 +402,7 @@ export const scenarios: Scenario[] = [
     drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
 
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Fetch' }).waitFor({ state: 'visible' })
@@ -425,7 +427,7 @@ export const scenarios: Scenario[] = [
     drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
 
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'App settings…' }).click()
@@ -468,7 +470,7 @@ export const scenarios: Scenario[] = [
     drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       await window.getByRole('button', { name: 'Project settings' }).click()
       await fillAndSettle(window, 'automation-script', 'npm install\nnpm run build')
       await window.getByTestId('project-preset-overrides').waitFor({ state: 'visible' })

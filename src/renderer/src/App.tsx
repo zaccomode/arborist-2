@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { RemoteBranch, Worktree } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
@@ -42,7 +42,7 @@ function automationTarget(project: Repository, worktree: Worktree): AutomationTa
   }
 }
 
-function App(): React.JSX.Element {
+function App(): React.JSX.Element | null {
   const queryClient = useQueryClient()
   const projects = useProjects()
   const addProject = useAddProject()
@@ -57,7 +57,7 @@ function App(): React.JSX.Element {
   const [automation, setAutomation] = useState<AutomationTarget | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
-  const { projectId, selectProject, selectWorktree, selectRemoteBranch } = useSelection()
+  const { projectId, selectProject, selectWorktree, selectRemoteBranch, hydrated } = useSelection()
   const selectedWorktree = useSelectedWorktree()
   const selectedRemoteBranchName = useSelectedRemoteBranch()
   const list = useMemo(() => projects.data ?? [], [projects.data])
@@ -73,11 +73,45 @@ function App(): React.JSX.Element {
     : null
 
   useEffect(() => {
+    void invoke('selection:get').then((data) => useSelection.getState().hydrate(data))
+  }, [])
+
+  useEffect(() => {
     // Land on something as soon as there is something to land on, including
-    // after the selected project is removed.
+    // after the selected project is removed. Held off until the persisted
+    // selection is back, so it doesn't jump to the first project and then
+    // immediately back to the remembered one.
+    if (!hydrated) return
     if (!selected && list.length > 0) selectProject(list[0].id)
     if (list.length === 0 && projectId) selectProject(null)
-  }, [list, selected, projectId, selectProject])
+  }, [hydrated, list, selected, projectId, selectProject])
+
+  useEffect(() => {
+    // Never leave a project on the empty state: land on whatever worktree or
+    // remote branch was selected last time, or on the main worktree if
+    // nothing was ever selected for it.
+    if (!hydrated || !selected || worktrees.isPending) return
+    if (selectedWorktree || selectedRemoteBranchName) return
+    if (mainWorktree) selectWorktree(mainWorktree.path)
+  }, [
+    hydrated,
+    selected,
+    worktrees.isPending,
+    mainWorktree,
+    selectedWorktree,
+    selectedRemoteBranchName,
+    selectWorktree
+  ])
+
+  const sidebarResizeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const handleSidebarResize = (size: { inPixels: number }): void => {
+    if (sidebarResizeTimer.current) clearTimeout(sidebarResizeTimer.current)
+    sidebarResizeTimer.current = setTimeout(() => {
+      void invoke('settings:update', { sidebarWidth: Math.round(size.inPixels) }).then(() =>
+        queryClient.invalidateQueries({ queryKey: ['settings'] })
+      )
+    }, 400)
+  }
 
   const openCreateWorktree = (): void => {
     setTrackingRemote(null)
@@ -128,11 +162,24 @@ function App(): React.JSX.Element {
     }
   }
 
+  // The sidebar's persisted width is only meaningful as an initial mount
+  // value, so the panel waits for it rather than mounting at the fallback
+  // and silently never picking up the saved size. Selection waits on the
+  // same gate, so it never flashes an empty state before landing on the
+  // remembered project and worktree.
+  if (!settings.data || !hydrated) return null
+
   return (
     <div className="h-screen bg-background p-2">
       <ResizablePanelGroup orientation="horizontal">
         {/* Numeric sizes are pixels: the concept's sidebar is about 260 wide. */}
-        <ResizablePanel defaultSize={260} minSize={200} maxSize={420}>
+        <ResizablePanel
+          defaultSize={settings.data.sidebarWidth}
+          minSize={200}
+          maxSize={420}
+          groupResizeBehavior="preserve-pixel-size"
+          onResize={handleSidebarResize}
+        >
           <Sidebar
             projects={list}
             selectedId={selected?.id ?? null}
