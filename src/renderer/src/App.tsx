@@ -28,6 +28,9 @@ import { invoke } from '@/api/client'
 import { samePath } from '@/lib/paths'
 import { useSelection, useSelectedRemoteBranch, useSelectedWorktree } from '@/state/selection'
 
+/** Matches the strip main/index.ts reserves for the OS's traffic lights or overlay. */
+const TITLE_BAR_HEIGHT = 40
+
 function automationTarget(project: Repository, worktree: Worktree): AutomationTarget {
   return {
     repositoryId: project.id,
@@ -169,8 +172,23 @@ function App(): React.JSX.Element | null {
   // remembered project and worktree.
   if (!settings.data || !hydrated) return null
 
+  // Only macOS and Windows get a hidden OS titlebar (see main/index.ts), so
+  // only there does the app need to draw its own draggable strip and leave
+  // room for the native traffic lights or window-control overlay that floats
+  // over it.
+  const flushTitleBar = window.arborist.platform !== 'linux'
+
   return (
-    <div className="h-screen bg-background p-2">
+    <div
+      className="relative h-screen bg-background px-2 pb-2"
+      style={{ paddingTop: flushTitleBar ? TITLE_BAR_HEIGHT + 8 : 8 }}
+    >
+      {flushTitleBar && (
+        <div
+          className="absolute inset-x-0 top-0 h-10"
+          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+        />
+      )}
       <ResizablePanelGroup orientation="horizontal">
         {/* Numeric sizes are pixels: the concept's sidebar is about 260 wide. */}
         <ResizablePanel
