@@ -144,13 +144,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: arborist-${{ needs.verify.outputs.version }}-${{ runner.os }}
-          # Both `latest*.yml` manifests go up alongside the installers: they
-          # are what electron-updater reads, and a release missing one updates
-          # nobody.
+          # The update manifests go up alongside the installers: they are what
+          # electron-updater reads, and a release missing one updates nobody.
+          # `*.yml` rather than `latest*.yml` because electron-builder names the
+          # manifest after the channel it infers from the version, so a
+          # prerelease writes rc.yml and latest*.yml matches nothing.
           path: |
             dist/*.dmg
             dist/*.zip
             dist/*.exe
             dist/*.blockmap
-            dist/latest*.yml
+            dist/*.yml
           if-no-files-found: error

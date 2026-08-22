@@ -30,6 +30,44 @@ in the About panel and the version `electron-updater` compares against both come
 from `package.json`, so a mismatched tag ships a build that lies about what it
 is.
 
+## Rehearsing a Release
+
+Everything except the update path can be tested from the draft, without
+publishing anything. Download the installers from the draft release itself
+rather than from the workflow's artifacts, since the release assets are what
+users actually get, then run `docs/manual-checklist.md` against them.
+
+Download through a browser rather than with `curl`. The browser attaches the
+quarantine attribute, and Gatekeeper only does its full check on a quarantined
+file — a `curl`ed dmg opens cleanly whether or not notarisation worked, which
+makes it a test that always passes.
+
+**The update path cannot be rehearsed from a draft.** `electron-updater` reads
+the releases Atom feed, which drafts never appear in, so an app pointed at a
+repository whose only release is a draft reports that there is nothing to
+update to. Testing an update needs two published releases, and the version
+numbers have to be chosen with some care:
+
+- **A prerelease build only ever updates to another prerelease on the same
+  channel.** `electron-updater` turns `allowPrerelease` on by itself when the
+  installed version has a prerelease component, and takes the channel from that
+  component, so a `0.1.1-rc.2` build looks for other `rc` releases. Its channel
+  matching only treats `alpha` and `beta` as channels that can also see stable
+  releases, so an `rc` build will never move to a stable one. It reports "no
+  published versions" instead.
+- **A prerelease also publishes a differently named manifest.** electron-builder
+  infers the channel from the version too, so `0.1.1-rc.2` writes `rc.yml` and
+  `rc-mac.yml` rather than `latest.yml` and `latest-mac.yml`.
+
+Both of those are consistent with each other, so an `rc.2` → `rc.3` rehearsal
+works end to end and costs no real version numbers. What it does not prove is
+the first stable release, since that is the one hop the channel logic refuses.
+
+The practical consequence is worth stating plainly: **anyone left on a
+prerelease build never receives a stable release.** Uninstall a rehearsal build
+rather than leaving it on the machine, and do not hand one to anybody without
+saying so.
+
 To re-cut a release without moving the tag, run the workflow by hand from
 **Actions → Release → Run workflow** and pick the tag in the ref picker. Picking
 a branch there fails in the first job with a message saying so, because the
