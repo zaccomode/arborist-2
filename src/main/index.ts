@@ -25,8 +25,14 @@ import { UpdateService } from './services/updates'
 
 const DEFAULT_WINDOW: WindowState = { width: 1100, height: 720, maximized: false }
 
-/** Matches the strip the renderer reserves at the top of the window for it. */
-const TITLE_BAR_HEIGHT = 40
+/**
+ * Matches the strip the renderer reserves at the top of the window for it.
+ * 38 is macOS's own unified-toolbar height for a hidden titlebar — matching
+ * it is what makes `trafficLightPosition: { x: 12, y: 12 }` below actually
+ * land the lights centered in the reserved strip, rather than centered in
+ * whatever taller region the renderer happened to reserve.
+ */
+const TITLE_BAR_HEIGHT = 38
 
 /**
  * Colors for Windows' overlay window controls. Approximates the shadcn

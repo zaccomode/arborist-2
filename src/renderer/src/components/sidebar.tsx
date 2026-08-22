@@ -38,7 +38,7 @@ export function Sidebar({
   children?: React.ReactNode
 }): React.JSX.Element {
   return (
-    <div className="flex h-full flex-col gap-2 pr-1">
+    <div className="flex h-full flex-col gap-2">
       <ProjectSwitcher
         projects={projects}
         selectedId={selectedId}

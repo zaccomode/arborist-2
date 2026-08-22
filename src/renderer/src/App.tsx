@@ -28,8 +28,13 @@ import { invoke } from '@/api/client'
 import { samePath } from '@/lib/paths'
 import { useSelection, useSelectedRemoteBranch, useSelectedWorktree } from '@/state/selection'
 
-/** Matches the strip main/index.ts reserves for the OS's traffic lights or overlay. */
-const TITLE_BAR_HEIGHT = 40
+/**
+ * Matches the strip main/index.ts reserves for the OS's traffic lights or
+ * overlay. 38 is macOS's own unified-toolbar height for a hidden titlebar —
+ * reserving anything taller leaves the (fixed-position) traffic lights
+ * looking stuck near the top of an oversized gap instead of centered in it.
+ */
+const TITLE_BAR_HEIGHT = 38
 
 function automationTarget(project: Repository, worktree: Worktree): AutomationTarget {
   return {
@@ -181,12 +186,12 @@ function App(): React.JSX.Element | null {
   return (
     <div
       className="relative h-screen bg-background px-2 pb-2"
-      style={{ paddingTop: flushTitleBar ? TITLE_BAR_HEIGHT + 8 : 8 }}
+      style={{ paddingTop: flushTitleBar ? TITLE_BAR_HEIGHT : 8 }}
     >
       {flushTitleBar && (
         <div
-          className="absolute inset-x-0 top-0 h-10"
-          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+          className="absolute inset-x-0 top-0"
+          style={{ height: TITLE_BAR_HEIGHT, WebkitAppRegion: 'drag' } as React.CSSProperties}
         />
       )}
       <ResizablePanelGroup orientation="horizontal">
