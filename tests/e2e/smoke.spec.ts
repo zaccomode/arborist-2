@@ -210,6 +210,34 @@ test('reaches the application picker from an application preset', async () => {
   await rm(root, { recursive: true, force: true })
 })
 
+test('adds a preset from project settings and it shows up under Open In', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+
+  // Lands on main already, per the auto-select fallback — no extra click
+  // needed to reach the Open In grid this preset should appear under.
+  await window.getByRole('button', { name: 'Project settings' }).click()
+  await window.getByRole('tab', { name: 'Presets' }).click()
+  await window.getByTestId('project-presets').waitFor({ state: 'visible' })
+  await window.getByRole('button', { name: 'New preset' }).click()
+  await window.getByLabel('Name').fill('Storybook')
+  await window.getByLabel('Command').fill('npm run storybook')
+  await window.getByRole('button', { name: 'Save' }).click()
+  await expect(window.getByTestId('preset-editor')).toBeHidden()
+  await window.keyboard.press('Escape')
+  await expect(window.getByTestId('project-settings-dialog')).toBeHidden()
+
+  await expect(window.getByRole('button', { name: 'Storybook' })).toBeVisible()
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})
+
 test('creates a new branch from a base ref picked on the create-worktree dialog', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
   const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')

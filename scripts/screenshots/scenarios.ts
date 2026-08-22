@@ -57,14 +57,23 @@ export interface Scenario {
  * Fills a field and waits for the value to settle. Playwright's `fill` writes
  * the DOM value directly, so a controlled input can still be rewritten by the
  * render that follows — capturing in between catches an empty box.
+ *
+ * `within` disambiguates a testid that appears more than once at once, e.g. a
+ * dialog's own notes editor over a worktree detail pane's, which stays
+ * mounted behind it.
  */
-async function fillAndSettle(window: Page, testId: string, value: string): Promise<void> {
-  await window.getByTestId(testId).fill(value)
+async function fillAndSettle(
+  window: Page,
+  testId: string,
+  value: string,
+  within?: string
+): Promise<void> {
+  const selector = `${within ?? ''} [data-testid="${testId}"]`.trim()
+  await window.locator(selector).fill(value)
   await window.waitForFunction(
-    ({ testId, value }) =>
-      (document.querySelector(`[data-testid="${testId}"]`) as HTMLTextAreaElement | null)?.value ===
-      value,
-    { testId, value }
+    ({ selector, value }) =>
+      (document.querySelector(selector) as HTMLTextAreaElement | null)?.value === value,
+    { selector, value }
   )
 }
 
@@ -121,6 +130,7 @@ export const scenarios: Scenario[] = [
       await window.getByRole('menu').waitFor({ state: 'detached' })
 
       await window.getByRole('button', { name: 'Project settings' }).click()
+      await window.getByRole('tab', { name: 'Danger zone' }).click()
       await window.getByRole('button', { name: 'Remove…' }).click()
       await window.getByTestId('remove-project-dialog').waitFor({ state: 'visible' })
       await shot('remove')
@@ -459,9 +469,10 @@ export const scenarios: Scenario[] = [
   {
     name: 'project-settings',
     description:
-      'Project settings, opened from the button under the worktree list: the ' +
-      'automation script with its parsed preview, the per-project preset ' +
-      'overrides, and the project note that used to live in the pane behind it.',
+      'Project settings, opened from the button under the worktree list, now ' +
+      'tabbed like app settings: the automation script with its parsed ' +
+      'preview, the per-project preset overrides alongside a preset added ' +
+      "just for this project, the project's own note, and the danger zone.",
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -473,11 +484,30 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       await window.getByRole('button', { name: 'Project settings' }).click()
       await fillAndSettle(window, 'automation-script', 'npm install\nnpm run build')
-      await window.getByTestId('project-preset-overrides').waitFor({ state: 'visible' })
+      await window.getByTestId('automation-preview').waitFor({ state: 'visible' })
       await shot('automation')
 
-      await fillAndSettle(window, 'notes-editor', 'Release branches: squash merges only.')
+      await window.getByRole('tab', { name: 'Presets' }).click()
+      await window.getByTestId('project-presets').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'New preset' }).click()
+      await window.getByLabel('Name').fill('Storybook')
+      await window.getByLabel('Command').fill('npm run storybook')
+      await window.getByRole('button', { name: 'Save' }).click()
+      await window.getByTestId('preset-editor').waitFor({ state: 'detached' })
+      await shot('presets')
+
+      await window.getByRole('tab', { name: 'Notes' }).click()
+      await fillAndSettle(
+        window,
+        'notes-editor',
+        'Release branches: squash merges only.',
+        '[data-testid="project-settings-dialog"]'
+      )
       await shot('notes')
+
+      await window.getByRole('tab', { name: 'Danger zone' }).click()
+      await window.getByRole('button', { name: 'Remove…' }).waitFor({ state: 'visible' })
+      await shot('danger')
     }
   },
   {
