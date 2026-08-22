@@ -121,6 +121,12 @@ release, so check that the mac job's log says it signed before publishing.
 2. In Keychain Access, right-click the certificate, **Export**, and save a
    `.p12` with a password. Export the certificate together with its private key,
    which is the row you get by expanding the certificate's disclosure triangle.
+
+   Keychain Access asks for two passwords here, one after the other. The first
+   sets the password on the `.p12`; the second is your login keychain password,
+   authorising the export. Only the first one is the secret. Saving the second
+   is the usual cause of the PKCS12 failure below.
+
 3. Base64 it, and put the result in `MAC_CSC_LINK`:
    ```bash
    base64 -i certificate.p12 | pbcopy
@@ -152,6 +158,40 @@ as a notarisation failure that does not mention team ids at all.
 The certificate expires after five years and the release job will start failing
 on the day it does, with an error about no identity being found. Worth a
 calendar entry.
+
+### Checking the Certificate Before Pushing a Tag
+
+Every mistake in this section costs a tag, a build, and the wait for two
+notarisation submissions before it tells you about itself. Both of the things
+that go wrong can be checked locally in a second.
+
+That the password matches the `.p12`:
+
+```bash
+openssl pkcs12 -in certificate.p12 -noout -passin pass:'the-password'
+```
+
+And that what is stored in `MAC_CSC_LINK` decodes back to that same file:
+
+```bash
+pbpaste | base64 --decode > /tmp/roundtrip.p12
+openssl pkcs12 -in /tmp/roundtrip.p12 -noout -passin pass:'the-password'
+```
+
+Exit code 0 means both are right. If either complains about **algorithms**
+rather than about the password, add `-legacy`: that is OpenSSL 3 refusing the
+older ciphers Keychain Access exports with, and says nothing about whether the
+password is correct. macOS ships LibreSSL as `openssl`, which does not need it.
+
+The failure this heads off reads, in the release log:
+
+```
+security: SecKeychainItemImport: MAC verification failed during PKCS12 import (wrong password?)
+```
+
+Despite appearances that is good news about everything except the password: the
+secrets reached the job, and the base64 decoded into a file `security` was
+willing to try. Only `MAC_CSC_KEY_PASSWORD` is wrong.
 
 ## Windows Code Signing
 
