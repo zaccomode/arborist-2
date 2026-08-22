@@ -54,14 +54,36 @@ a matter of making an older release the latest again.
    git push --delete origin v1.2.0 && git tag -d v1.2.0
    ```
 
-## Regenerating the Icons
+## The Icons
 
-`resources/icon.png` at 1024×1024 is the source of truth. `build/icon.icns`,
-`build/icon.ico`, and `build/icon.png` are generated from it and committed,
-because electron-builder's config points at them by name and a build should not
-depend on a conversion step nobody can see the output of.
+There are two sources, because macOS 26 wants a layered icon and nothing else
+does.
 
-To regenerate after changing the source:
+**macOS: `build/icon.icon`**, an Icon Composer bundle. `mac.icon` points at it,
+and electron-builder runs `actool` over it once, taking both of its outputs: the
+`Assets.car` that macOS 26 renders as a layered icon, and an `Icon.icns`
+generated from the same artwork for every older version. One file feeds both, so
+there is no second icon to keep in sync.
+
+That puts `actool` on the critical path, and it throws rather than degrading
+when it is missing or older than 26. Two consequences worth knowing before they
+bite:
+
+- A Mac without Xcode 26 cannot run `npm run build:mac` at all. The error names
+  `actool`, not the icon.
+- The release workflow pins `macos-26` rather than using `macos-latest`, so a
+  future rollover of that label cannot quietly take Xcode 26 away.
+
+To back the whole thing out, point `mac.icon` at `build/icon.icns` instead. That
+file is still committed and still current; it is simply no longer read.
+
+**Windows and everything else: `resources/icon.png`** at 1024×1024.
+`build/icon.ico` is generated from it and committed, because `win.icon` points
+at it by name and a build should not depend on a conversion step nobody can see
+the output of. `build/icon.png` is the same image, kept as the human-readable
+reference.
+
+To regenerate after changing the PNG:
 
 ```bash
 cp resources/icon.png build/icon.png
@@ -77,7 +99,9 @@ That is electron-builder's own converter rather than a second tool with its own
 opinion about downscaling, so the output is what electron-builder would have
 produced had the config pointed at the PNG. It downloads a toolset bundle on
 first use. The result carries 16 through 1024 including the retina variants for
-`icns`, and 16 through 256 for `ico`.
+`icns`, and 16 through 256 for `ico`. The `icns` is regenerated alongside the
+`ico` so the escape hatch above stays current, even though the mac build no
+longer reads it.
 
 ## Secrets the Workflow Needs
 

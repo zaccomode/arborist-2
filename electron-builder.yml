@@ -21,7 +21,18 @@ asarUnpack:
 
 mac:
   category: public.app-category.developer-tools
-  icon: build/icon.icns
+  # An Icon Composer bundle rather than an icns. electron-builder runs `actool`
+  # over it once and takes both outputs: Assets.car, which is what macOS 26
+  # renders as a layered icon, and an Icon.icns generated from the same source
+  # for every older version. So this one file feeds both, and build/icon.icns is
+  # no longer read — reverting this line to it is how to back the whole thing
+  # out.
+  #
+  # The cost is that `actool` is now on the critical path, and it throws rather
+  # than degrading when it is missing or older than 26. A mac without Xcode 26
+  # can no longer run `npm run build:mac`, which is why the release workflow
+  # pins macos-26 rather than trusting macos-latest.
+  icon: build/icon.icon
   # Two architectures rather than a universal binary: universal roughly
   # doubles the download for everyone to spare Intel users a choice, and the
   # update manifest picks the right one anyway.

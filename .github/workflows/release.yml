@@ -58,7 +58,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          # Pinned rather than macos-latest because the icon is an Icon
+          # Composer bundle, which electron-builder compiles with `actool` from
+          # Xcode 26. macos-26 carries it as the default; a runner label that
+          # rolls to something else later would fail the build on the icon, and
+          # the error would name actool rather than the rollover.
+          - os: macos-26
             script: build:mac
           - os: windows-latest
             script: build:win
