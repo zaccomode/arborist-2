@@ -49,6 +49,31 @@ a matter of making an older release the latest again.
    git push --delete origin v1.2.0 && git tag -d v1.2.0
    ```
 
+## Regenerating the Icons
+
+`resources/icon.png` at 1024×1024 is the source of truth. `build/icon.icns`,
+`build/icon.ico`, and `build/icon.png` are generated from it and committed,
+because electron-builder's config points at them by name and a build should not
+depend on a conversion step nobody can see the output of.
+
+To regenerate after changing the source:
+
+```bash
+cp resources/icon.png build/icon.png
+node -e "
+const { runIconsTool } = require('./node_modules/app-builder-lib/out/toolsets/icons.js')
+Promise.all(['icns', 'ico'].map((format) =>
+  runIconsTool({ inputFile: 'resources/icon.png', outputFormat: format, outDir: 'build' })
+)).catch((error) => { console.error(error); process.exit(1) })
+"
+```
+
+That is electron-builder's own converter rather than a second tool with its own
+opinion about downscaling, so the output is what electron-builder would have
+produced had the config pointed at the PNG. It downloads a toolset bundle on
+first use. The result carries 16 through 1024 including the retina variants for
+`icns`, and 16 through 256 for `ico`.
+
 ## Secrets the Workflow Needs
 
 These are repository secrets under **Settings → Secrets and variables →
