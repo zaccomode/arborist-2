@@ -538,6 +538,17 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'update-downloading',
+    description:
+      'The toast shown while an update is downloading, with its progress. ' +
+      'Before this, downloading happened silently and the app looked idle ' +
+      'for however long the download took.',
+    setup: async () => ({ ARBORIST_FAKE_UPDATE: 'downloading' }),
+    drive: async (window) => {
+      await window.getByText('Downloading Arborist 2.1.0').waitFor({ state: 'visible' })
+    }
+  },
+  {
     name: 'update-ready',
     description:
       'The toast shown once an update has downloaded. It is the only place ' +

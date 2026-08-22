@@ -32,6 +32,8 @@ const DEFAULT_WINDOW: WindowState = { width: 1100, height: 720, maximized: false
  */
 function scriptedUpdateStatus(): UpdateStatus | undefined {
   switch (process.env['ARBORIST_FAKE_UPDATE']) {
+    case 'downloading':
+      return { phase: 'downloading', version: '2.1.0', percent: 42 }
     case 'ready':
       return { phase: 'ready', version: '2.1.0' }
     case 'up-to-date':
