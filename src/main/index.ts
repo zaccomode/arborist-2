@@ -1,11 +1,15 @@
-import { app, shell, BrowserWindow, nativeTheme } from 'electron'
+import { app, screen, shell, BrowserWindow, nativeTheme } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
+import type { IpcEventChannel, IpcEventContract } from '../shared/ipc-contract'
+import type { UpdateStatus } from '../shared/updates'
 import icon from '../../resources/icon.png?asset'
 import { registerIpcHandlers } from './ipc/register'
 import { buildAppMenu } from './menu'
 import { Store } from './services/persistence/store'
 import {
+  clampToDisplays,
   loadWindowState,
   trackWindowState,
   type WindowState
@@ -17,12 +21,39 @@ import { ProjectService } from './services/projects'
 import { GitService } from './services/git/git-service'
 import { PresetService } from './services/presets'
 import { AutomationRunner } from './services/automation'
+import { UpdateService } from './services/updates'
 
 const DEFAULT_WINDOW: WindowState = { width: 1100, height: 720, maximized: false }
 
+/**
+ * The update state a screenshot scenario or an e2e test asked for. Reaching
+ * either of these for real means publishing a release, so they are scripted
+ * the same way the missing-git screen is.
+ */
+function scriptedUpdateStatus(): UpdateStatus | undefined {
+  switch (process.env['ARBORIST_FAKE_UPDATE']) {
+    case 'ready':
+      return { phase: 'ready', version: '2.1.0' }
+    case 'up-to-date':
+      // Fixed, because a real timestamp would change the pixels every run.
+      return { phase: 'up-to-date', checkedAt: '2026-08-21T09:00:00Z', manual: true }
+    default:
+      return undefined
+  }
+}
+
 let store: Store | null = null
 
-function createWindow(state: WindowState, windowStatePath: string): void {
+function createWindow(remembered: WindowState, windowStatePath: string): void {
+  // Re-checked at creation rather than at load, so a window opened by
+  // `activate` after a monitor was unplugged lands somewhere visible too.
+  const primary = screen.getPrimaryDisplay()
+  const others = screen.getAllDisplays().filter((display) => display.id !== primary.id)
+  const state = clampToDisplays(
+    remembered,
+    [primary, ...others].map((display) => display.workArea)
+  )
+
   const mainWindow = new BrowserWindow({
     width: state.width,
     height: state.height,
@@ -61,7 +92,17 @@ function createWindow(state: WindowState, windowStatePath: string): void {
 }
 
 app.whenReady().then(async () => {
-  electronApp.setAppUserModelId('com.zeitgeist.arborist')
+  // Must match electron-builder.yml's appId, or Windows treats the running
+  // app and its installed shortcut as two different applications and the
+  // taskbar shows two icons.
+  electronApp.setAppUserModelId('com.isaacshea.arborist2')
+
+  app.setAboutPanelOptions({
+    applicationName: 'Arborist',
+    applicationVersion: app.getVersion(),
+    copyright: 'Copyright © 2026 Isaac Shea',
+    credits: 'A git worktree manager.'
+  })
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -73,19 +114,32 @@ app.whenReady().then(async () => {
 
   setGitDebug(store.data.settings.debugGit)
   nativeTheme.themeSource = store.data.settings.theme
-  buildAppMenu()
+
+  const broadcast = <C extends IpcEventChannel>(channel: C, payload: IpcEventContract[C]): void => {
+    // One window, so every push goes to it; a second window would need the
+    // sender threaded through the handler instead.
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send(channel, payload)
+    }
+  }
+
+  const updates = new UpdateService({
+    updater: autoUpdater,
+    emit: (status) => broadcast('updates:changed', status),
+    currentVersion: app.getVersion(),
+    // `isPackaged` is the honest test: a dev run and an unpacked build both
+    // have no installer to hand a downloaded update to.
+    supported: app.isPackaged,
+    initialStatus: scriptedUpdateStatus()
+  })
+
+  buildAppMenu(() => void updates.check(true))
   const gitRunner = new GitRunner(
     new GitLocator(systemDiscoveryDeps(), store.data.settings.gitPath)
   )
 
   const automation = new AutomationRunner(
-    (event) => {
-      // One window, so every push goes to it; a second window would need the
-      // sender threaded through the handler instead.
-      for (const window of BrowserWindow.getAllWindows()) {
-        window.webContents.send('automation:event', event)
-      }
-    },
+    (event) => broadcast('automation:event', event),
     () => store!.data.settings
   )
 
@@ -100,12 +154,15 @@ app.whenReady().then(async () => {
       // growing a second way to spawn a shell.
       automation.start({ script, worktreePath: cwd, values })
     ),
-    automation
+    automation,
+    updates
   })
 
   const windowStatePath = join(userData, 'window-state.json')
   const windowState = await loadWindowState(windowStatePath, DEFAULT_WINDOW)
   createWindow(windowState, windowStatePath)
+
+  updates.start()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(windowState, windowStatePath)

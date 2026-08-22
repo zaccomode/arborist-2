@@ -1,0 +1,190 @@
+name: Release
+
+# Tagging is the trigger, and the tag has to agree with package.json — the
+# version in the app's About panel and the version electron-updater compares
+# against both come from package.json, so a mismatched tag ships a build that
+# lies about what it is.
+on:
+  push:
+    tags: ['v*']
+  # Available by hand so a release can be re-cut without moving a tag, which
+  # would leave everyone who already downloaded the old one stranded. Choose
+  # the tag in the ref picker rather than passing it as an input: the signing
+  # environment's tag policy is matched against the run's own ref, so a run
+  # dispatched from a branch cannot reach the certificate however it is
+  # parameterised. `verify` says so outright rather than leaving that to
+  # surface as an environment error two jobs later.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: check
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            echo "::error::This workflow builds a tag, but it was run against" \
+                 "${{ github.ref_type }} ${{ github.ref_name }}. Re-run it from" \
+                 "Actions and choose the release tag in the ref picker."
+            exit 1
+          fi
+          tag="${{ github.ref_name }}"
+          package="v$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$package" ]; then
+            echo "::error::Tag $tag does not match package.json ($package)." \
+                 "Bump the version in package.json and re-tag, or tag $package instead."
+            exit 1
+          fi
+          echo "version=${package#v}" >> "$GITHUB_OUTPUT"
+
+      # Created here so the build jobs never have to. electron-builder caches
+      # its publisher behind an async lookup, so two artifacts finishing at the
+      # same moment both miss the cache, both construct a publisher, and both
+      # create a draft — the mac build alone produces four (dmg and zip, arm64
+      # and x64), so it races itself and splits its artifacts across two
+      # releases. Serialising the jobs does not help, because the race is
+      # inside one of them. An existing draft is found rather than created, so
+      # making it up front is what removes the race.
+      - name: Create the draft release the build jobs publish into
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          count=$(gh api "repos/${{ github.repository }}/releases" --paginate \
+            --jq "[.[] | select(.tag_name == \"$tag\")] | length" | awk '{s+=$1} END {print s+0}')
+          if [ "$count" -gt 1 ]; then
+            echo "::error::$count releases already exist for $tag, which is the" \
+                 "duplicate-draft state this step exists to prevent. Delete all but" \
+                 "one in the Releases UI and re-run."
+            exit 1
+          fi
+          if [ "$count" -eq 1 ]; then
+            echo "Reusing the existing release for $tag."
+            exit 0
+          fi
+          # HEAD rather than the tag ref: checkout fetches a single commit by
+          # default, so the tag object itself may not be in the local repo.
+          gh release create "$tag" --draft --title "$tag" \
+            --notes "$(git log -1 --pretty=%s HEAD)"
+
+  build:
+    needs: verify
+    # The signing credentials live on this environment rather than on the
+    # repository, so they are reachable only from a job that asks for them by
+    # name and only from a ref the environment's tag policy allows. A
+    # repository secret is readable by any workflow on any branch, and a
+    # Developer ID certificate is not something that can be rotated cheaply.
+    # See docs/release.md for the environment's own settings.
+    environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Pinned rather than macos-latest because the icon is an Icon
+          # Composer bundle, which electron-builder compiles with `actool` from
+          # Xcode 26. macos-26 carries it as the default; a runner label that
+          # rolls to something else later would fail the build on the icon, and
+          # the error would name actool rather than the rollover.
+          - os: macos-26
+            script: build:mac
+          - os: windows-latest
+            script: build:win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The same checks CI runs on every pull request. A release build is the
+      # worst place to discover a type error.
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit and integration tests
+        run: npm test
+
+      - name: Build, sign and publish a draft release
+        run: npm run ${{ matrix.script }} -- --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS signing and notarisation. Absent, electron-builder skips
+          # both and produces an unsigned build that Gatekeeper will block —
+          # so these are what make a mac release a release. See docs/release.md.
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      # electron-builder skips signing rather than failing when it cannot find
+      # an identity, so a green job says nothing about whether the build is
+      # signed. Without this step the only evidence is a line in a log nobody
+      # reads on the release that goes out unsigned.
+      - name: Assert the macOS build is signed
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          found=0
+          while IFS= read -r app; do
+            found=1
+            echo "Checking $app"
+            codesign --verify --deep --strict --verbose=2 "$app"
+            if ! codesign -dvv "$app" 2>&1 | grep -q '^Authority=Developer ID Application'; then
+              echo "::error::$app carries no Developer ID Application authority." \
+                   "electron-builder signed it ad-hoc or skipped signing, which means" \
+                   "MAC_CSC_LINK and MAC_CSC_KEY_PASSWORD did not reach this job." \
+                   "Check they are on the 'release' environment rather than the repository."
+              exit 1
+            fi
+            # Notarisation is reported rather than enforced: the ticket is
+            # stapled by a separate step of electron-builder's and this check
+            # has never been watched failing, so it is not yet trusted to gate
+            # a release. Promote it to an error once it has proven itself.
+            if xcrun stapler validate "$app" >/dev/null 2>&1; then
+              echo "Notarisation ticket stapled to $app"
+            else
+              echo "::warning::No stapled notarisation ticket on $app." \
+                   "Gatekeeper will need a network round trip on first launch," \
+                   "and will block the app outright if notarisation did not happen."
+            fi
+          done < <(find dist -maxdepth 2 -name '*.app' -type d)
+          if [ "$found" -eq 0 ]; then
+            echo "::error::No .app found under dist/ to check."
+            exit 1
+          fi
+
+      - name: Upload artifacts for the smoke check
+        uses: actions/upload-artifact@v4
+        with:
+          name: arborist-${{ needs.verify.outputs.version }}-${{ runner.os }}
+          # The update manifests go up alongside the installers: they are what
+          # electron-updater reads, and a release missing one updates nobody.
+          # `*.yml` rather than `latest*.yml` because electron-builder names the
+          # manifest after the channel it infers from the version, so a
+          # prerelease writes rc.yml and latest*.yml matches nothing.
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.blockmap
+            dist/*.yml
+          if-no-files-found: error

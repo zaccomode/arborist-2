@@ -8,6 +8,7 @@ import App from './App'
 import { GitGate } from './components/git-gate'
 import { StoreStatusToasts } from './components/store-status'
 import { ThemeSync } from './components/theme-sync'
+import { UpdateToasts } from './components/update-notice'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
@@ -31,6 +32,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <StoreStatusToasts />
+          <UpdateToasts />
           <ThemeSync />
           <GitGate>
             <App />

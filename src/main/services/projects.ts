@@ -4,7 +4,7 @@ import { AppError } from '../../shared/errors'
 import type { Repository } from '../../shared/persisted'
 import type { Store } from './persistence/store'
 import type { GitRunner } from './git/git-runner'
-import { normaliseGitPath } from './git/porcelain'
+import { normaliseGitPath, samePath } from '../../shared/paths'
 
 /**
  * Projects are repositories the user has added to Arborist. Adding one only
@@ -37,7 +37,10 @@ export class ProjectService {
     // Windows this comes back with forward slashes, and it is the path the
     // detail pane shows and every git call is made against.
     const root = normaliseGitPath(result.stdout.trim())
-    const existing = this.#store.data.repositories.find((repo) => repo.path === root)
+    // Compared case-insensitively on Windows: the same folder reached through
+    // the picker and through a shell can differ only in the case of the drive
+    // letter, and adding it twice would give it two independent sets of notes.
+    const existing = this.#store.data.repositories.find((repo) => samePath(repo.path, root))
     if (existing) {
       throw new AppError(`${existing.name} is already in Arborist.`, 'project-already-added')
     }

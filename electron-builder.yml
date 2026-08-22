@@ -1,5 +1,10 @@
-appId: com.zeitgeist.arborist
+# The bundle id is frozen: auto-update, the app's preferences domain, and the
+# Windows AppUserModelID all key off it, so changing it after a public build
+# strands every installed copy. `com.zeitgeist.arborist` was the electron-vite
+# template's placeholder and was never shipped.
+appId: com.isaacshea.arborist2
 productName: Arborist
+copyright: Copyright © 2026 Isaac Shea
 directories:
   buildResources: build
 files:
@@ -9,35 +14,88 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!{docs,scripts,tests,build}/*'
+  - '!{components.json,concept.png,playwright.config.ts,vitest.config.ts,skills-lock.json}'
 asarUnpack:
   - resources/**
+
+mac:
+  category: public.app-category.developer-tools
+  # An Icon Composer bundle rather than an icns. electron-builder runs `actool`
+  # over it once and takes both outputs: Assets.car, which is what macOS 26
+  # renders as a layered icon, and an Icon.icns generated from the same source
+  # for every older version. So this one file feeds both, and build/icon.icns is
+  # no longer read — reverting this line to it is how to back the whole thing
+  # out.
+  #
+  # The cost is that `actool` is now on the critical path, and it throws rather
+  # than degrading when it is missing or older than 26. A mac without Xcode 26
+  # can no longer run `npm run build:mac`, which is why the release workflow
+  # pins macos-26 rather than trusting macos-latest.
+  icon: build/icon.icon
+  # Two architectures rather than a universal binary: universal roughly
+  # doubles the download for everyone to spare Intel users a choice, and the
+  # update manifest picks the right one anyway.
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    # electron-updater's mac provider installs from the zip, not the dmg, so
+    # the zip ships even though nobody downloads it by hand.
+    - target: zip
+      arch: [arm64, x64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Notarisation runs when the build is signed, and is skipped along with
+  # signing when no Developer ID identity is available — which is what makes a
+  # local `npm run build:mac` still work. See docs/release.md for the
+  # credentials CI needs.
+  notarize: true
+  extendInfo:
+    # The app shells out to git and to user-authored setup scripts, both of
+    # which can reach into folders macOS guards. Without these the prompt has
+    # no explanation in it.
+    NSDesktopFolderUsageDescription: Arborist runs git and your setup scripts in the folders you point it at.
+    NSDocumentsFolderUsageDescription: Arborist runs git and your setup scripts in the folders you point it at.
+    NSDownloadsFolderUsageDescription: Arborist runs git and your setup scripts in the folders you point it at.
+
+dmg:
+  artifactName: ${name}-${version}-${arch}.${ext}
+  sign: false
+
 win:
   executableName: arborist
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+  # Unsigned for now. Signing is a matter of putting credentials in CI rather
+  # than of changing this file; docs/release.md has the steps, and
+  # docs/troubleshooting.md tells users what SmartScreen will do meanwhile.
+
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
+  # Per-user, so installing never raises a UAC prompt. `oneClick: false` buys
+  # a real installer UI and the choice of directory, which is worth one extra
+  # click for a developer tool.
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
-mac:
-  entitlementsInherit: build/entitlements.mac.plist
-  extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
-  notarize: false
-dmg:
-  artifactName: ${name}-${version}.${ext}
-linux:
-  target:
-    - AppImage
-    - snap
-    - deb
-  maintainer: electronjs.org
-  category: Utility
-appImage:
-  artifactName: ${name}-${version}.${ext}
+  # Uninstalling removes the app, not the user's projects list, notes, and
+  # presets. Reinstalling picks them back up.
+  deleteAppDataOnUninstall: false
+
 npmRebuild: false
+
 publish:
-  provider: generic
-  url: https://example.com/auto-updates
+  provider: github
+  owner: zaccomode
+  repo: arborist-2
+  # The release workflow publishes a draft; electron-updater serves whatever
+  # the latest *published* release says, so a bad build has to be looked at by
+  # a human before it can auto-install itself onto anyone.
+  releaseType: draft

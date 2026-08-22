@@ -19,6 +19,7 @@ import type { Preset, Repository, Settings } from './persisted'
 import type { AutomationEvent } from './automation'
 import type { PresetCatalogue, PresetRunResult, ResolvedPreset } from './presets'
 import type { SubstitutionValues } from './substitution'
+import type { UpdateStatus, UpdateSupport } from './updates'
 
 export interface IpcInvokeContract {
   /** Native folder picker. Resolves null when the user cancels. */
@@ -119,6 +120,14 @@ export interface IpcInvokeContract {
   'store:status': { args: []; result: StoreStatus }
   'settings:get': { args: []; result: Settings }
   'settings:update': { args: [changes: Partial<Settings>]; result: Settings }
+  /** Whether this build can update itself, and what version it is. */
+  'updates:support': { args: []; result: UpdateSupport }
+  /** The state the updater is in right now, for a window that just opened. */
+  'updates:status': { args: []; result: UpdateStatus }
+  /** A check the user asked for: unlike the scheduled one, it always answers. */
+  'updates:check': { args: []; result: UpdateStatus }
+  /** Restarts into a staged update. The only thing in the app that quits it. */
+  'updates:install': { args: []; result: void }
 }
 
 export type IpcChannel = keyof IpcInvokeContract
@@ -171,7 +180,11 @@ const CHANNELS: Record<IpcChannel, true> = {
   'git:setPath': true,
   'store:status': true,
   'settings:get': true,
-  'settings:update': true
+  'settings:update': true,
+  'updates:support': true,
+  'updates:status': true,
+  'updates:check': true,
+  'updates:install': true
 }
 
 export const IPC_CHANNELS: readonly IpcChannel[] = Object.keys(CHANNELS) as IpcChannel[]
@@ -186,6 +199,8 @@ export interface IpcEventContract {
   'app:refresh': void
   'app:newWorktree': void
   'app:openSettings': void
+  /** Every updater transition, so the toast follows a download it did not start. */
+  'updates:changed': UpdateStatus
 }
 
 export type IpcEventChannel = keyof IpcEventContract
@@ -195,7 +210,8 @@ const EVENT_CHANNELS: Record<IpcEventChannel, true> = {
   'automation:event': true,
   'app:refresh': true,
   'app:newWorktree': true,
-  'app:openSettings': true
+  'app:openSettings': true,
+  'updates:changed': true
 }
 
 export const IPC_EVENT_CHANNELS: readonly IpcEventChannel[] = Object.keys(
