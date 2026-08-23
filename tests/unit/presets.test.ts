@@ -21,8 +21,8 @@ const builtIns: BuiltInPreset[] = [
     sortOrder: 1
   },
   {
-    builtinId: 'xcode',
-    name: 'Xcode',
+    builtinId: 'extra',
+    name: 'Extra Tool',
     icon: 'Hammer',
     platforms: ['darwin'],
     enabledByDefault: false,
@@ -62,9 +62,9 @@ describe('resolvePresets', () => {
   })
 
   it('leaves out a built-in that is off by default until it is switched on', () => {
-    expect(resolve()).not.toContain(builtInPresetId('xcode'))
+    expect(resolve()).not.toContain(builtInPresetId('extra'))
     expect(resolve({ config: { ...config, overrides: {} } })).not.toContain(
-      builtInPresetId('xcode')
+      builtInPresetId('extra')
     )
   })
 
@@ -84,24 +84,24 @@ describe('resolvePresets', () => {
   })
 
   it('switches on a built-in that is off by default', () => {
-    // Xcode and Warp default to off, and the app-level state used to be a
+    // A preset defaulting to off means the app-level state used to be a
     // list of ids switched *off* — so switching one on had nothing to record
     // and it read back off, which is exactly how it behaved in the app.
-    const on = { ...config, appOverrides: { [builtInPresetId('xcode')]: 'on' as const } }
-    expect(resolve({ config: on })).toContain(builtInPresetId('xcode'))
+    const on = { ...config, appOverrides: { [builtInPresetId('extra')]: 'on' as const } }
+    expect(resolve({ config: on })).toContain(builtInPresetId('extra'))
   })
 
   it('lets a project override win over the app-level setting, both ways', () => {
     const overrides = {
       p1: {
         [builtInPresetId('terminal')]: 'off' as const,
-        [builtInPresetId('xcode')]: 'on' as const
+        [builtInPresetId('extra')]: 'on' as const
       }
     }
 
     expect(resolve({ config: { ...config, overrides }, projectId: 'p1' })).toEqual([
       builtInPresetId('reveal'),
-      builtInPresetId('xcode')
+      builtInPresetId('extra')
     ])
     // ...and only for that project.
     expect(resolve({ config: { ...config, overrides }, projectId: 'p2' })).toEqual([

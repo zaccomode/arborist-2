@@ -9,9 +9,14 @@
 import type {
   AheadBehind,
   BranchInfo,
+  ChangeCode,
+  ChangedFile,
   CommitLogEntry,
   CommitSummary,
+  StatusBranch,
+  UnmergedCode,
   UpstreamTrack,
+  WorkingTreeChanges,
   WorkingTreeStatus,
   WorktreeEntry
 } from '../../../shared/domain'
@@ -259,6 +264,235 @@ export function parseStatus(output: string): WorkingTreeStatus {
     }
     if (index !== ' ') staged++
     if (worktree !== ' ') unstaged++
+  }
+
+  return { dirty: staged + unstaged + untracked > 0, staged, unstaged, untracked }
+}
+
+/**
+ * Splits NUL-terminated output from a `-z` git command into records, minus
+ * the trailing empty field the final terminator produces. Fields inside one
+ * record are then found without `\0` at all — the exception being a `2`
+ * (rename/copy) record, whose original path is a *separate* NUL-terminated
+ * field that follows it, which is why callers walk this with an index
+ * cursor rather than mapping over it directly.
+ */
+function splitNulRecords(output: string): string[] {
+  const parts = output.split(FIELD_SEPARATOR)
+  if (parts.length > 0 && parts[parts.length - 1] === '') parts.pop()
+  return parts
+}
+
+/** Takes `n` space-separated leading fields off `s`, returning them plus whatever remains. */
+function takeFields(s: string, n: number): [fields: string[], rest: string] {
+  const fields: string[] = []
+  let rest = s
+  for (let k = 0; k < n; k++) {
+    const index = rest.indexOf(' ')
+    if (index === -1) {
+      fields.push(rest)
+      rest = ''
+      break
+    }
+    fields.push(rest.slice(0, index))
+    rest = rest.slice(index + 1)
+  }
+  return [fields, rest]
+}
+
+/** The submodule field is `N...` (not a submodule) or `S<c><m><u>`, each position the letter or `.`. */
+function parseSubmoduleField(sub: string | undefined): ChangedFile['submodule'] {
+  if (!sub || sub[0] !== 'S') return null
+  return {
+    commitChanged: sub[1] === 'C',
+    modifiedTracked: sub[2] === 'M',
+    untracked: sub[3] === 'U'
+  }
+}
+
+/** The `<R|C><score>` field on a `2` record, e.g. `R100`. */
+function parseScoreField(field: string | undefined): number | null {
+  if (!field) return null
+  const score = Number(field.slice(1))
+  return Number.isFinite(score) ? score : null
+}
+
+function parseOrdinaryRecord(record: string): ChangedFile {
+  const [fields, path] = takeFields(record.slice(2), 7)
+  const [xy, sub] = fields
+  return {
+    path,
+    kind: 'tracked',
+    index: (xy?.[0] ?? '.') as ChangeCode,
+    worktree: (xy?.[1] ?? '.') as ChangeCode,
+    origPath: null,
+    score: null,
+    conflict: null,
+    submodule: parseSubmoduleField(sub)
+  }
+}
+
+function parseRenameRecord(record: string, origPath: string): ChangedFile {
+  const [fields, path] = takeFields(record.slice(2), 8)
+  const [xy, sub, , , , , , scoreField] = fields
+  return {
+    path,
+    kind: 'tracked',
+    index: (xy?.[0] ?? '.') as ChangeCode,
+    worktree: (xy?.[1] ?? '.') as ChangeCode,
+    origPath,
+    score: parseScoreField(scoreField),
+    conflict: null,
+    submodule: parseSubmoduleField(sub)
+  }
+}
+
+function parseUnmergedRecord(record: string): ChangedFile {
+  const [fields, path] = takeFields(record.slice(2), 9)
+  const [xy, sub] = fields
+  return {
+    path,
+    kind: 'unmerged',
+    // The unmerged XY alphabet (D/A/U) doesn't fit ChangeCode (no 'U'); the
+    // two-letter state lives entirely in `conflict` instead.
+    index: '.',
+    worktree: '.',
+    origPath: null,
+    score: null,
+    conflict: (xy ?? null) as UnmergedCode | null,
+    submodule: parseSubmoduleField(sub)
+  }
+}
+
+function parseUntrackedOrIgnoredRecord(record: string, kind: 'untracked' | 'ignored'): ChangedFile {
+  return {
+    path: record.slice(2),
+    kind,
+    index: '.',
+    worktree: '.',
+    origPath: null,
+    score: null,
+    conflict: null,
+    submodule: null
+  }
+}
+
+function applyBranchHeader(rest: string, branch: StatusBranch): void {
+  const spaceIndex = rest.indexOf(' ')
+  const key = spaceIndex === -1 ? rest : rest.slice(0, spaceIndex)
+  const value = spaceIndex === -1 ? '' : rest.slice(spaceIndex + 1)
+
+  switch (key) {
+    case 'branch.oid':
+      branch.oid = value === '(initial)' ? null : value
+      break
+    case 'branch.head':
+      branch.detached = value === '(detached)'
+      branch.head = branch.detached ? null : value
+      break
+    case 'branch.upstream':
+      branch.upstream = value
+      break
+    case 'branch.ab': {
+      const match = /^\+(\d+)\s+-(\d+)$/.exec(value)
+      if (match) {
+        branch.ahead = Number(match[1])
+        branch.behind = Number(match[2])
+      }
+      break
+    }
+  }
+}
+
+/**
+ * Parses `git status --porcelain=v2 -z --branch --untracked-files=all`.
+ * `parseStatus` above stays exactly as it is — this is a separate parser for
+ * the richer per-file detail the Working Tree tab needs, not a replacement.
+ *
+ * `-z` is mandatory, not an optimisation: without it git C-quotes paths
+ * containing spaces. See `splitNulRecords` for the field-count subtlety a
+ * naive `.split('\0')` gets wrong on a rename record.
+ */
+export function parseStatusV2(output: string): WorkingTreeChanges {
+  const branch: StatusBranch = {
+    oid: null,
+    head: null,
+    detached: false,
+    upstream: null,
+    ahead: 0,
+    behind: 0
+  }
+  const files: ChangedFile[] = []
+
+  const records = splitNulRecords(output)
+  let i = 0
+  while (i < records.length) {
+    const record = records[i]
+    if (record === undefined || record === '') {
+      i++
+      continue
+    }
+
+    if (record.startsWith('# ')) {
+      applyBranchHeader(record.slice(2), branch)
+      i++
+      continue
+    }
+
+    switch (record[0]) {
+      case '1':
+        files.push(parseOrdinaryRecord(record))
+        i++
+        break
+      case '2':
+        files.push(parseRenameRecord(record, records[i + 1] ?? ''))
+        i += 2
+        break
+      case 'u':
+        files.push(parseUnmergedRecord(record))
+        i++
+        break
+      case '?':
+        files.push(parseUntrackedOrIgnoredRecord(record, 'untracked'))
+        i++
+        break
+      case '!':
+        files.push(parseUntrackedOrIgnoredRecord(record, 'ignored'))
+        i++
+        break
+      default:
+        i++
+    }
+  }
+
+  return { branch, files }
+}
+
+/**
+ * Rolls `parseStatusV2`'s richer output up to the shape `parseStatus`
+ * returns, matching its counting rule exactly: an unmerged file, whose two
+ * sides are never `.`, counts toward both `staged` and `unstaged` just as an
+ * unmerged `XY` line does under v1. This parity is what will one day let the
+ * refresh pipeline collapse to a single status call — not done in this PR.
+ */
+export function countsFromV2(changes: WorkingTreeChanges): WorkingTreeStatus {
+  let staged = 0
+  let unstaged = 0
+  let untracked = 0
+
+  for (const file of changes.files) {
+    if (file.kind === 'untracked') {
+      untracked++
+      continue
+    }
+    if (file.kind === 'ignored') continue
+    if (file.kind === 'unmerged') {
+      staged++
+      unstaged++
+      continue
+    }
+    if (file.index !== '.') staged++
+    if (file.worktree !== '.') unstaged++
   }
 
   return { dirty: staged + unstaged + untracked > 0, staged, unstaged, untracked }

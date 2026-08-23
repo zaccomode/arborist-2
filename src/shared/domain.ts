@@ -119,3 +119,52 @@ export interface RemoteBranch {
   shortName: string
   lastCommit: CommitSummary | null
 }
+
+/**
+ * `git status --porcelain=v2`'s per-side state code. `.` means unchanged on
+ * that side.
+ */
+export type ChangeCode = '.' | 'M' | 'T' | 'A' | 'D' | 'R' | 'C'
+
+/** The two-letter code on an unmerged (`u`) record — one side per stage. */
+export type UnmergedCode = 'DD' | 'AU' | 'UD' | 'UA' | 'DU' | 'AA' | 'UU'
+
+export type ChangedFileKind = 'tracked' | 'untracked' | 'ignored' | 'unmerged'
+
+/**
+ * One file from `git status --porcelain=v2`.
+ *
+ * `path` is repo-relative with POSIX separators, exactly as git printed it —
+ * that is the identity used everywhere: the DTO, the query key, the IPC
+ * argument, and the Zustand selection. `normaliseGitPath` from
+ * `src/shared/paths.ts` applies only when a path is joined onto a worktree
+ * path to build an absolute one for display or the shell; mixing the two
+ * recreates, one level down, the problem `samePath` already exists to clean
+ * up one level higher.
+ */
+export interface ChangedFile {
+  path: string
+  kind: ChangedFileKind
+  index: ChangeCode
+  worktree: ChangeCode
+  origPath: string | null
+  score: number | null
+  conflict: UnmergedCode | null
+  submodule: { commitChanged: boolean; modifiedTracked: boolean; untracked: boolean } | null
+}
+
+export interface StatusBranch {
+  /** Null at the initial commit, before HEAD exists (`(initial)`). */
+  oid: string | null
+  /** Null when HEAD is detached (`(detached)`). */
+  head: string | null
+  detached: boolean
+  upstream: string | null
+  ahead: number
+  behind: number
+}
+
+export interface WorkingTreeChanges {
+  branch: StatusBranch
+  files: ChangedFile[]
+}

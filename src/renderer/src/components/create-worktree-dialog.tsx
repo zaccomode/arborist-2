@@ -22,6 +22,7 @@ export function CreateWorktreeDialog({
   open,
   onOpenChange,
   repoPath,
+  projectId,
   onCreated,
   headLabel,
   trackRemote
@@ -29,6 +30,7 @@ export function CreateWorktreeDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
   repoPath: string
+  projectId: string
   onCreated: (worktreePath: string) => void
   /** What the repository's current HEAD points at, for the base-ref picker's default entry. */
   headLabel?: string | null
@@ -106,10 +108,12 @@ export function CreateWorktreeDialog({
       void invoke('branches:exists', repoPath, branch).then((exists) =>
         setChecked({ branch, exists })
       )
-      if (!pathEdited) void invoke('worktrees:suggestPath', repoPath, branch).then(setPath)
+      if (!pathEdited) {
+        void invoke('worktrees:suggestPath', repoPath, branch, projectId).then(setPath)
+      }
     }, EXISTENCE_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [branch, validation.valid, pathEdited, repoPath])
+  }, [branch, validation.valid, pathEdited, repoPath, projectId])
 
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()

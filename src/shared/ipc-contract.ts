@@ -15,7 +15,7 @@ import type {
   StoreStatus,
   Worktree
 } from './domain'
-import type { Preset, Repository, Settings } from './persisted'
+import type { Preset, ProjectSettings, Repository, SelectionState, Settings } from './persisted'
 import type { AutomationEvent } from './automation'
 import type { PresetCatalogue, PresetRunResult, ResolvedPreset } from './presets'
 import type { SubstitutionValues } from './substitution'
@@ -36,8 +36,16 @@ export interface IpcInvokeContract {
   'branches:list': { args: [repoPath: string]; result: BranchInfo[] }
   /** Remote branches with no local worktree of their own, tip commit included. */
   'branches:remote': { args: [repoPath: string]; result: RemoteBranch[] }
-  /** The default sibling folder for a new worktree, already de-duplicated. */
-  'worktrees:suggestPath': { args: [repoPath: string, branch: string]; result: string }
+  /**
+   * The default folder for a new worktree, already de-duplicated. Main
+   * resolves the worktree location from the store and `projectId` — beside
+   * the repository or under the configured central directory — so the
+   * renderer never carries its own copy of settings.
+   */
+  'worktrees:suggestPath': {
+    args: [repoPath: string, branch: string, projectId: string]
+    result: string
+  }
   'worktrees:create': {
     args: [
       repoPath: string,
@@ -120,6 +128,15 @@ export interface IpcInvokeContract {
   'store:status': { args: []; result: StoreStatus }
   'settings:get': { args: []; result: Settings }
   'settings:update': { args: [changes: Partial<Settings>]; result: Settings }
+  /** A project's settings overrides. Absent fields mean inherit the app-level value. */
+  'projectSettings:get': { args: [projectId: string]; result: ProjectSettings }
+  'projectSettings:set': {
+    args: [projectId: string, changes: Partial<ProjectSettings>]
+    result: ProjectSettings
+  }
+  /** The project/worktree/remote-branch last selected, remembered across sessions. */
+  'selection:get': { args: []; result: SelectionState }
+  'selection:update': { args: [changes: Partial<SelectionState>]; result: SelectionState }
   /** Whether this build can update itself, and what version it is. */
   'updates:support': { args: []; result: UpdateSupport }
   /** The state the updater is in right now, for a window that just opened. */
@@ -181,6 +198,10 @@ const CHANNELS: Record<IpcChannel, true> = {
   'store:status': true,
   'settings:get': true,
   'settings:update': true,
+  'projectSettings:get': true,
+  'projectSettings:set': true,
+  'selection:get': true,
+  'selection:update': true,
   'updates:support': true,
   'updates:status': true,
   'updates:check': true,

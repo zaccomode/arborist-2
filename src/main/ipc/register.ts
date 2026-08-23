@@ -1,3 +1,4 @@
+import { basename } from 'path'
 import { BrowserWindow, clipboard, dialog, ipcMain, nativeTheme } from 'electron'
 import type { IpcArgs, IpcChannel, IpcReturn } from '../../shared/ipc-contract'
 import { serializeError } from '../../shared/errors'
@@ -11,6 +12,7 @@ import type { PresetService } from '../services/presets'
 import type { AutomationRunner } from '../services/automation'
 import type { UpdateService } from '../services/updates'
 import { worktreeNoteKey } from '../../shared/persisted'
+import { resolveWorktreeLocation } from '../../shared/worktree-location'
 import { applicationPickerOptions } from '../services/system/pickers'
 
 type Handler<C extends IpcChannel> = (...args: IpcArgs<C>) => Promise<IpcReturn<C>> | IpcReturn<C>
@@ -87,9 +89,15 @@ export function registerIpcHandlers({
   handle('branches:exists', (repoPath, branch) => gitService.branchExists(repoPath, branch))
   handle('branches:list', (repoPath) => gitService.listLocalBranches(repoPath))
   handle('branches:remote', (repoPath) => gitService.listRemoteBranches(repoPath))
-  handle('worktrees:suggestPath', (repoPath, branch) =>
-    gitService.suggestWorktreePath(repoPath, branch)
-  )
+  handle('worktrees:suggestPath', (repoPath, branch, projectId) => {
+    const location = resolveWorktreeLocation(
+      store.data.settings,
+      store.data.projectSettings[projectId]
+    )
+    const repoName =
+      store.data.repositories.find((repo) => repo.id === projectId)?.name ?? basename(repoPath)
+    return gitService.suggestWorktreePath(repoPath, branch, location, repoName)
+  })
   handle('worktrees:create', (repoPath, options) => gitService.createWorktree(repoPath, options))
 
   handle('worktrees:isDirty', (worktreePath) => gitService.isDirty(worktreePath))
@@ -197,6 +205,24 @@ export function registerIpcHandlers({
     nativeTheme.themeSource = settings.theme
     if (changes.gitPath !== undefined) gitRunner.locator.setOverride(settings.gitPath)
     return settings
+  })
+
+  handle('projectSettings:get', (projectId) => store.data.projectSettings[projectId] ?? {})
+
+  handle('projectSettings:set', async (projectId, changes) => {
+    await store.update((data) => {
+      data.projectSettings[projectId] = { ...data.projectSettings[projectId], ...changes }
+    })
+    return store.data.projectSettings[projectId] ?? {}
+  })
+
+  handle('selection:get', () => store.data.selection)
+
+  handle('selection:update', async (changes) => {
+    await store.update((data) => {
+      data.selection = { ...data.selection, ...changes }
+    })
+    return store.data.selection
   })
 
   handle('store:status', () => ({

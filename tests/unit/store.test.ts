@@ -4,7 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { Store } from '../../src/main/services/persistence/store'
 import { SCHEMA_VERSION } from '@shared/persisted'
-import { migrate, type Migration } from '../../src/main/services/persistence/migrations'
+import { migrate, migrations, type Migration } from '../../src/main/services/persistence/migrations'
 
 let dir: string
 let filePath: string
@@ -81,6 +81,28 @@ describe('Store.load', () => {
     expect((await readFile()).schemaVersion).toBe(SCHEMA_VERSION)
   })
 
+  it('migrates a schema 3 file forward, filling in the new worktree-location fields', async () => {
+    const v3 = {
+      schemaVersion: 3,
+      repositories: [{ id: 'r1', path: '/code/x', name: 'x', addedAt: '2026-01-01T00:00:00Z' }],
+      notes: { r1: 'kept' }
+    }
+    await fs.writeFile(filePath, JSON.stringify(v3), 'utf8')
+
+    const { store, warning } = await Store.load(filePath)
+
+    expect(warning).toBeUndefined()
+    expect(store.data.schemaVersion).toBe(SCHEMA_VERSION)
+    // Untouched fields survive the no-op migration step.
+    expect(store.data.notes).toEqual({ r1: 'kept' })
+    // The new fields come in through zod's own defaults.
+    expect(store.data.settings.worktreeLocation).toBe('beside')
+    expect(store.data.settings.worktreeRoot).toBeNull()
+    expect(store.data.settings.conflictEditorPresetId).toBeNull()
+    expect(store.data.projectSettings).toEqual({})
+    expect(store.data.commitDrafts).toEqual({})
+  })
+
   it('carries a schema 2 file’s switched-off presets into the tri-state', async () => {
     const v2 = {
       schemaVersion: 2,
@@ -155,6 +177,21 @@ describe('Store writes', () => {
     expect(await fs.readdir(dir)).toEqual(['arborist-data.json'])
   })
 
+  it('round-trips a project’s worktree-location override, keyed by project id', async () => {
+    const { store } = await Store.load(filePath)
+
+    await store.update((data) => {
+      data.projectSettings['p1'] = { worktreeLocation: 'central', worktreeRoot: '/Volumes/wt' }
+    })
+
+    const { store: reloaded } = await Store.load(filePath)
+    expect(reloaded.data.projectSettings).toEqual({
+      p1: { worktreeLocation: 'central', worktreeRoot: '/Volumes/wt' }
+    })
+    // A project with no override at all is simply absent, not a record of nulls.
+    expect(reloaded.data.projectSettings['p2']).toBeUndefined()
+  })
+
   it('keeps every change when updates land inside one debounce window', async () => {
     const { store } = await Store.load(filePath)
 
@@ -217,5 +254,13 @@ describe('migrate', () => {
     expect(() => migrate({ schemaVersion: 1 }, 1, 3, { 1: (data) => data })).toThrow(
       /schema version 2/
     )
+  })
+
+  it('registers a 3 → 4 step, since migrate throws on a missing one', () => {
+    expect(migrations[3]).toBeDefined()
+    expect(migrations[3]({ schemaVersion: 3, notes: { r1: 'kept' } })).toEqual({
+      schemaVersion: 3,
+      notes: { r1: 'kept' }
+    })
   })
 })
