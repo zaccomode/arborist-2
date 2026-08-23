@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { RemoteBranch, Worktree } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
@@ -28,6 +28,14 @@ import { invoke } from '@/api/client'
 import { samePath } from '@/lib/paths'
 import { useSelection, useSelectedRemoteBranch, useSelectedWorktree } from '@/state/selection'
 
+/**
+ * Matches the strip main/index.ts reserves for the OS's traffic lights or
+ * overlay. 38 is macOS's own unified-toolbar height for a hidden titlebar —
+ * reserving anything taller leaves the (fixed-position) traffic lights
+ * looking stuck near the top of an oversized gap instead of centered in it.
+ */
+const TITLE_BAR_HEIGHT = 38
+
 function automationTarget(project: Repository, worktree: Worktree): AutomationTarget {
   return {
     repositoryId: project.id,
@@ -42,7 +50,7 @@ function automationTarget(project: Repository, worktree: Worktree): AutomationTa
   }
 }
 
-function App(): React.JSX.Element {
+function App(): React.JSX.Element | null {
   const queryClient = useQueryClient()
   const projects = useProjects()
   const addProject = useAddProject()
@@ -57,7 +65,7 @@ function App(): React.JSX.Element {
   const [automation, setAutomation] = useState<AutomationTarget | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
-  const { projectId, selectProject, selectWorktree, selectRemoteBranch } = useSelection()
+  const { projectId, selectProject, selectWorktree, selectRemoteBranch, hydrated } = useSelection()
   const selectedWorktree = useSelectedWorktree()
   const selectedRemoteBranchName = useSelectedRemoteBranch()
   const list = useMemo(() => projects.data ?? [], [projects.data])
@@ -73,11 +81,45 @@ function App(): React.JSX.Element {
     : null
 
   useEffect(() => {
+    void invoke('selection:get').then((data) => useSelection.getState().hydrate(data))
+  }, [])
+
+  useEffect(() => {
     // Land on something as soon as there is something to land on, including
-    // after the selected project is removed.
+    // after the selected project is removed. Held off until the persisted
+    // selection is back, so it doesn't jump to the first project and then
+    // immediately back to the remembered one.
+    if (!hydrated) return
     if (!selected && list.length > 0) selectProject(list[0].id)
     if (list.length === 0 && projectId) selectProject(null)
-  }, [list, selected, projectId, selectProject])
+  }, [hydrated, list, selected, projectId, selectProject])
+
+  useEffect(() => {
+    // Never leave a project on the empty state: land on whatever worktree or
+    // remote branch was selected last time, or on the main worktree if
+    // nothing was ever selected for it.
+    if (!hydrated || !selected || worktrees.isPending) return
+    if (selectedWorktree || selectedRemoteBranchName) return
+    if (mainWorktree) selectWorktree(mainWorktree.path)
+  }, [
+    hydrated,
+    selected,
+    worktrees.isPending,
+    mainWorktree,
+    selectedWorktree,
+    selectedRemoteBranchName,
+    selectWorktree
+  ])
+
+  const sidebarResizeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const handleSidebarResize = (size: { inPixels: number }): void => {
+    if (sidebarResizeTimer.current) clearTimeout(sidebarResizeTimer.current)
+    sidebarResizeTimer.current = setTimeout(() => {
+      void invoke('settings:update', { sidebarWidth: Math.round(size.inPixels) }).then(() =>
+        queryClient.invalidateQueries({ queryKey: ['settings'] })
+      )
+    }, 400)
+  }
 
   const openCreateWorktree = (): void => {
     setTrackingRemote(null)
@@ -128,11 +170,39 @@ function App(): React.JSX.Element {
     }
   }
 
+  // The sidebar's persisted width is only meaningful as an initial mount
+  // value, so the panel waits for it rather than mounting at the fallback
+  // and silently never picking up the saved size. Selection waits on the
+  // same gate, so it never flashes an empty state before landing on the
+  // remembered project and worktree.
+  if (!settings.data || !hydrated) return null
+
+  // Only macOS and Windows get a hidden OS titlebar (see main/index.ts), so
+  // only there does the app need to draw its own draggable strip and leave
+  // room for the native traffic lights or window-control overlay that floats
+  // over it.
+  const flushTitleBar = window.arborist.platform !== 'linux'
+
   return (
-    <div className="h-screen bg-background p-2">
+    <div
+      className="relative h-screen bg-background px-2 pb-2"
+      style={{ paddingTop: flushTitleBar ? TITLE_BAR_HEIGHT : 8 }}
+    >
+      {flushTitleBar && (
+        <div
+          className="absolute inset-x-0 top-0"
+          style={{ height: TITLE_BAR_HEIGHT, WebkitAppRegion: 'drag' } as React.CSSProperties}
+        />
+      )}
       <ResizablePanelGroup orientation="horizontal">
         {/* Numeric sizes are pixels: the concept's sidebar is about 260 wide. */}
-        <ResizablePanel defaultSize={260} minSize={200} maxSize={420}>
+        <ResizablePanel
+          defaultSize={settings.data.sidebarWidth}
+          minSize={200}
+          maxSize={420}
+          groupResizeBehavior="preserve-pixel-size"
+          onResize={handleSidebarResize}
+        >
           <Sidebar
             projects={list}
             selectedId={selected?.id ?? null}
@@ -171,7 +241,7 @@ function App(): React.JSX.Element {
             )}
           </Sidebar>
         </ResizablePanel>
-        <ResizableHandle className="mx-1 bg-transparent" />
+        <ResizableHandle className="mx-1 w-0 bg-transparent" />
         <ResizablePanel>
           <main className="h-full rounded-lg border bg-card">
             {!selected && <NoProjects onAddProject={() => void handleAddProject()} />}

@@ -216,6 +216,15 @@ export function registerIpcHandlers({
     return store.data.projectSettings[projectId] ?? {}
   })
 
+  handle('selection:get', () => store.data.selection)
+
+  handle('selection:update', async (changes) => {
+    await store.update((data) => {
+      data.selection = { ...data.selection, ...changes }
+    })
+    return store.data.selection
+  })
+
   handle('store:status', () => ({
     corruptWarning: store.corruptWarning,
     readOnlyReason: store.readOnlyReason

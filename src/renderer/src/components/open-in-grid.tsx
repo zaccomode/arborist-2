@@ -4,6 +4,7 @@ import type { Worktree } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
 import { PresetIcon } from '@/components/preset-icon'
 import { PresetConsole, type PresetRun } from '@/components/preset-console'
+import { Button } from '@/components/ui/button'
 import { usePresets } from '@/api/queries'
 import { invoke } from '@/api/client'
 
@@ -50,18 +51,19 @@ export function OpenInGrid({
       <div className="mt-2 flex flex-wrap gap-2">
         {list.map((preset) => {
           return (
-            <button
+            <Button
               key={preset.id}
               type="button"
+              variant="outline"
               // A prunable worktree's directory is gone, so there is nothing
               // for any of these to open.
               disabled={worktree.prunable}
               onClick={() => void run(preset.id)}
-              className="flex h-[76px] max-w-[220px] min-w-[120px] flex-1 flex-col items-center justify-center gap-2 rounded-lg border bg-sidebar text-sm outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
+              className="h-[76px] max-w-[220px] min-w-[120px] flex-1 flex-col gap-2 rounded-lg"
             >
               <PresetIcon name={preset.icon} className="size-5 text-muted-foreground" />
               {preset.name}
-            </button>
+            </Button>
           )
         })}
       </div>

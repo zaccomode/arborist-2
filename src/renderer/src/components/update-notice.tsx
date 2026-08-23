@@ -9,6 +9,13 @@ const TOAST_ID = 'update'
 
 function show(status: UpdateStatus): void {
   switch (status.phase) {
+    case 'downloading':
+      toast.loading(`Downloading Arborist ${status.version}`, {
+        id: TOAST_ID,
+        description: `${status.percent}%`
+      })
+      return
+
     case 'ready':
       toast.success('Update ready', {
         id: TOAST_ID,
@@ -48,8 +55,9 @@ function show(status: UpdateStatus): void {
       }
       return
 
-    // Checking, finding, and downloading all happen without asking, so they
-    // pass in silence; `ready` is the first thing worth a word.
+    // Checking and finding both happen without asking, so they pass in
+    // silence; downloading is the first one worth a word, since it can take
+    // long enough that a user watching the app do nothing would wonder.
     default:
       return
   }

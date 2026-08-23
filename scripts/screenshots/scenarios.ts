@@ -57,14 +57,23 @@ export interface Scenario {
  * Fills a field and waits for the value to settle. Playwright's `fill` writes
  * the DOM value directly, so a controlled input can still be rewritten by the
  * render that follows — capturing in between catches an empty box.
+ *
+ * `within` disambiguates a testid that appears more than once at once, e.g. a
+ * dialog's own notes editor over a worktree detail pane's, which stays
+ * mounted behind it.
  */
-async function fillAndSettle(window: Page, testId: string, value: string): Promise<void> {
-  await window.getByTestId(testId).fill(value)
+async function fillAndSettle(
+  window: Page,
+  testId: string,
+  value: string,
+  within?: string
+): Promise<void> {
+  const selector = `${within ?? ''} [data-testid="${testId}"]`.trim()
+  await window.locator(selector).fill(value)
   await window.waitForFunction(
-    ({ testId, value }) =>
-      (document.querySelector(`[data-testid="${testId}"]`) as HTMLTextAreaElement | null)?.value ===
-      value,
-    { testId, value }
+    ({ selector, value }) =>
+      (document.querySelector(selector) as HTMLTextAreaElement | null)?.value === value,
+    { selector, value }
   )
 }
 
@@ -116,7 +125,9 @@ export const scenarios: Scenario[] = [
       await window.getByRole('menu').waitFor({ state: 'visible' })
       await shot('menu')
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+      // Lands on the main worktree rather than an empty state, since nothing
+      // was ever selected for this project before.
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       await shot('added')
     }
   },
@@ -135,7 +146,7 @@ export const scenarios: Scenario[] = [
     drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
 
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'App settings…' }).waitFor()
@@ -144,6 +155,7 @@ export const scenarios: Scenario[] = [
       await window.getByRole('menu').waitFor({ state: 'detached' })
 
       await window.getByRole('button', { name: 'Project settings' }).click()
+      await window.getByRole('tab', { name: 'Danger zone' }).click()
       await window.getByRole('button', { name: 'Remove…' }).click()
       await window.getByTestId('remove-project-dialog').waitFor({ state: 'visible' })
       await shot('remove')
@@ -267,7 +279,14 @@ export const scenarios: Scenario[] = [
       await shot('dialog')
 
       await window.getByRole('button', { name: 'Create' }).click()
-      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      // Landing on main already (the auto-select fallback) means the detail
+      // pane is visible before this click too, so waiting for its content
+      // rather than its visibility is what actually waits for the new
+      // worktree.
+      await window
+        .getByTestId('worktree-detail')
+        .filter({ hasText: 'feature/ABC-123' })
+        .waitFor({ state: 'visible' })
       await shot('after')
     }
   },
@@ -356,7 +375,7 @@ export const scenarios: Scenario[] = [
     drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       await window.getByText('No remote branches without worktrees.').waitFor({ state: 'visible' })
       await shot('empty')
 
@@ -374,7 +393,13 @@ export const scenarios: Scenario[] = [
       await shot('create-dialog')
 
       await window.getByRole('button', { name: 'Create', exact: true }).click()
-      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      // As above: main is already selected by the time this dialog opens, so
+      // the detail pane's content is what proves this is the new worktree,
+      // not just its visibility.
+      await window
+        .getByTestId('worktree-detail')
+        .filter({ hasText: 'feature-x' })
+        .waitFor({ state: 'visible' })
       await window.getByText('No remote branches without worktrees.').waitFor({ state: 'visible' })
       await shot('after')
     }
@@ -425,7 +450,7 @@ export const scenarios: Scenario[] = [
     drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
 
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Fetch' }).waitFor({ state: 'visible' })
@@ -450,7 +475,7 @@ export const scenarios: Scenario[] = [
     drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
 
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'App settings…' }).click()
@@ -542,11 +567,12 @@ export const scenarios: Scenario[] = [
   {
     name: 'project-settings',
     description:
-      'Project settings, opened from the button under the worktree list: its ' +
-      'own worktree-location override showing the default inherit ' +
-      'resolution, the automation script with its parsed preview, the ' +
-      'per-project preset overrides, and the project note that used to live ' +
-      'in the pane behind it.',
+      'Project settings, opened from the button under the worktree list, now ' +
+      'tabbed like app settings: the automation script with its parsed ' +
+      'preview, the worktree-location override showing what inherit ' +
+      'resolves to, the per-project preset overrides alongside a preset ' +
+      "added just for this project, the project's own note, and the danger " +
+      'zone.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -555,17 +581,37 @@ export const scenarios: Scenario[] = [
     drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       await window.getByRole('button', { name: 'Project settings' }).click()
+      await fillAndSettle(window, 'automation-script', 'npm install\nnpm run build')
+      await window.getByTestId('automation-preview').waitFor({ state: 'visible' })
+      await shot('automation')
+
+      await window.getByRole('tab', { name: 'Worktrees' }).click()
       await window.getByTestId('project-worktree-location').waitFor({ state: 'visible' })
       await shot('worktree-location')
 
-      await fillAndSettle(window, 'automation-script', 'npm install\nnpm run build')
-      await window.getByTestId('project-preset-overrides').waitFor({ state: 'visible' })
-      await shot('automation')
+      await window.getByRole('tab', { name: 'Presets' }).click()
+      await window.getByTestId('project-presets').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'New preset' }).click()
+      await window.getByLabel('Name').fill('Storybook')
+      await window.getByLabel('Command').fill('npm run storybook')
+      await window.getByRole('button', { name: 'Save' }).click()
+      await window.getByTestId('preset-editor').waitFor({ state: 'detached' })
+      await shot('presets')
 
-      await fillAndSettle(window, 'notes-editor', 'Release branches: squash merges only.')
+      await window.getByRole('tab', { name: 'Notes' }).click()
+      await fillAndSettle(
+        window,
+        'notes-editor',
+        'Release branches: squash merges only.',
+        '[data-testid="project-settings-dialog"]'
+      )
       await shot('notes')
+
+      await window.getByRole('tab', { name: 'Danger zone' }).click()
+      await window.getByRole('button', { name: 'Remove…' }).waitFor({ state: 'visible' })
+      await shot('danger')
     }
   },
   {
@@ -623,6 +669,17 @@ export const scenarios: Scenario[] = [
     },
     drive: async (window) => {
       await window.getByText('Your Arborist data could not be read').waitFor({ state: 'visible' })
+    }
+  },
+  {
+    name: 'update-downloading',
+    description:
+      'The toast shown while an update is downloading, with its progress. ' +
+      'Before this, downloading happened silently and the app looked idle ' +
+      'for however long the download took.',
+    setup: async () => ({ ARBORIST_FAKE_UPDATE: 'downloading' }),
+    drive: async (window) => {
+      await window.getByText('Downloading Arborist 2.1.0').waitFor({ state: 'visible' })
     }
   },
   {

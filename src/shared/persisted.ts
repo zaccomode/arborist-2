@@ -43,8 +43,8 @@ export const presetConfigSchema = z.object({
   /**
    * App-level switches, keyed by preset id: `on`, `off`, or absent to take the
    * preset's own default. This was a list of ids switched off, which could
-   * only say "off" — so a preset that defaults to off, as Xcode and Warp do,
-   * had no way to be switched on.
+   * only say "off" — so a preset that defaults to off had no way to be
+   * switched on.
    */
   appOverrides: z.record(z.string(), presetOverrideSchema).default({}),
   /**
@@ -84,6 +84,8 @@ export const settingsSchema = z.object({
   autoFetchIntervalMinutes: z
     .union([z.literal(0), z.literal(5), z.literal(15), z.literal(60)])
     .default(0),
+  /** Sidebar panel width, in pixels. Fixed rather than relative to the window. */
+  sidebarWidth: z.number().int().min(200).max(420).default(260),
   /** `'beside'` (today's behaviour) or `'central'`, the app-wide default. */
   worktreeLocation: z.enum(['beside', 'central']).default('beside'),
   /** The central directory, when `worktreeLocation` is `'central'`. */
@@ -106,6 +108,15 @@ export const projectSettingsSchema = z.object({
   conflictEditorPresetId: z.string().nullable().optional()
 })
 
+export const selectionSchema = z.object({
+  /** The last project the user had open. */
+  projectId: z.string().nullable().default(null),
+  /** Project id → the worktree path last selected within it. */
+  worktreeByProject: z.record(z.string(), z.string()).default({}),
+  /** Project id → the remote branch name last selected within it. */
+  remoteBranchByProject: z.record(z.string(), z.string()).default({})
+})
+
 export const persistedDataSchema = z.object({
   schemaVersion: z.number().int().positive(),
   repositories: z.array(repositorySchema).default([]),
@@ -117,6 +128,7 @@ export const persistedDataSchema = z.object({
   presets: z.array(presetSchema).default([]),
   presetConfig: presetConfigSchema.default({ appOverrides: {}, overrides: {}, order: [] }),
   settings: settingsSchema.default(() => settingsSchema.parse({})),
+  selection: selectionSchema.default(() => selectionSchema.parse({})),
   /** Project id → its settings overrides. A sibling of `notes`, not a field on `repositorySchema` — `repositories` is an array, and a record keyed by id is the idiom every other per-project thing here uses. */
   projectSettings: z.record(z.string(), projectSettingsSchema).default({}),
   /** `${repositoryId}::${worktreePath}` → draft commit message. Phase 5 uses it. */
@@ -130,6 +142,7 @@ export type PresetConfig = z.infer<typeof presetConfigSchema>
 export type AutomationScript = z.infer<typeof automationScriptSchema>
 export type Settings = z.infer<typeof settingsSchema>
 export type ProjectSettings = z.infer<typeof projectSettingsSchema>
+export type SelectionState = z.infer<typeof selectionSchema>
 export type PersistedData = z.infer<typeof persistedDataSchema>
 
 /** Key for a worktree note. Worktree paths are unique within a repository. */

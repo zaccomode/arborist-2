@@ -54,22 +54,6 @@ export const BUILT_IN_PRESETS: readonly BuiltInPreset[] = [
     platforms: [],
     enabledByDefault: true,
     sortOrder: 3
-  },
-  {
-    builtinId: 'xcode',
-    name: 'Xcode',
-    icon: 'Hammer',
-    platforms: ['darwin'],
-    enabledByDefault: false,
-    sortOrder: 4
-  },
-  {
-    builtinId: 'warp',
-    name: 'Warp',
-    icon: 'Terminal',
-    platforms: ['darwin'],
-    enabledByDefault: false,
-    sortOrder: 5
   }
 ]
 
@@ -169,7 +153,7 @@ export class PresetService {
 
   /**
    * Records the switch, both ways. Recording only the offs meant a preset that
-   * defaults to off — Xcode, Warp — could be switched on and read back off.
+   * defaults to off could be switched on and read back off.
    */
   async setEnabled(presetId: string, enabled: boolean): Promise<void> {
     await this.#store.update((data) => {
@@ -243,10 +227,6 @@ export class PresetService {
         if (!command) throw new AppError('VS Code was not found.', 'preset-launch-failed')
         return launchDetached(command.command, [...command.args, context.path])
       }
-      case 'xcode':
-        return openApp('/Applications/Xcode.app', context.path)
-      case 'warp':
-        return openApp('/Applications/Warp.app', context.path)
       case 'github': {
         const base = await this.#githubUrl(context.repoPath)
         if (!base) throw new AppError('This project has no GitHub remote.', 'preset-launch-failed')

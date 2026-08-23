@@ -26,12 +26,35 @@ import { UpdateService } from './services/updates'
 const DEFAULT_WINDOW: WindowState = { width: 1100, height: 720, maximized: false }
 
 /**
+ * Matches the strip the renderer reserves at the top of the window for it.
+ * 38 is macOS's own unified-toolbar height for a hidden titlebar — matching
+ * it is what makes `trafficLightPosition: { x: 12, y: 12 }` below actually
+ * land the lights centered in the reserved strip, rather than centered in
+ * whatever taller region the renderer happened to reserve.
+ */
+const TITLE_BAR_HEIGHT = 38
+
+/**
+ * Colors for Windows' overlay window controls. Approximates the shadcn
+ * background/foreground tokens rather than importing them: the overlay is
+ * native chrome the renderer's CSS can't reach, so it can only ever track
+ * the theme, not the exact palette.
+ */
+function titleBarOverlay(): Electron.TitleBarOverlay {
+  return nativeTheme.shouldUseDarkColors
+    ? { color: '#0a0a0a', symbolColor: '#fafafa', height: TITLE_BAR_HEIGHT }
+    : { color: '#ffffff', symbolColor: '#0a0a0a', height: TITLE_BAR_HEIGHT }
+}
+
+/**
  * The update state a screenshot scenario or an e2e test asked for. Reaching
  * either of these for real means publishing a release, so they are scripted
  * the same way the missing-git screen is.
  */
 function scriptedUpdateStatus(): UpdateStatus | undefined {
   switch (process.env['ARBORIST_FAKE_UPDATE']) {
+    case 'downloading':
+      return { phase: 'downloading', version: '2.1.0', percent: 42 }
     case 'ready':
       return { phase: 'ready', version: '2.1.0' }
     case 'up-to-date':
@@ -64,6 +87,16 @@ function createWindow(remembered: WindowState, windowStatePath: string): void {
     show: false,
     title: 'Arborist',
     ...(process.platform === 'linux' ? { icon } : {}),
+    // A flush titlebar, matching the concept: no separate OS-drawn bar above
+    // the app's own content. Only macOS and Windows support hiding it; a
+    // Linux window (unsupported for shipping, but what dev and screenshots
+    // run under) keeps its ordinary frame rather than losing its window
+    // controls to an option that does nothing for it.
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 12, y: 12 } }
+      : process.platform === 'win32'
+        ? { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlay() }
+        : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -74,6 +107,14 @@ function createWindow(remembered: WindowState, windowStatePath: string): void {
 
   if (state.maximized) mainWindow.maximize()
   trackWindowState(mainWindow, windowStatePath)
+
+  if (process.platform === 'win32') {
+    // The overlay is native chrome painted by Windows, not CSS the theme
+    // toggle can reach — it has to be told about a change explicitly.
+    nativeTheme.on('updated', () => {
+      if (!mainWindow.isDestroyed()) mainWindow.setTitleBarOverlay(titleBarOverlay())
+    })
+  }
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()

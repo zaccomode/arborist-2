@@ -15,7 +15,7 @@ import type {
   StoreStatus,
   Worktree
 } from './domain'
-import type { Preset, ProjectSettings, Repository, Settings } from './persisted'
+import type { Preset, ProjectSettings, Repository, SelectionState, Settings } from './persisted'
 import type { AutomationEvent } from './automation'
 import type { PresetCatalogue, PresetRunResult, ResolvedPreset } from './presets'
 import type { SubstitutionValues } from './substitution'
@@ -134,6 +134,9 @@ export interface IpcInvokeContract {
     args: [projectId: string, changes: Partial<ProjectSettings>]
     result: ProjectSettings
   }
+  /** The project/worktree/remote-branch last selected, remembered across sessions. */
+  'selection:get': { args: []; result: SelectionState }
+  'selection:update': { args: [changes: Partial<SelectionState>]; result: SelectionState }
   /** Whether this build can update itself, and what version it is. */
   'updates:support': { args: []; result: UpdateSupport }
   /** The state the updater is in right now, for a window that just opened. */
@@ -197,6 +200,8 @@ const CHANNELS: Record<IpcChannel, true> = {
   'settings:update': true,
   'projectSettings:get': true,
   'projectSettings:set': true,
+  'selection:get': true,
+  'selection:update': true,
   'updates:support': true,
   'updates:status': true,
   'updates:check': true,
