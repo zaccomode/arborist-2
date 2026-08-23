@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-query'
 import type { BranchInfo, CommitLogEntry, RemoteBranch, Worktree } from '@shared/domain'
 import type { PresetCatalogue, ResolvedPreset } from '@shared/presets'
-import type { Repository, Settings } from '@shared/persisted'
+import type { ProjectSettings, Repository, Settings } from '@shared/persisted'
 import { invoke } from '@/api/client'
 
 const COMMIT_PAGE_SIZE = 20
@@ -21,6 +21,7 @@ export const queryKeys = {
     ['presets', repoPath, projectId] as const,
   presetCatalogue: ['preset-catalogue'] as const,
   settings: ['settings'] as const,
+  projectSettings: (projectId: string) => ['project-settings', projectId] as const,
   commits: (repoPath: string, ref: string) => ['commits', repoPath, ref] as const,
   remoteBranches: (repoPath: string) => ['remote-branches', repoPath] as const,
   localBranches: (repoPath: string) => ['local-branches', repoPath] as const
@@ -122,6 +123,15 @@ export function usePresetCatalogue(): ReturnType<typeof useQuery<PresetCatalogue
 
 export function useSettings(): ReturnType<typeof useQuery<Settings>> {
   return useQuery({ queryKey: queryKeys.settings, queryFn: () => invoke('settings:get') })
+}
+
+export function useProjectSettings(
+  projectId: string
+): ReturnType<typeof useQuery<ProjectSettings>> {
+  return useQuery({
+    queryKey: queryKeys.projectSettings(projectId),
+    queryFn: () => invoke('projectSettings:get', projectId)
+  })
 }
 
 /**

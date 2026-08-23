@@ -41,7 +41,15 @@ export const migrations: Record<number, Migration> = {
         appOverrides: Object.fromEntries(ids.map((id: string) => [id, 'off']))
       }
     }
-  }
+  },
+
+  /**
+   * 3 → 4: adds `worktreeLocation`/`worktreeRoot`/`conflictEditorPresetId` to
+   * settings, the `projectSettings` record, and `commitDrafts`. This step
+   * does nothing — zod's defaults fill every new field in — but `migrate`
+   * throws on a missing step, so it has to exist.
+   */
+  3: (data) => data
 }
 
 export function migrate(

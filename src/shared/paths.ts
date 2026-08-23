@@ -56,3 +56,45 @@ export function samePath(
   if (a == null || b == null) return false
   return normaliseForCompare(a, platform) === normaliseForCompare(b, platform)
 }
+
+/**
+ * Joins path segments with the separator for `platform`, so callers in
+ * `src/shared` — which cannot import `path` — can build a path for a
+ * platform other than the one they're running on (win32 is testable from a
+ * Mac). No `..`/`.` resolution: every caller here is joining names it built
+ * itself, never a path a user typed.
+ */
+export function joinPath(platform: NodeJS.Platform, ...parts: string[]): string {
+  const separator = platform === 'win32' ? '\\' : '/'
+  return parts
+    .filter((part) => part.length > 0)
+    .map((part, index) =>
+      index === 0 ? part.replace(/[/\\]+$/, '') : part.replace(/^[/\\]+|[/\\]+$/g, '')
+    )
+    .join(separator)
+}
+
+/**
+ * The parent of `path` on `platform`, the pure counterpart to Node's
+ * `dirname`. A bare name with no separator is its own parent (`.`), matching
+ * `dirname`'s own behaviour; a win32 drive root keeps its trailing backslash
+ * (`dirname("C:\\repo")` is `"C:\\"`, not `"C:"`).
+ */
+export function parentPath(platform: NodeJS.Platform, path: string): string {
+  const isSep = (ch: string | undefined): boolean =>
+    ch !== undefined && (platform === 'win32' ? ch === '\\' || ch === '/' : ch === '/')
+
+  let end = path.length
+  while (end > 0 && isSep(path[end - 1])) end--
+  if (end === 0) return path.slice(0, 1) || path // all separators, or empty: its own root
+
+  let index = end
+  while (index > 0 && !isSep(path[index - 1])) index--
+  if (index === 0) return '.' // no separator at all: a bare relative name
+
+  let parentEnd = index
+  while (parentEnd > 0 && isSep(path[parentEnd - 1])) parentEnd--
+
+  const result = parentEnd === 0 ? path.slice(0, index) : path.slice(0, parentEnd)
+  return platform === 'win32' && /^[a-zA-Z]:$/.test(result) ? `${result}\\` : result
+}

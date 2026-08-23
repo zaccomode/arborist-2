@@ -12,6 +12,8 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { invoke } from '@/api/client'
+import { useProjects } from '@/api/queries'
+import { rootConflictsWithProject } from '@/lib/worktree-location'
 
 const SOURCE_LABELS: Record<string, string> = {
   settings: 'the path set below',
@@ -28,7 +30,9 @@ export function GeneralSettings({
   onChange: (changes: Partial<Settings>) => void
 }): React.JSX.Element {
   const git = useQuery({ queryKey: ['git-discovery'], queryFn: () => invoke('git:discover') })
+  const projects = useProjects()
   const [gitPath, setGitPath] = useState(settings.gitPath ?? '')
+  const [worktreeRootError, setWorktreeRootError] = useState<string | null>(null)
 
   return (
     <div className="space-y-6 py-2">
@@ -73,6 +77,57 @@ export function GeneralSettings({
             <SelectItem value="60">Every hour</SelectItem>
           </SelectContent>
         </Select>
+      </section>
+
+      <section className="space-y-2">
+        <Label htmlFor="worktree-location">Worktree location</Label>
+        <p className="text-xs text-muted-foreground">
+          Where a new worktree&apos;s folder is created by default. A project can override this.
+        </p>
+        <Select
+          value={settings.worktreeLocation}
+          onValueChange={(value) =>
+            onChange({ worktreeLocation: value as Settings['worktreeLocation'] })
+          }
+        >
+          <SelectTrigger id="worktree-location" className="w-64">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="beside">Beside the repository</SelectItem>
+            <SelectItem value="central">In a central directory</SelectItem>
+          </SelectContent>
+        </Select>
+        {settings.worktreeLocation === 'central' && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                const picked = await invoke('system:pickFolder')
+                if (!picked) return
+                const projectPaths = (projects.data ?? []).map((project) => project.path)
+                if (rootConflictsWithProject(picked, projectPaths)) {
+                  setWorktreeRootError(
+                    'That folder is inside a project already in Arborist, so worktrees for every other project would show up as changes there.'
+                  )
+                  return
+                }
+                setWorktreeRootError(null)
+                onChange({ worktreeRoot: picked })
+              }}
+            >
+              Choose…
+            </Button>
+            <p
+              className="flex-1 truncate font-mono text-xs text-muted-foreground"
+              data-testid="worktree-root-path"
+            >
+              {settings.worktreeRoot ?? 'No directory chosen'}
+            </p>
+          </div>
+        )}
+        {worktreeRootError && <p className="text-xs text-destructive">{worktreeRootError}</p>}
       </section>
 
       <section className="space-y-2">

@@ -237,6 +237,7 @@ function App(): React.JSX.Element {
             if (!next) setTrackingRemote(null)
           }}
           repoPath={selected.path}
+          projectId={selected.id}
           headLabel={headLabel}
           trackRemote={
             trackingRemote && { ref: trackingRemote.name, shortName: trackingRemote.shortName }

@@ -1,4 +1,4 @@
-import { writeFile } from 'fs/promises'
+import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 import type { Page } from 'playwright'
 // Node's native type stripping resolves ESM imports literally, so this needs
@@ -65,6 +65,31 @@ async function fillAndSettle(window: Page, testId: string, value: string): Promi
       (document.querySelector(`[data-testid="${testId}"]`) as HTMLTextAreaElement | null)?.value ===
       value,
     { testId, value }
+  )
+}
+
+/**
+ * Seeds `arborist-data.json` with a repository already registered, so the
+ * scenario opens straight to it rather than going through the folder
+ * picker — which frees `ARBORIST_PICK_FOLDER` for a scenario that also
+ * needs to script picking a *different* folder, such as a central worktree
+ * directory.
+ */
+async function seedProject(
+  userDataDir: string,
+  repoPath: string,
+  extra: Record<string, unknown> = {}
+): Promise<void> {
+  await writeFile(
+    join(userDataDir, 'arborist-data.json'),
+    JSON.stringify({
+      schemaVersion: 4,
+      repositories: [
+        { id: 'p1', path: repoPath, name: 'Arborist', addedAt: '2026-01-05T09:00:00.000Z' }
+      ],
+      ...extra
+    }),
+    'utf8'
   )
 }
 
@@ -455,11 +480,73 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'settings-worktree-location',
+    description:
+      'App-level worktree location: beside the repository, the default, ' +
+      'then switched to a central directory before and after a folder is ' +
+      'picked for it.',
+    setup: async ({ workDir, userDataDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      const centralRoot = join(workDir, 'central-worktrees')
+      await mkdir(centralRoot, { recursive: true })
+      await seedProject(userDataDir, fixture.repoPath)
+      return { ARBORIST_PICK_FOLDER: centralRoot }
+    },
+    drive: async (window, shot) => {
+      await window.getByRole('button', { name: /main/ }).first().waitFor()
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'App settings…' }).click()
+      await window.getByLabel('Worktree location').waitFor({ state: 'visible' })
+      await shot('beside')
+
+      await window.getByLabel('Worktree location').click()
+      await window.getByRole('option', { name: 'In a central directory' }).click()
+      await window.getByTestId('worktree-root-path').waitFor({ state: 'visible' })
+      await shot('central-empty')
+
+      await window.getByRole('button', { name: 'Choose…' }).click()
+      await window
+        .getByTestId('worktree-root-path')
+        .filter({ hasText: 'central-worktrees' })
+        .waitFor()
+      await shot('central-chosen')
+    }
+  },
+  {
+    name: 'create-worktree-central',
+    description:
+      'The create dialog’s suggested path for a project in central mode — ' +
+      'visibly different from the sibling-of-the-repository default.',
+    setup: async ({ workDir, userDataDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      const centralRoot = join(workDir, 'central-worktrees')
+      await mkdir(centralRoot, { recursive: true })
+      await seedProject(userDataDir, fixture.repoPath, {
+        projectSettings: { p1: { worktreeLocation: 'central', worktreeRoot: centralRoot } }
+      })
+    },
+    drive: async (window, shot) => {
+      await window.getByRole('button', { name: /main/ }).first().waitFor()
+      await window.getByRole('button', { name: 'New worktree', exact: true }).click()
+      await window.getByLabel('Branch').fill('feature/central')
+      await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
+      await window.waitForFunction(() => {
+        const input = document.getElementById('worktree-path') as HTMLInputElement | null
+        return input?.value.includes('central-worktrees') ?? false
+      })
+      await shot('dialog')
+    }
+  },
+  {
     name: 'project-settings',
     description:
-      'Project settings, opened from the button under the worktree list: the ' +
-      'automation script with its parsed preview, the per-project preset ' +
-      'overrides, and the project note that used to live in the pane behind it.',
+      'Project settings, opened from the button under the worktree list: its ' +
+      'own worktree-location override showing the default inherit ' +
+      'resolution, the automation script with its parsed preview, the ' +
+      'per-project preset overrides, and the project note that used to live ' +
+      'in the pane behind it.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -470,6 +557,9 @@ export const scenarios: Scenario[] = [
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
       await window.getByTestId('no-worktree-selected').waitFor({ state: 'visible' })
       await window.getByRole('button', { name: 'Project settings' }).click()
+      await window.getByTestId('project-worktree-location').waitFor({ state: 'visible' })
+      await shot('worktree-location')
+
       await fillAndSettle(window, 'automation-script', 'npm install\nnpm run build')
       await window.getByTestId('project-preset-overrides').waitFor({ state: 'visible' })
       await shot('automation')

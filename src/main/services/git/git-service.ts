@@ -1,7 +1,5 @@
 import { promises as fs } from 'fs'
-import { dirname, join } from 'path'
 import { AppError } from '../../../shared/errors'
-import { sanitizeForFolder } from '../../../shared/branch-name'
 import { mapWithConcurrency } from '../../../shared/concurrency'
 import type {
   BranchInfo,
@@ -11,6 +9,7 @@ import type {
   WorktreeEntry,
   WorktreeStatus
 } from '../../../shared/domain'
+import { worktreeBasePath, type ResolvedLocation } from '../../../shared/worktree-location'
 import type { GitRunner } from './git-runner'
 import { FETCH_TIMEOUT_MS } from './git-executor'
 import {
@@ -130,19 +129,43 @@ export class GitService {
   }
 
   /**
-   * Where a new worktree for `branch` goes by default: a sibling of the
-   * repository, named after the branch, suffixed if something is already
-   * there.
+   * Where a new worktree for `branch` goes by default: named after the
+   * branch under `worktreeBasePath`'s directory — a sibling of the
+   * repository in `'beside'` mode, byte-identical to before this app could
+   * do anything else — suffixed if something is already there.
+   *
+   * In `'central'` mode, a root that has gone missing (an unmounted drive, a
+   * deleted folder) is checked here rather than left to `worktree add`:
+   * without this, git would silently recreate the whole directory tree in
+   * its place on the local disk instead of on the volume the user meant.
    */
-  async suggestWorktreePath(repoPath: string, branch: string): Promise<string> {
-    const parent = dirname(repoPath)
-    const base = sanitizeForFolder(branch)
-
-    for (let suffix = 1; suffix < 100; suffix++) {
-      const candidate = join(parent, suffix === 1 ? base : `${base}-${suffix}`)
-      if (!(await exists(candidate))) return candidate
+  async suggestWorktreePath(
+    repoPath: string,
+    branch: string,
+    location: ResolvedLocation,
+    repoName: string
+  ): Promise<string> {
+    if (location.mode === 'central' && location.root && !(await exists(location.root))) {
+      throw new AppError(
+        `The central worktree directory ${location.root} no longer exists.`,
+        'worktree-root-missing'
+      )
     }
-    return join(parent, base)
+
+    const candidate = worktreeBasePath({
+      location,
+      repoPath,
+      repoName,
+      branch,
+      platform: process.platform
+    })
+    if (!(await exists(candidate))) return candidate
+
+    for (let suffix = 2; suffix < 100; suffix++) {
+      const withSuffix = `${candidate}-${suffix}`
+      if (!(await exists(withSuffix))) return withSuffix
+    }
+    return `${candidate}-99`
   }
 
   /**

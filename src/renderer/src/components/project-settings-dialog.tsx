@@ -26,6 +26,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { invoke } from '@/api/client'
 import { NotesEditor } from '@/components/notes-editor'
 import { ProjectPresetOverrides } from '@/components/settings/project-preset-overrides'
+import { ProjectWorktreeLocation } from '@/components/settings/project-worktree-location'
 
 /** What the preview substitutes into, so tokens can be seen doing something. */
 function sampleValues(project: Repository): Parameters<typeof substitute>[1] {
@@ -143,6 +144,8 @@ export function ProjectSettingsDialog({
             </ol>
           </div>
         )}
+
+        <ProjectWorktreeLocation projectId={project.id} />
 
         <ProjectPresetOverrides projectId={project.id} />
 

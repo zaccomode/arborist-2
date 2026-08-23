@@ -1,8 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { basename } from 'path'
+import type { ResolvedLocation } from '../../src/shared/worktree-location'
 import { GitLocator } from '../../src/main/services/git/git-discovery'
 import { GitRunner } from '../../src/main/services/git/git-runner'
 import { GitService } from '../../src/main/services/git/git-service'
 import { makeFixtureRepo, type GitFixture } from './fixtures/git-fixture'
+
+const BESIDE: ResolvedLocation = { mode: 'beside', root: null }
 
 const service = new GitService(new GitRunner(new GitLocator()))
 
@@ -46,7 +50,12 @@ describe('listRemoteBranches, against a bare-remote fixture', () => {
     await fixture.commitFromElsewhere('feature-z', 'Pushed from elsewhere')
     await service.fetchAll(fixture.repoPath)
 
-    const path = await service.suggestWorktreePath(fixture.repoPath, 'feature-z')
+    const path = await service.suggestWorktreePath(
+      fixture.repoPath,
+      'feature-z',
+      BESIDE,
+      basename(fixture.repoPath)
+    )
     await service.createWorktree(fixture.repoPath, {
       branch: 'feature-z',
       path,
