@@ -11,6 +11,8 @@ export interface GitExecResult {
   stdout: string
   stderr: string
   exitCode: number
+  /** Filled only when `encoding: 'buffer'` was requested. */
+  stdoutBuffer?: Buffer
 }
 
 export interface ExecGitOptions {
@@ -18,6 +20,10 @@ export interface ExecGitOptions {
   repoPath?: string
   timeoutMs?: number
   signal?: AbortSignal
+  /** Written to the child's stdin, then closed. */
+  input?: string | Buffer
+  /** 'utf8' (default) fills stdout/stderr; 'buffer' additionally fills stdoutBuffer. */
+  encoding?: 'utf8' | 'buffer'
 }
 
 let debugEnabled = process.env['ARBORIST_DEBUG'] === '1'
@@ -79,8 +85,10 @@ export function execGitAt(
     console.debug(`[git] ${gitPath} ${argv.join(' ')}`)
   }
 
+  const raw = options.encoding === 'buffer'
+
   return new Promise((resolve, reject) => {
-    execFile(
+    const child = execFile(
       gitPath,
       argv,
       {
@@ -89,11 +97,19 @@ export function execGitAt(
         signal: options.signal,
         maxBuffer: MAX_BUFFER,
         windowsHide: true,
-        encoding: 'utf8'
+        encoding: raw ? 'buffer' : 'utf8'
       },
-      (error, stdout, stderr) => {
+      (error, stdoutRaw, stderrRaw) => {
+        const stdoutBuffer = raw ? (stdoutRaw as unknown as Buffer) : undefined
+        const stdout = raw
+          ? (stdoutRaw as unknown as Buffer).toString('utf8')
+          : (stdoutRaw as string)
+        const stderr = raw
+          ? (stderrRaw as unknown as Buffer).toString('utf8')
+          : (stderrRaw as string)
+
         if (!error) {
-          resolve({ stdout, stderr, exitCode: 0 })
+          resolve({ stdout, stderr, exitCode: 0, stdoutBuffer })
           return
         }
 
@@ -112,7 +128,7 @@ export function execGitAt(
           return
         }
         if (typeof failure.code === 'number') {
-          resolve({ stdout, stderr, exitCode: failure.code })
+          resolve({ stdout, stderr, exitCode: failure.code, stdoutBuffer })
           return
         }
         reject(
@@ -120,5 +136,14 @@ export function execGitAt(
         )
       }
     )
+
+    // Close stdin immediately when there's no input: a command that reads
+    // stdin (`git apply` with no file argument does) otherwise hangs until
+    // the timeout with no signal that anything is wrong.
+    if (options.input !== undefined) {
+      child.stdin?.end(options.input)
+    } else {
+      child.stdin?.end()
+    }
   })
 }
