@@ -1,10 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Worktree } from '@shared/domain'
 import { pushLabel } from '@shared/working-tree'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
+import { ButtonGroup } from '@/components/ui/button-group'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { Textarea } from '@/components/ui/textarea'
 import { invoke } from '@/api/client'
 import { queryKeys, useCommitDraft, useHasIdentity } from '@/api/queries'
@@ -107,8 +114,9 @@ export function CommitBox({
   }
 
   const showPush = worktree.branch !== null && (ahead > 0 || !hasUpstream)
-  const commitLabel =
-    stagedCount > 0
+  const commitLabel = amend
+    ? 'Amend previous commit'
+    : stagedCount > 0
       ? `Commit ${stagedCount} file${stagedCount === 1 ? '' : 's'} to ${worktree.branch ?? 'HEAD'}`
       : 'Commit'
 
@@ -131,26 +139,40 @@ export function CommitBox({
         </p>
       )}
 
-      <label className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-        <Checkbox
-          checked={amend}
-          disabled={!canAmend}
-          onCheckedChange={(checked) => setAmend(checked === true)}
-        />
-        Amend previous commit
-      </label>
-
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
 
       <div className="mt-2 flex gap-2">
-        <Button
-          data-testid="commit-button"
-          className="flex-1"
-          disabled={stagedCount === 0 || !message.trim() || busy !== null}
-          onClick={() => void runCommit()}
-        >
-          {commitLabel}
-        </Button>
+        <ButtonGroup className="flex-1">
+          <Button
+            data-testid="commit-button"
+            className="flex-1"
+            disabled={stagedCount === 0 || !message.trim() || busy !== null}
+            onClick={() => void runCommit()}
+          >
+            {commitLabel}
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant={amend ? 'default' : 'outline'}
+                size="icon"
+                aria-label="Commit options"
+                disabled={busy !== null}
+              >
+                <ChevronDown />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuCheckboxItem
+                checked={amend}
+                disabled={!canAmend}
+                onCheckedChange={(checked) => setAmend(checked === true)}
+              >
+                Amend previous commit
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </ButtonGroup>
         {showPush && (
           <Button variant="outline" disabled={busy !== null} onClick={() => void runPush()}>
             {pushLabel(ahead, hasUpstream)}

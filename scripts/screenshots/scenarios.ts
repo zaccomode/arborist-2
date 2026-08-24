@@ -863,7 +863,12 @@ export const scenarios: Scenario[] = [
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
 
-      await window.getByRole('button', { name: 'README.md actions' }).click()
+      await window
+        .getByRole('button', { name: 'README.md', exact: true })
+        .click({ button: 'right' })
+      await window.getByRole('menuitem', { name: 'Discard…' }).waitFor({ state: 'visible' })
+      await shot('context-menu')
+
       await window.getByRole('menuitem', { name: 'Discard…' }).click()
       await window.getByTestId('discard-file-dialog').waitFor({ state: 'visible' })
       await shot('confirm')
@@ -910,6 +915,11 @@ export const scenarios: Scenario[] = [
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByRole('button', { name: 'Push 2 commits' }).waitFor({ state: 'visible' })
       await shot('ahead')
+
+      await window.getByRole('button', { name: 'Commit options' }).click()
+      await window.getByRole('menuitemcheckbox', { name: 'Amend previous commit' }).waitFor()
+      await shot('commit-options')
+      await window.keyboard.press('Escape')
 
       await window.getByRole('button', { name: /feature\/no-upstream/ }).click()
       await window.getByRole('tab', { name: 'Working Tree' }).click()
