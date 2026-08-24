@@ -1,9 +1,17 @@
+import { useEffect } from 'react'
 import type { ChangedFile } from '@shared/domain'
-import { splitDisplayPath, stagingState, statusLabel } from '@shared/working-tree'
+import {
+  diffSideFor,
+  isInspectable,
+  splitDisplayPath,
+  stagingState,
+  statusLabel
+} from '@shared/working-tree'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useWorkingTree } from '@/api/queries'
+import { useWorktreeInspector } from '@/state/selection'
 
 /** Radix's `checked` prop, from the tri-state model `stagingState` computes. */
 function checkboxState(state: ReturnType<typeof stagingState>): boolean | 'indeterminate' {
@@ -11,21 +19,40 @@ function checkboxState(state: ReturnType<typeof stagingState>): boolean | 'indet
   return state === 'checked'
 }
 
-function FileRow({ file }: { file: ChangedFile }): React.JSX.Element {
+function FileRow({
+  file,
+  selected,
+  onSelect
+}: {
+  file: ChangedFile
+  selected: boolean
+  onSelect: () => void
+}): React.JSX.Element {
   const { name, dir } = splitDisplayPath(file.path)
+  const clickable = isInspectable(file)
 
   return (
-    <li className="flex items-center gap-2 px-3 py-1.5 text-sm">
-      <Checkbox
-        checked={checkboxState(stagingState(file))}
-        disabled
-        aria-label={`${file.path} staging state`}
-      />
-      <span className="max-w-[40%] shrink-0 truncate">{name}</span>
-      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{dir}</span>
-      <Badge variant="outline" className="ml-auto shrink-0 font-mono text-[11px]">
-        {statusLabel(file)}
-      </Badge>
+    <li>
+      <button
+        type="button"
+        disabled={!clickable}
+        onClick={onSelect}
+        title={clickable ? undefined : 'Resolve this conflict in your editor'}
+        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm enabled:hover:bg-accent ${
+          selected ? 'bg-accent' : ''
+        } disabled:cursor-not-allowed`}
+      >
+        <Checkbox
+          checked={checkboxState(stagingState(file))}
+          disabled
+          aria-label={`${file.path} staging state`}
+        />
+        <span className="max-w-[40%] shrink-0 truncate">{name}</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{dir}</span>
+        <Badge variant="outline" className="ml-auto shrink-0 font-mono text-[11px]">
+          {statusLabel(file)}
+        </Badge>
+      </button>
     </li>
   )
 }
@@ -39,11 +66,30 @@ function FileRow({ file }: { file: ChangedFile }): React.JSX.Element {
  * Checked means "will be in the next commit": a file staged and unstaged at
  * once (`MM`) renders as one indeterminate row rather than two.
  */
-export function WorkingTreeTab({ worktreePath }: { worktreePath: string }): React.JSX.Element {
+export function WorkingTreeTab({
+  repositoryId,
+  worktreePath
+}: {
+  repositoryId: string
+  worktreePath: string
+}): React.JSX.Element {
   const query = useWorkingTree(worktreePath)
-  const files = query.data?.files ?? []
+  const data = query.data
+  const files = data?.files ?? []
   const allStaged = files.length > 0 && files.every((file) => stagingState(file) === 'checked')
   const anyStaged = files.some((file) => stagingState(file) !== 'unchecked')
+  const [inspector, openInspector, closeInspector] = useWorktreeInspector(
+    repositoryId,
+    worktreePath
+  )
+
+  useEffect(() => {
+    // The file this inspector is showing no longer has any changes — it was
+    // committed, discarded, or reverted outside Arborist — so reading-in-
+    // progress on stale content isn't worth keeping around.
+    if (!data || inspector?.kind !== 'file') return
+    if (!data.files.some((file) => file.path === inspector.path)) closeInspector()
+  }, [data, inspector, closeInspector])
 
   return (
     <div>
@@ -71,7 +117,14 @@ export function WorkingTreeTab({ worktreePath }: { worktreePath: string }): Reac
           </div>
           <ul data-testid="working-tree-files" className="divide-y">
             {files.map((file) => (
-              <FileRow key={file.path} file={file} />
+              <FileRow
+                key={file.path}
+                file={file}
+                selected={inspector?.kind === 'file' && inspector.path === file.path}
+                onSelect={() =>
+                  openInspector({ kind: 'file', path: file.path, side: diffSideFor(file) })
+                }
+              />
             ))}
           </ul>
         </div>

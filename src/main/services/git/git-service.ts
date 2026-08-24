@@ -1,4 +1,5 @@
 import { promises as fs } from 'fs'
+import { join } from 'path'
 import { AppError } from '../../../shared/errors'
 import { mapWithConcurrency } from '../../../shared/concurrency'
 import type {
@@ -10,6 +11,13 @@ import type {
   WorktreeEntry,
   WorktreeStatus
 } from '../../../shared/domain'
+import {
+  parseUnifiedDiff,
+  syntheticNewFileDiff,
+  truncateFileDiff,
+  type DiffRequest,
+  type FileDiff
+} from '../../../shared/diff'
 import { worktreeBasePath, type ResolvedLocation } from '../../../shared/worktree-location'
 import type { GitRunner } from './git-runner'
 import { FETCH_TIMEOUT_MS } from './git-executor'
@@ -29,6 +37,24 @@ import {
 } from './porcelain'
 
 export const DEFAULT_REFRESH_CONCURRENCY = 6
+
+/**
+ * Neutralises the user's own config either side of the flag list would
+ * otherwise fight: `--no-textconv` so a textconv filter can't produce a diff
+ * that doesn't apply back, `-U3` for a fixed context width, and explicit
+ * prefixes so `parseUnifiedDiff` never has to guess whether a path is
+ * prefixed. `-M` for rename detection: renames need both paths passed (see
+ * `fileDiff`), or git reports the new path as a brand new file.
+ */
+const DIFF_FLAGS = [
+  '--no-ext-diff',
+  '--no-color',
+  '--no-textconv',
+  '-U3',
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
+  '-M'
+]
 
 /**
  * Whether a fetch failure looks like a credentials problem, as opposed to an
@@ -221,6 +247,81 @@ export class GitService {
       { repoPath: worktreePath }
     )
     return parseStatusV2(stdout)
+  }
+
+  /**
+   * The diff for one file, for the diff panel. Every case but `untracked`
+   * runs through the same flag preamble, in buffer mode: main splits the raw
+   * bytes on `0x0A` and decodes once, so `parseUnifiedDiff`'s line indices
+   * and a future byte-accurate slice of the same buffer always agree (see
+   * `diff-bytes.ts`). `untracked` makes no git call at all — `git diff
+   * --no-index` against `/dev/null` exits 1 for "found a difference", which
+   * fights `runOrThrow`, and `/dev/null` doesn't exist on Windows.
+   */
+  async fileDiff(request: DiffRequest): Promise<FileDiff> {
+    if (request.kind === 'untracked') {
+      return this.#untrackedDiff(request.worktreePath, request.path)
+    }
+
+    const pathspecs =
+      request.origPath && request.origPath !== request.path
+        ? [request.origPath, request.path]
+        : [request.path]
+
+    const args =
+      request.kind === 'commit'
+        ? [
+            '-c',
+            'diff.noprefix=false',
+            '-c',
+            'diff.mnemonicPrefix=false',
+            'show',
+            '--format=',
+            '--diff-merges=first-parent',
+            ...DIFF_FLAGS,
+            request.hash,
+            '--',
+            ...pathspecs
+          ]
+        : [
+            '-c',
+            'diff.noprefix=false',
+            '-c',
+            'diff.mnemonicPrefix=false',
+            'diff',
+            ...(request.kind === 'staged' ? ['--cached'] : []),
+            ...DIFF_FLAGS,
+            '--',
+            ...pathspecs
+          ]
+
+    const { stdoutBuffer } = await this.#git.runRaw(args, {
+      repoPath: request.kind === 'commit' ? request.repoPath : request.worktreePath
+    })
+    return this.#parseDiffBuffer(stdoutBuffer ?? Buffer.alloc(0))
+  }
+
+  #parseDiffBuffer(buffer: Buffer): FileDiff {
+    const text = buffer.toString('utf8')
+    const lossy = !Buffer.from(text, 'utf8').equals(buffer)
+    const [file] = parseUnifiedDiff(text)
+    if (!file) {
+      throw new AppError('git produced no diff output for this file', 'git-command-failed')
+    }
+    const truncated = truncateFileDiff(file)
+    return lossy ? { ...truncated, lossy: true } : truncated
+  }
+
+  /**
+   * `content` is `null` for a binary file: the first 8000 bytes contain a
+   * NUL, which text never does. `syntheticNewFileDiff` builds the same
+   * shape a real `git diff` of a new file would.
+   */
+  async #untrackedDiff(worktreePath: string, path: string): Promise<FileDiff> {
+    const buffer = await fs.readFile(join(worktreePath, path))
+    const sniff = buffer.subarray(0, Math.min(buffer.length, 8000))
+    const binary = sniff.includes(0)
+    return truncateFileDiff(syntheticNewFileDiff(path, binary ? null : buffer.toString('utf8')))
   }
 
   /**

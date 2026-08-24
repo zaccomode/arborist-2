@@ -156,7 +156,7 @@ export function WorktreeDetail({
         </TabsContent>
 
         <TabsContent value="working-tree" className="min-h-0 flex-1 overflow-y-auto p-6 pt-4">
-          <WorkingTreeTab worktreePath={worktree.path} />
+          <WorkingTreeTab repositoryId={project.id} worktreePath={worktree.path} />
         </TabsContent>
 
         <TabsContent value="commit-graph" className="min-h-0 flex-1 overflow-y-auto p-6 pt-4">

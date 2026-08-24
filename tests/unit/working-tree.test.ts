@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { splitDisplayPath, stagingState, statusLabel } from '@shared/working-tree'
+import {
+  diffSideFor,
+  isInspectable,
+  splitDisplayPath,
+  stagingState,
+  statusLabel
+} from '@shared/working-tree'
 import type { ChangedFile } from '@shared/domain'
 
 function file(overrides: Partial<ChangedFile>): ChangedFile {
@@ -55,6 +61,32 @@ describe('statusLabel', () => {
 
   it('shows the raw conflict code for an unmerged file', () => {
     expect(statusLabel(file({ kind: 'unmerged', conflict: 'AA' }))).toBe('AA')
+  })
+})
+
+describe('isInspectable', () => {
+  it('is false only for an unmerged file', () => {
+    expect(isInspectable(file({ kind: 'unmerged', conflict: 'UU' }))).toBe(false)
+    expect(isInspectable(file({ kind: 'tracked' }))).toBe(true)
+    expect(isInspectable(file({ kind: 'untracked' }))).toBe(true)
+  })
+})
+
+describe('diffSideFor', () => {
+  it('opens untracked for an untracked file', () => {
+    expect(diffSideFor(file({ kind: 'untracked' }))).toBe('untracked')
+  })
+
+  it('opens unstaged when only the worktree side has a change', () => {
+    expect(diffSideFor(file({ worktree: 'M' }))).toBe('unstaged')
+  })
+
+  it('opens staged when the index side has a change', () => {
+    expect(diffSideFor(file({ index: 'A' }))).toBe('staged')
+  })
+
+  it('prefers staged for a file staged and unstaged at once', () => {
+    expect(diffSideFor(file({ index: 'M', worktree: 'M' }))).toBe('staged')
   })
 })
 

@@ -32,6 +32,26 @@ export function statusLabel(file: ChangedFile): string {
 }
 
 /**
+ * Whether a row in the Working Tree tab can open the diff panel. An
+ * unmerged file has no ordinary diff to show — `git diff` gives a combined
+ * `--cc` diff for it, which #53's conflict card replaces rather than this
+ * panel rendering.
+ */
+export function isInspectable(file: ChangedFile): boolean {
+  return file.kind !== 'unmerged'
+}
+
+/**
+ * Which side of the file a click on its row opens: whichever side actually
+ * has content, preferring staged when a file has both (`MM`) since that's
+ * what the next commit will contain.
+ */
+export function diffSideFor(file: ChangedFile): 'staged' | 'unstaged' | 'untracked' {
+  if (file.kind === 'untracked') return 'untracked'
+  return file.index !== '.' ? 'staged' : 'unstaged'
+}
+
+/**
  * Splits a repo-relative path into its file name and containing directory,
  * for a row that shows the name prominently and the directory dimmed
  * alongside it. `path` is always POSIX (see `ChangedFile`), so this never
