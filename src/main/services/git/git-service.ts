@@ -298,15 +298,33 @@ export class GitService {
     const { stdoutBuffer } = await this.#git.runRaw(args, {
       repoPath: request.kind === 'commit' ? request.repoPath : request.worktreePath
     })
-    return this.#parseDiffBuffer(stdoutBuffer ?? Buffer.alloc(0))
+    return this.#parseDiffBuffer(stdoutBuffer ?? Buffer.alloc(0), request.path)
   }
 
-  #parseDiffBuffer(buffer: Buffer): FileDiff {
+  /**
+   * Empty output is a real answer, not a failure: git prints nothing when
+   * the file has no difference on the side asked for. That happens whenever
+   * the status the panel was opened from has gone stale — the file was
+   * reverted or committed in between — and on Windows for a mode-only
+   * change, since there is no executable bit there to have changed. The
+   * panel renders the no-hunks case as "No changes", so this returns that
+   * rather than throwing an error over it.
+   */
+  #parseDiffBuffer(buffer: Buffer, path: string): FileDiff {
     const text = buffer.toString('utf8')
     const lossy = !Buffer.from(text, 'utf8').equals(buffer)
     const [file] = parseUnifiedDiff(text)
     if (!file) {
-      throw new AppError('git produced no diff output for this file', 'git-command-failed')
+      return {
+        oldPath: path,
+        newPath: path,
+        changeKind: 'modified',
+        oldMode: null,
+        newMode: null,
+        similarity: null,
+        binary: false,
+        hunks: []
+      }
     }
     const truncated = truncateFileDiff(file)
     return lossy ? { ...truncated, lossy: true } : truncated

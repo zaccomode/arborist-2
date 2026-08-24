@@ -127,10 +127,25 @@ describe('fileDiff', () => {
       path: 'README.md'
     })
 
-    // Windows has no execute bit to flip, so this only exercises the
-    // mode-change branch where the platform actually supports one.
+    // Windows has no execute bit to flip, so git reports no difference at
+    // all there and this exercises the empty-output branch instead — which
+    // has to come back as a file with no hunks either way, never an error.
+    expect(diff.hunks).toEqual([])
     if (process.platform !== 'win32') {
-      expect(diff.hunks).toEqual([])
+      expect(diff.changeKind).toBe('mode-change')
     }
+  }, 30_000)
+
+  it('returns a file with no hunks when git reports no difference at all', async () => {
+    // Nothing has been edited, so git prints nothing. The panel renders
+    // that as "No changes"; throwing would surface a hard error whenever
+    // the status the panel opened from had gone stale.
+    const diff = await service.fileDiff({
+      kind: 'unstaged',
+      worktreePath: fixture.repoPath,
+      path: 'README.md'
+    })
+
+    expect(diff).toMatchObject({ newPath: 'README.md', hunks: [], binary: false })
   }, 30_000)
 })
