@@ -68,7 +68,11 @@ describe('discardFiles', () => {
     await service.discardFiles(fixture.repoPath, { tracked: ['README.md'], untracked: [] })
 
     expect(await statusPorcelain()).toBe('')
-    expect(await fs.readFile(join(fixture.repoPath, 'README.md'), 'utf8')).toBe('# fixture\n')
+    // Normalised because `core.autocrlf` restores CRLF on checkout on
+    // Windows: what this asserts is that the edit is gone and the committed
+    // content is back, not which line ending the platform writes it with.
+    const restored = await fs.readFile(join(fixture.repoPath, 'README.md'), 'utf8')
+    expect(restored.replace(/\r\n/g, '\n')).toBe('# fixture\n')
   }, 30_000)
 
   it('removes an untracked file entirely', async () => {
