@@ -5,7 +5,13 @@ import {
   useQueryClient,
   type UseMutationResult
 } from '@tanstack/react-query'
-import type { BranchInfo, CommitLogEntry, RemoteBranch, Worktree } from '@shared/domain'
+import type {
+  BranchInfo,
+  CommitLogEntry,
+  RemoteBranch,
+  WorkingTreeChanges,
+  Worktree
+} from '@shared/domain'
 import type { PresetCatalogue, ResolvedPreset } from '@shared/presets'
 import type { ProjectSettings, Repository, Settings } from '@shared/persisted'
 import { invoke } from '@/api/client'
@@ -23,6 +29,7 @@ export const queryKeys = {
   settings: ['settings'] as const,
   projectSettings: (projectId: string) => ['project-settings', projectId] as const,
   commits: (repoPath: string, ref: string) => ['commits', repoPath, ref] as const,
+  workingTree: (worktreePath: string) => ['working-tree', worktreePath] as const,
   remoteBranches: (repoPath: string) => ['remote-branches', repoPath] as const,
   localBranches: (repoPath: string) => ['local-branches', repoPath] as const
 }
@@ -88,6 +95,17 @@ export function useWorktrees(repoPath: string | null): ReturnType<typeof useQuer
     queryKey: queryKeys.worktrees(repoPath ?? ''),
     queryFn: () => invoke('worktrees:list', repoPath!),
     enabled: repoPath !== null
+  })
+}
+
+/** A worktree's uncommitted changes, for the Working Tree tab. */
+export function useWorkingTree(
+  worktreePath: string | null
+): ReturnType<typeof useQuery<WorkingTreeChanges>> {
+  return useQuery({
+    queryKey: queryKeys.workingTree(worktreePath ?? ''),
+    queryFn: () => invoke('workingTree:get', worktreePath!),
+    enabled: worktreePath !== null
   })
 }
 

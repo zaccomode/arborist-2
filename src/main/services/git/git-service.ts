@@ -5,6 +5,7 @@ import type {
   BranchInfo,
   CommitLogEntry,
   RemoteBranch,
+  WorkingTreeChanges,
   Worktree,
   WorktreeEntry,
   WorktreeStatus
@@ -22,6 +23,7 @@ import {
   parseCommitLog,
   parseRemoteBranchList,
   parseStatus,
+  parseStatusV2,
   parseUpstreamTrack,
   parseWorktreeList
 } from './porcelain'
@@ -210,6 +212,15 @@ export class GitService {
       repoPath: worktreePath
     })
     return parseStatus(stdout).dirty
+  }
+
+  /** Per-file working-tree state for the Working Tree tab. */
+  async workingTreeChanges(worktreePath: string): Promise<WorkingTreeChanges> {
+    const { stdout } = await this.#git.runOrThrow(
+      ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all'],
+      { repoPath: worktreePath }
+    )
+    return parseStatusV2(stdout)
   }
 
   /**

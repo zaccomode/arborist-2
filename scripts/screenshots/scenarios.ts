@@ -203,9 +203,10 @@ export const scenarios: Scenario[] = [
   {
     name: 'worktree-detail',
     description:
-      'The detail pane for a worktree that is ahead and behind, and for one ' +
-      'whose folder has gone missing — the two ends of what the chips and ' +
-      'the banner have to say.',
+      'The worktree detail pane across its three tabs: Overview (with the ' +
+      'branch/commit/path information block and notes), Working Tree over ' +
+      'a dirty worktree so a row exists, Working Tree over a clean one for ' +
+      'its empty state, and Commit Graph.',
     setup: async ({ workDir }) => {
       const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
@@ -216,14 +217,22 @@ export const scenarios: Scenario[] = [
 
       await window.getByRole('button', { name: /feature\/ahead-behind/ }).click()
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
-      await shot('tracking')
-
       await fillAndSettle(window, 'notes-editor', 'Waiting on review before merging.')
-      await shot('notes')
+      await shot('overview')
 
-      await window.getByRole('button', { name: /feature\/prunable/ }).click()
-      await window.getByTestId('prunable-banner').waitFor({ state: 'visible' })
-      await shot('prunable')
+      await window.getByRole('button', { name: /feature\/dirty/ }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+      await shot('working-tree')
+
+      await window.getByRole('button', { name: /main/ }).first().click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByText('No changes.').waitFor({ state: 'visible' })
+      await shot('working-tree-clean')
+
+      await window.getByRole('tab', { name: 'Commit Graph' }).click()
+      await window.getByTestId('recent-commits').waitFor({ state: 'visible' })
+      await shot('commit-graph')
     }
   },
   {
@@ -249,6 +258,7 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
       await window.getByRole('button', { name: /main/ }).first().click()
+      await window.getByRole('tab', { name: 'Commit Graph' }).click()
       await window.getByTestId('recent-commits').waitFor({ state: 'visible' })
       await shot('list')
 
