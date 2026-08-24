@@ -1,18 +1,41 @@
-import { useEffect } from 'react'
-import type { ChangedFile } from '@shared/domain'
+import { useEffect, useState } from 'react'
+import { MoreVertical } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import type { ChangedFile, Worktree } from '@shared/domain'
 import {
   diffSideFor,
   isInspectable,
   splitDisplayPath,
+  stagedFileCount,
+  stagePathsFor,
   stagingState,
   statusKind,
   statusLabel,
   type StatusKind
 } from '@shared/working-tree'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useWorkingTree } from '@/api/queries'
+import { CommitBox } from '@/components/commit-box'
+import { invoke } from '@/api/client'
+import { queryKeys, useWorkingTree } from '@/api/queries'
 import { useWorktreeInspector } from '@/state/selection'
 
 /** Radix's `checked` prop, from the tri-state model `stagingState` computes. */
@@ -36,68 +59,89 @@ const STATUS_COLOR: Record<StatusKind, string> = {
 function FileRow({
   file,
   selected,
-  onSelect
+  onSelect,
+  onToggleStage,
+  onDiscard
 }: {
   file: ChangedFile
   selected: boolean
   onSelect: () => void
+  onToggleStage: () => void
+  onDiscard: () => void
 }): React.JSX.Element {
   const { name, dir } = splitDisplayPath(file.path)
-  const clickable = isInspectable(file)
+  const inspectable = isInspectable(file)
+  const stageable = file.kind !== 'unmerged'
 
   return (
-    <li>
+    <li
+      className={`group flex items-center gap-2 px-3 py-1.5 text-sm ${selected ? 'bg-accent' : ''}`}
+    >
+      <Checkbox
+        checked={checkboxState(stagingState(file))}
+        disabled={!stageable}
+        onCheckedChange={onToggleStage}
+        aria-label={`${file.path} staging state`}
+      />
       <button
         type="button"
-        disabled={!clickable}
+        disabled={!inspectable}
         onClick={onSelect}
-        title={clickable ? undefined : 'Resolve this conflict in your editor'}
-        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm enabled:hover:bg-accent ${
-          selected ? 'bg-accent' : ''
-        } disabled:cursor-not-allowed`}
+        title={inspectable ? undefined : 'Resolve this conflict in your editor'}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left enabled:hover:text-foreground disabled:cursor-not-allowed"
       >
-        <Checkbox
-          checked={checkboxState(stagingState(file))}
-          disabled
-          // Decorative only this phase (staging isn't wired until #48) — it
-          // must not swallow the row's own click, or the leftmost slice of
-          // every row becomes a dead zone for opening the diff panel.
-          className="pointer-events-none"
-          aria-label={`${file.path} staging state`}
-        />
         {/* The directory concatenates first: shrink-0 keeps the filename at
             its natural width, so only the path gives up space as the row
             narrows. truncate on the filename is a last-resort fallback for
             when the row can't fit it even with the path fully collapsed. */}
         <span className="shrink-0 truncate">{name}</span>
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{dir}</span>
-        <Badge
-          variant="outline"
-          className={`ml-auto shrink-0 font-mono text-[11px] ${STATUS_COLOR[statusKind(file)]}`}
-        >
-          {statusLabel(file)}
-        </Badge>
       </button>
+      <Badge
+        variant="outline"
+        className={`shrink-0 font-mono text-[11px] ${STATUS_COLOR[statusKind(file)]}`}
+      >
+        {statusLabel(file)}
+      </Badge>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`${file.path} actions`}
+            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+          >
+            <MoreVertical className="size-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem variant="destructive" onSelect={onDiscard}>
+            Discard…
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </li>
   )
 }
 
 /**
- * Read-only this phase (v3 Phase 3, #45): rows reflect the checkbox model
- * `git add`/`git restore --staged` will implement in Phase 5 (#48), but
- * nothing here is wired to either yet — the checkboxes are disabled and
- * exist so that phase's diff is about behaviour, not markup.
- *
- * Checked means "will be in the next commit": a file staged and unstaged at
- * once (`MM`) renders as one indeterminate row rather than two.
+ * The staging model settled in v3 Phase 3 (#45), implemented here: checked
+ * means "will be in the next commit". Checking a row stages it, unchecking
+ * unstages it; a row already indeterminate (staged and unstaged at once)
+ * stages the rest rather than unstaging, since the checkbox only ever moves
+ * a row *toward* checked or away from it entirely — never partially back.
  */
 export function WorkingTreeTab({
   repositoryId,
-  worktreePath
+  repoPath,
+  worktree
 }: {
   repositoryId: string
-  worktreePath: string
+  repoPath: string
+  worktree: Worktree
 }): React.JSX.Element {
+  const worktreePath = worktree.path
+  const queryClient = useQueryClient()
   const query = useWorkingTree(worktreePath)
   const data = query.data
   const files = data?.files ?? []
@@ -107,6 +151,8 @@ export function WorkingTreeTab({
     repositoryId,
     worktreePath
   )
+  const [discarding, setDiscarding] = useState<ChangedFile | null>(null)
+  const [discardError, setDiscardError] = useState<string | null>(null)
 
   useEffect(() => {
     // The file this inspector is showing no longer has any changes — it was
@@ -115,6 +161,48 @@ export function WorkingTreeTab({
     if (!data || inspector?.kind !== 'file') return
     if (!data.files.some((file) => file.path === inspector.path)) closeInspector()
   }, [data, inspector, closeInspector])
+
+  const invalidate = (): void => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.workingTree(worktreePath) })
+  }
+
+  const toggleFile = async (file: ChangedFile): Promise<void> => {
+    const paths = stagePathsFor(file)
+    if (stagingState(file) === 'checked') {
+      await invoke('workingTree:unstage', worktreePath, paths)
+    } else {
+      await invoke('workingTree:stage', worktreePath, paths)
+    }
+    invalidate()
+  }
+
+  const toggleAll = async (): Promise<void> => {
+    if (allStaged) {
+      const paths = files.filter((file) => file.index !== '.').flatMap(stagePathsFor)
+      if (paths.length > 0) await invoke('workingTree:unstage', worktreePath, paths)
+    } else {
+      const paths = files
+        .filter((file) => file.kind !== 'unmerged' && stagingState(file) !== 'checked')
+        .flatMap(stagePathsFor)
+      if (paths.length > 0) await invoke('workingTree:stage', worktreePath, paths)
+    }
+    invalidate()
+  }
+
+  const discardFile = async (file: ChangedFile): Promise<void> => {
+    setDiscardError(null)
+    try {
+      await invoke('workingTree:discard', worktreePath, {
+        tracked: file.kind === 'untracked' ? [] : [file.path],
+        untracked: file.kind === 'untracked' ? [file.path] : []
+      })
+      setDiscarding(null)
+      invalidate()
+    } catch (cause) {
+      setDiscardError((cause as Error).message)
+    }
+  }
 
   return (
     <div>
@@ -135,7 +223,7 @@ export function WorkingTreeTab({
           <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2 text-sm font-medium">
             <Checkbox
               checked={allStaged ? true : anyStaged ? 'indeterminate' : false}
-              disabled
+              onCheckedChange={() => void toggleAll()}
               aria-label="All changed files"
             />
             Changed Files
@@ -149,6 +237,11 @@ export function WorkingTreeTab({
                 onSelect={() =>
                   openInspector({ kind: 'file', path: file.path, side: diffSideFor(file) })
                 }
+                onToggleStage={() => void toggleFile(file)}
+                onDiscard={() => {
+                  setDiscardError(null)
+                  setDiscarding(file)
+                }}
               />
             ))}
           </ul>
@@ -158,6 +251,40 @@ export function WorkingTreeTab({
       {query.error && (
         <p className="mt-2 text-xs text-destructive">{(query.error as Error).message}</p>
       )}
+
+      <CommitBox
+        repositoryId={repositoryId}
+        repoPath={repoPath}
+        worktree={worktree}
+        stagedCount={stagedFileCount(files)}
+      />
+
+      <AlertDialog open={discarding !== null} onOpenChange={(open) => !open && setDiscarding(null)}>
+        <AlertDialogContent data-testid="discard-file-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Discard changes to {discarding ? splitDisplayPath(discarding.path).name : ''}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {discarding?.kind === 'untracked'
+                ? 'This deletes the file. This cannot be undone.'
+                : 'This discards its uncommitted changes. This cannot be undone.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {discardError && <p className="text-sm text-destructive">{discardError}</p>}
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault()
+                if (discarding) void discardFile(discarding)
+              }}
+            >
+              Discard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

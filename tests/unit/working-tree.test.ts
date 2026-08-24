@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   diffSideFor,
   isInspectable,
+  pushLabel,
   splitDisplayPath,
+  stagedFileCount,
+  stagePathsFor,
   stagingState,
   statusKind,
   statusLabel
@@ -120,6 +123,41 @@ describe('diffSideFor', () => {
 
   it('prefers staged for a file staged and unstaged at once', () => {
     expect(diffSideFor(file({ index: 'M', worktree: 'M' }))).toBe('staged')
+  })
+})
+
+describe('stagePathsFor', () => {
+  it('is just the path for an ordinary file', () => {
+    expect(stagePathsFor(file({ path: 'a.txt' }))).toEqual(['a.txt'])
+  })
+
+  it('includes both sides for a rename', () => {
+    expect(stagePathsFor(file({ path: 'new.txt', origPath: 'old.txt' }))).toEqual([
+      'old.txt',
+      'new.txt'
+    ])
+  })
+})
+
+describe('stagedFileCount', () => {
+  it('counts files with an index-side change', () => {
+    const files = [file({ path: 'a.txt', index: 'A' }), file({ path: 'b.txt', worktree: 'M' })]
+    expect(stagedFileCount(files)).toBe(1)
+  })
+
+  it('excludes an unmerged file even though it has no unchanged side', () => {
+    expect(stagedFileCount([file({ kind: 'unmerged', conflict: 'UU' })])).toBe(0)
+  })
+})
+
+describe('pushLabel', () => {
+  it('counts commits ahead when there is an upstream', () => {
+    expect(pushLabel(1, true)).toBe('Push 1 commit')
+    expect(pushLabel(2, true)).toBe('Push 2 commits')
+  })
+
+  it('offers to publish when there is no upstream, regardless of ahead', () => {
+    expect(pushLabel(0, false)).toBe('Publish branch')
   })
 })
 

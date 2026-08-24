@@ -748,20 +748,20 @@ export const scenarios: Scenario[] = [
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
 
-      await window.getByRole('button', { name: /README\.md/ }).click()
+      await window.getByRole('button', { name: 'README.md', exact: true }).click()
       await window.getByTestId('diff-panel').waitFor({ state: 'visible' })
       await window.getByText('edited for the diff panel').waitFor({ state: 'visible' })
       await shot('modest-diff')
 
-      await window.getByRole('button', { name: /image\.png/ }).click()
+      await window.getByRole('button', { name: 'image.png', exact: true }).click()
       await window.getByText('Binary file, not shown.').waitFor({ state: 'visible' })
       await shot('binary')
 
-      await window.getByRole('button', { name: /script\.sh/ }).click()
+      await window.getByRole('button', { name: 'script.sh', exact: true }).click()
       await window.getByText('File mode changed, no content changes.').waitFor({ state: 'visible' })
       await shot('mode-only')
 
-      await window.getByRole('button', { name: /big\.txt/ }).click()
+      await window.getByRole('button', { name: 'big.txt', exact: true }).click()
       await window
         .getByText('This diff is too large to show in full and has been truncated.')
         .waitFor({ state: 'visible' })
@@ -796,9 +796,125 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
       await shot('two-panels')
 
-      await window.getByRole('button', { name: /README\.md/ }).click()
+      await window.getByRole('button', { name: 'README.md', exact: true }).click()
       await window.getByTestId('diff-panel').waitFor({ state: 'visible' })
       await shot('three-panels')
+    }
+  },
+  {
+    name: 'working-tree-staging',
+    description:
+      'The staging model end to end: an indeterminate row (staged and ' +
+      'unstaged at once) alongside untouched rows, checking one of those ' +
+      'to stage it, a commit message typed in, and the list either side ' +
+      'of committing.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await fixture.commit('Add a.txt and b.txt', { 'a.txt': 'a\n', 'b.txt': 'b\n' })
+      // a.txt: staged, then edited again — index and worktree both differ,
+      // the one shape the checkbox alone can't produce (that's #49's hunk
+      // staging), so it has to come from outside this session.
+      await writeFile(join(fixture.repoPath, 'a.txt'), 'a\nstaged\n', 'utf8')
+      await fixture.git(['add', 'a.txt'])
+      await writeFile(join(fixture.repoPath, 'a.txt'), 'a\nstaged\nand edited again\n', 'utf8')
+      // b.txt: an ordinary unstaged edit.
+      await writeFile(join(fixture.repoPath, 'b.txt'), 'b\nedited\n', 'utf8')
+      // c.txt: untracked.
+      await writeFile(join(fixture.repoPath, 'c.txt'), 'new\n', 'utf8')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window
+        .locator('[aria-label="a.txt staging state"][data-state="indeterminate"]')
+        .waitFor({ state: 'visible' })
+      await shot('nothing-checked')
+
+      await window.getByLabel('b.txt staging state').click()
+      await window
+        .locator('[aria-label="b.txt staging state"][data-state="checked"]')
+        .waitFor({ state: 'visible' })
+      await shot('some-checked')
+
+      await window.getByTestId('commit-message').fill('Update a.txt and b.txt')
+      await shot('message-typed')
+
+      await window.getByTestId('commit-button').click()
+      await window.getByLabel('b.txt staging state').waitFor({ state: 'detached' })
+      await shot('after-commit')
+    }
+  },
+  {
+    name: 'working-tree-discard',
+    description:
+      'Discarding a file, behind a confirmation since it is irreversible — ' +
+      'the same two-step shape as deleting a worktree.',
+    setup: async ({ workDir }) => {
+      const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('button', { name: /feature\/dirty/ }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'README.md actions' }).click()
+      await window.getByRole('menuitem', { name: 'Discard…' }).click()
+      await window.getByTestId('discard-file-dialog').waitFor({ state: 'visible' })
+      await shot('confirm')
+    }
+  },
+  {
+    name: 'commit-no-identity',
+    description:
+      'The hint under the commit box when git has no configured identity ' +
+      'for this worktree — a warning rather than a block, since git still ' +
+      'guesses one from the machine and commits successfully with it.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await fixture.git(['config', '--unset', 'user.email'])
+      await writeFile(join(fixture.repoPath, 'README.md'), '# fixture\nedited\n', 'utf8')
+      // Isolates the identity check from this container's own global git
+      // config, the same way a genuinely unconfigured machine would look.
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath, HOME: workDir }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByText(/No git identity configured/).waitFor({ state: 'visible' })
+      await shot('hint')
+    }
+  },
+  {
+    name: 'push-button',
+    description:
+      'The push button in both states it appears: counting commits ahead ' +
+      'once there is an upstream to compare against, and offering to ' +
+      'publish the branch when there is not one yet.',
+    setup: async ({ workDir }) => {
+      const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+
+      await window.getByRole('button', { name: /feature\/ahead-behind/ }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByRole('button', { name: 'Push 2 commits' }).waitFor({ state: 'visible' })
+      await shot('ahead')
+
+      await window.getByRole('button', { name: /feature\/no-upstream/ }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByRole('button', { name: 'Publish branch' }).waitFor({ state: 'visible' })
+      await shot('no-upstream')
     }
   }
 ]

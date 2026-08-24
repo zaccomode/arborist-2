@@ -77,6 +77,32 @@ export function diffSideFor(file: ChangedFile): 'staged' | 'unstaged' | 'untrack
   return file.index !== '.' ? 'staged' : 'unstaged'
 }
 
+/** The paths to pass `git add`/`git restore --staged`: both sides of a rename, or just the path. */
+export function stagePathsFor(file: ChangedFile): string[] {
+  return file.origPath && file.origPath !== file.path ? [file.origPath, file.path] : [file.path]
+}
+
+/**
+ * Files with staged content, read from the index (`index !== '.'`) rather
+ * than from checked rows — a hunk-staged file (#49) contributes one file to
+ * this count, not the whole row, and an unmerged file contributes none: git
+ * would refuse to commit it unresolved regardless of what's checked.
+ */
+export function stagedFileCount(files: ChangedFile[]): number {
+  return files.filter((file) => file.kind !== 'unmerged' && file.index !== '.').length
+}
+
+/**
+ * The push button's label: "Push N commits" once there's an upstream to
+ * compare against, or an offer to publish the branch when there isn't one
+ * yet — `ahead` is always 0 with no upstream, which isn't the same as
+ * nothing to push.
+ */
+export function pushLabel(ahead: number, hasUpstream: boolean): string {
+  if (!hasUpstream) return 'Publish branch'
+  return `Push ${ahead} commit${ahead === 1 ? '' : 's'}`
+}
+
 /**
  * Splits a repo-relative path into its file name and containing directory,
  * for a row that shows the name prominently and the directory dimmed
