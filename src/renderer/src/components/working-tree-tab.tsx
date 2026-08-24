@@ -5,7 +5,9 @@ import {
   isInspectable,
   splitDisplayPath,
   stagingState,
-  statusLabel
+  statusKind,
+  statusLabel,
+  type StatusKind
 } from '@shared/working-tree'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -17,6 +19,18 @@ import { useWorktreeInspector } from '@/state/selection'
 function checkboxState(state: ReturnType<typeof stagingState>): boolean | 'indeterminate' {
   if (state === 'indeterminate') return 'indeterminate'
   return state === 'checked'
+}
+
+// Literal here, not returned from `src/shared`: Tailwind's content scanner
+// only covers the renderer root, so a class name built in a shared pure
+// function never makes it into the compiled CSS.
+const STATUS_COLOR: Record<StatusKind, string> = {
+  added: 'text-emerald-600 dark:text-emerald-400',
+  modified: 'text-amber-600 dark:text-amber-400',
+  deleted: 'text-red-600 dark:text-red-400',
+  renamed: 'text-blue-600 dark:text-blue-400',
+  conflict: 'text-red-600 dark:text-red-400',
+  muted: 'text-muted-foreground'
 }
 
 function FileRow({
@@ -45,11 +59,18 @@ function FileRow({
         <Checkbox
           checked={checkboxState(stagingState(file))}
           disabled
+          // Decorative only this phase (staging isn't wired until #48) — it
+          // must not swallow the row's own click, or the leftmost slice of
+          // every row becomes a dead zone for opening the diff panel.
+          className="pointer-events-none"
           aria-label={`${file.path} staging state`}
         />
         <span className="max-w-[40%] shrink-0 truncate">{name}</span>
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{dir}</span>
-        <Badge variant="outline" className="ml-auto shrink-0 font-mono text-[11px]">
+        <Badge
+          variant="outline"
+          className={`ml-auto shrink-0 font-mono text-[11px] ${STATUS_COLOR[statusKind(file)]}`}
+        >
           {statusLabel(file)}
         </Badge>
       </button>

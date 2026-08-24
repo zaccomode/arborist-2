@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 
@@ -37,7 +37,11 @@ export function Shell({
   const mainPanelRef = useRef<PanelImperativeHandle>(null)
   const currentMainWidth = useRef(700)
   const lastAbsoluteMainWidth = useRef<number | null>(null)
-  const [inspectorWidth, setInspectorWidth] = useState(DEFAULT_INSPECTOR_WIDTH)
+  // A ref, not state: feeding a dragged panel's own live width back into its
+  // `defaultSize` on every render fights react-resizable-panels' internal
+  // drag tracking, and the handle stops moving a couple of pixels into the
+  // gesture. `defaultSize` only needs the constant initial value.
+  const inspectorWidth = useRef(DEFAULT_INSPECTOR_WIDTH)
   const hasInspector = inspector !== null
 
   useEffect(() => {
@@ -61,7 +65,7 @@ export function Shell({
       >
         {sidebar}
       </ResizablePanel>
-      <ResizableHandle className="mx-1 w-0 bg-transparent" />
+      <ResizableHandle className="mx-1 w-0 bg-transparent" withHandle />
       <ResizablePanel
         id="main"
         panelRef={mainPanelRef}
@@ -79,9 +83,11 @@ export function Shell({
           <ResizableHandle className="mx-1 w-0 bg-transparent" withHandle />
           <ResizablePanel
             id="inspector"
-            defaultSize={inspectorWidth}
+            defaultSize={DEFAULT_INSPECTOR_WIDTH}
             minSize={INSPECTOR_MIN_WIDTH}
-            onResize={(size) => setInspectorWidth(size.inPixels)}
+            onResize={(size) => {
+              inspectorWidth.current = size.inPixels
+            }}
           >
             <div className="h-full rounded-lg border bg-card">{inspector}</div>
           </ResizablePanel>

@@ -4,6 +4,7 @@ import {
   isInspectable,
   splitDisplayPath,
   stagingState,
+  statusKind,
   statusLabel
 } from '@shared/working-tree'
 import type { ChangedFile } from '@shared/domain'
@@ -61,6 +62,38 @@ describe('statusLabel', () => {
 
   it('shows the raw conflict code for an unmerged file', () => {
     expect(statusLabel(file({ kind: 'unmerged', conflict: 'AA' }))).toBe('AA')
+  })
+})
+
+describe('statusKind', () => {
+  it('categorises an untracked or added file as added', () => {
+    expect(statusKind(file({ kind: 'untracked' }))).toBe('added')
+    expect(statusKind(file({ index: 'A' }))).toBe('added')
+  })
+
+  it('categorises a modified file as modified', () => {
+    expect(statusKind(file({ worktree: 'M' }))).toBe('modified')
+  })
+
+  it('categorises a deleted file as deleted', () => {
+    expect(statusKind(file({ worktree: 'D' }))).toBe('deleted')
+  })
+
+  it('categorises a rename or copy as renamed', () => {
+    expect(statusKind(file({ index: 'R' }))).toBe('renamed')
+    expect(statusKind(file({ index: 'C' }))).toBe('renamed')
+  })
+
+  it('categorises an unmerged file as a conflict', () => {
+    expect(statusKind(file({ kind: 'unmerged', conflict: 'UU' }))).toBe('conflict')
+  })
+
+  it('mutes an ignored file', () => {
+    expect(statusKind(file({ kind: 'ignored' }))).toBe('muted')
+  })
+
+  it('prefers added over a second, less surprising change on the same file', () => {
+    expect(statusKind(file({ index: 'A', worktree: 'M' }))).toBe('added')
   })
 })
 
