@@ -137,23 +137,16 @@ export function WorktreeDetail({
         onValueChange={(value) => setTab(value as WorktreeTab)}
         className="mt-4 flex min-h-0 flex-1 flex-col gap-0"
       >
-        <TabsList variant="line" className="mx-6 w-fit shrink-0 border-b">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="working-tree">Working Tree</TabsTrigger>
-          <TabsTrigger value="commit-graph">Commit Graph</TabsTrigger>
-        </TabsList>
+        <div className="shrink-0 border-b">
+          <TabsList variant="line" className="mx-6 w-fit">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="working-tree">Working Tree</TabsTrigger>
+            <TabsTrigger value="commit-graph">Commit Graph</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="min-h-0 flex-1 overflow-y-auto p-6 pt-4">
           <OpenInGrid project={project} worktree={worktree} />
-
-          <div className="mt-6 grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-sm">
-            <span className="text-muted-foreground">Branch</span>
-            <span className="truncate font-mono">{worktree.branch ?? 'Detached'}</span>
-            <span className="text-muted-foreground">Commit</span>
-            <span className="truncate font-mono">{hash ?? '—'}</span>
-            <span className="text-muted-foreground">Path</span>
-            <span className="truncate font-mono">{worktree.path}</span>
-          </div>
 
           <NotesEditor
             key={`notes:${project.id}:${worktree.path}`}

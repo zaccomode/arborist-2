@@ -19,7 +19,7 @@ const SAVE_DEBOUNCE_MS = 400
 export function NotesEditor({
   repositoryId,
   worktreePath,
-  heightClass = 'h-56'
+  heightClass = 'h-[100px]'
 }: {
   repositoryId: string
   worktreePath: string | null
