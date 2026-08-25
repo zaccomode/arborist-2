@@ -1,5 +1,3 @@
-import { sep } from 'path'
-
 /**
  * Watched regardless of `.gitignore`, because these are common enough and
  * large enough that a repo without them listed is still worth protecting: a
@@ -35,6 +33,20 @@ export function parseIgnoredDirectories(stdout: string): string[] {
 }
 
 /**
+ * Chokidar normalizes a path to forward slashes before handing it to a
+ * custom `ignored` predicate (see chokidar's `matchPatterns` ->
+ * `normalizePath`), on every platform, regardless of what separator the
+ * path used going in. A path this app hands chokidar to *watch* (or gets
+ * back from `git`, which also always prints `/`) keeps its own format
+ * until then. Working in this same forward-slash space throughout —
+ * rather than the platform's `path.sep` — is what makes matching agree
+ * with what chokidar is actually going to call this function with.
+ */
+function toPosix(path: string): string {
+  return path.replace(/\\/g, '/')
+}
+
+/**
  * Builds chokidar's `ignored` matcher for the worktree tree watch: `.git`
  * anywhere, the hardcoded floor by directory name at any depth, and the
  * gitignored top-level directories `parseIgnoredDirectories` found, matched
@@ -43,27 +55,39 @@ export function parseIgnoredDirectories(stdout: string): string[] {
  * Reads `ignoredDirectories()` on every call rather than closing over a
  * fixed array, so the caller can update the underlying array in place (a
  * `.gitignore` edit re-runs the git call) without rebuilding the watcher.
+ *
+ * Matches in forward-slash space throughout (see `toPosix`): matching
+ * against `path.sep` here used to work by accident on POSIX, where `sep` is
+ * already `/`, and silently matched nothing at all on Windows — chokidar
+ * hands this function a `/`-normalized candidate no matter the platform, so
+ * splitting that candidate on `\` (Windows' `path.sep`) returned the whole
+ * path as a single segment, and neither the `.git` check, the floor check,
+ * nor the gitignored-directory check could ever match. This is why it
+ * shipped broken for Windows despite every case in `watch-ignore.test.ts`
+ * passing: that suite built its candidate paths with `path.join`, which
+ * produces the *native* separator the code was written against, not the
+ * forward-slash form chokidar actually calls this with.
  */
 export function buildIgnorePredicate(
   worktreePath: string,
   ignoredDirectories: () => readonly string[]
 ): (candidate: string) => boolean {
   const floor = new Set(FLOOR_DIRECTORIES)
-  const prefix = worktreePath.endsWith(sep) ? worktreePath : worktreePath + sep
+  const root = toPosix(worktreePath)
+  const prefix = root.endsWith('/') ? root : root + '/'
 
   return (candidate: string): boolean => {
-    const relative = candidate.startsWith(prefix) ? candidate.slice(prefix.length) : candidate
-    const segments = relative.split(sep)
+    const posixCandidate = toPosix(candidate)
+    const relative = posixCandidate.startsWith(prefix)
+      ? posixCandidate.slice(prefix.length)
+      : posixCandidate
+    const segments = relative.split('/')
 
     if (segments[0] === '.git') return true
     if (segments.some((segment) => floor.has(segment))) return true
 
-    // `git ls-files -z` always prints `/`, on every platform — converted to
-    // the platform separator here so a nested ignored directory still
-    // matches on Windows, where `relative` is `\`-joined.
-    return ignoredDirectories().some((raw) => {
-      const dir = sep === '/' ? raw : raw.split('/').join(sep)
-      return relative === dir || relative.startsWith(dir + sep)
-    })
+    // `git ls-files -z` always prints `/`, on every platform, which is
+    // already this function's own matching space — no conversion needed.
+    return ignoredDirectories().some((dir) => relative === dir || relative.startsWith(dir + '/'))
   }
 }

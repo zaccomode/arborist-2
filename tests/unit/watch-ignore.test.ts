@@ -65,4 +65,43 @@ describe('buildIgnorePredicate', () => {
     expect(ignored(path('packages', 'legacy', 'build', 'out.js'))).toBe(true)
     expect(ignored(path('packages', 'legacy', 'src', 'index.js'))).toBe(false)
   })
+
+  /**
+   * Chokidar hands the `ignored` predicate a forward-slash-normalized
+   * candidate on every platform, no matter which separator the actual
+   * watched path (and this file's own `worktreePath`) uses. On POSIX,
+   * `path.sep` is already `/`, so a test built entirely from `path.join`
+   * can't tell the difference between "matches candidates the way this
+   * code expects" and "matches candidates the way chokidar actually
+   * sends them" — both look the same. These cases hardcode a Windows-style
+   * (`\`-separated) `worktreePath`, exactly as it would arrive on a real
+   * Windows checkout, against forward-slash candidates, exactly as
+   * chokidar's own `normalizePath` produces them regardless of host OS —
+   * reproducing the real Windows call shape on any platform this suite
+   * runs on, which is what caught this shipping broken despite every
+   * `path.join`-built case above passing.
+   */
+  describe('candidates as chokidar actually delivers them, regardless of host platform', () => {
+    const winRoot = 'C:\\Users\\dev\\repo'
+
+    it('ignores anything under .git given a Windows-style worktreePath', () => {
+      const ignored = buildIgnorePredicate(winRoot, () => [])
+      expect(ignored('C:/Users/dev/repo/.git/index')).toBe(true)
+    })
+
+    it('ignores the hardcoded floor at any depth given a Windows-style worktreePath', () => {
+      const ignored = buildIgnorePredicate(winRoot, () => [])
+      expect(ignored('C:/Users/dev/repo/node_modules/pkg/index.js')).toBe(true)
+    })
+
+    it('ignores a git-reported directory given a Windows-style worktreePath', () => {
+      const ignored = buildIgnorePredicate(winRoot, () => ['ignored-dir'])
+      expect(ignored('C:/Users/dev/repo/ignored-dir/placeholder.txt')).toBe(true)
+    })
+
+    it('still leaves an ordinary tracked file alone', () => {
+      const ignored = buildIgnorePredicate(winRoot, () => [])
+      expect(ignored('C:/Users/dev/repo/src/index.ts')).toBe(false)
+    })
+  })
 })

@@ -1,5 +1,5 @@
 import { promises as fs } from 'fs'
-import { basename } from 'path'
+import { basename, dirname } from 'path'
 import { watch as watchPaths, type FSWatcher } from 'chokidar'
 import type { WorktreeChangeReason } from '../../../shared/ipc-contract'
 import { createDebouncer, type Debouncer } from '../../../shared/debounce'
@@ -61,13 +61,31 @@ function onceReady(watcher: FSWatcher): Promise<void> {
  *   floor of build/dependency directories, and whatever `git` itself says is
  *   ignored at the top level (see `ignore.ts`) — the reason a large repo
  *   with a real `.gitignore` doesn't melt this.
- * - Git's own metadata, as four explicit file paths resolved per worktree
- *   (see `git-paths.ts`) rather than `.git` recursively, which fires
- *   hundreds of times during a fetch or a gc. Resolving them matters because
- *   a linked worktree's index lives under
- *   `<repo>/.git/worktrees/<name>/index`, not `<repo>/.git/index` — watching
- *   the latter works for the main worktree and never fires for any other,
- *   which is exactly the case Arborist exists to serve.
+ * - Git's own metadata, as four paths resolved per worktree (see
+ *   `git-paths.ts`) rather than `.git` recursively, which fires hundreds of
+ *   times during a fetch or a gc. Resolving them matters because a linked
+ *   worktree's index lives under `<repo>/.git/worktrees/<name>/index`, not
+ *   `<repo>/.git/index` — watching the latter works for the main worktree
+ *   and never fires for any other, which is exactly the case Arborist
+ *   exists to serve. `index`, `HEAD` and `packed-refs` are watched via
+ *   their *containing directories*, not as the literal files themselves:
+ *   `git add`/`commit` replace each of these by writing a lockfile and
+ *   renaming it over the target rather than editing it in place (verified —
+ *   the inode changes on every `git add`), and a watch bound to the literal
+ *   file path is a watch on that specific inode/handle. Whether a watch
+ *   notices once the rename swaps in a new inode at the same path turns out
+ *   to depend on the platform in ways that are hard to fully pin down from
+ *   source alone (chokidar has its own recovery path for exactly this,
+ *   gated to `isMacos || isLinux || isFreeBSD` — Windows gets none at all,
+ *   and the mac branch was still observed to miss the very next event on a
+ *   real macOS CI runner). The containing directory is never itself
+ *   replaced, so a watch on it is never stale; `depth: 0` keeps it from
+ *   becoming a `.git`-recursive watch, since the common git dir holds
+ *   `objects/`, `refs/`, `logs/` etc alongside `packed-refs` and depth 0
+ *   watches only its direct children. `refs/heads` stays a direct,
+ *   recursively-watched directory as before — nested branch names need the
+ *   recursion, and unlike a single file, the directory holding them is
+ *   never wholesale-replaced, so it was never exposed to this problem.
  *
  * Every raw event funnels through one `Debouncer` keyed by
  * `WorktreeChangeReason`, so a burst on one reason (a long `npm install`
@@ -88,6 +106,7 @@ export class WorktreeWatcher {
   #emit: (worktreePath: string, reason: WorktreeChangeReason) => void
   #treeWatcher: FSWatcher | null = null
   #metaWatcher: FSWatcher | null = null
+  #refsWatcher: FSWatcher | null = null
   #debouncer: Debouncer<WorktreeChangeReason> | null = null
   #ignoredDirectories: string[] = []
   #suppressedUntil = new Map<string, number>()
@@ -178,42 +197,66 @@ export class WorktreeWatcher {
     if (!isCurrent()) return
     if (!gitPaths) return
 
-    // `packed-refs` in particular is routinely absent (git only writes it on
-    // a `gc`/`pack-refs`), and handing chokidar one `watch()` call mixing an
-    // existing path with a not-yet-existing one is not just slower to settle
-    // — verified: it silently drops watches on the *other*, already-existing
-    // paths in the same call too, so `refs/heads` (say) never fires at all.
-    // Watching the paths that exist right now up front, in one call so they
-    // still share a `'ready'` this method can wait on, and adding whichever
-    // don't exist yet afterwards with a plain `.add()`, keeps that failure
-    // mode from ever mixing the two.
-    const allPaths = [gitPaths.index, gitPaths.head, gitPaths.refsHeads, gitPaths.packedRefs]
-    const existing = await mapWithExistence(allPaths)
-
-    const metaWatcher = watchPaths(
-      existing.filter((entry) => entry.exists).map((entry) => entry.path),
-      { ignoreInitial: true }
-    )
-    metaWatcher.on('all', (_event, changedPath) => {
+    // `refs/heads`: a direct, recursively-watched directory, as before —
+    // nested branch names (`refs/heads/feature/x`) need the recursion, and
+    // unlike the single files below, the directory holding them is never
+    // itself wholesale-replaced, so it was never exposed to the rename-swap
+    // problem the class doc comment describes. It is, in principle, absent
+    // for an instant on a repository with zero commits and zero branches —
+    // unverified in practice (`git init` creates it empty), but treated the
+    // same as the metadata directories below regardless: skipped rather
+    // than blocking `watch()` on a path that may never appear.
+    const refsHeadsExists = await pathExists(gitPaths.refsHeads)
+    if (!isCurrent()) return
+    if (refsHeadsExists) {
+      const refsWatcher = watchPaths(gitPaths.refsHeads, { ignoreInitial: true })
+      refsWatcher.on('all', (_event, changedPath) => {
+        if (!isCurrent()) return
+        const reason = reasonForGitPath(changedPath, gitPaths)
+        if (reason) this.#debouncer?.trigger(reason)
+      })
+      refsWatcher.on('error', (error) => {
+        console.error(`[watcher] refs watch failed for ${target}:`, error)
+        if (isCurrent()) void this.#teardown()
+      })
+      this.#refsWatcher = refsWatcher
+      await onceReady(refsWatcher)
       if (!isCurrent()) return
-      const reason = reasonForGitPath(changedPath, gitPaths)
-      if (reason) this.#debouncer?.trigger(reason)
-    })
-    metaWatcher.on('error', (error) => {
-      console.error(`[watcher] metadata watch failed for ${target}:`, error)
-      if (isCurrent()) void this.#teardown()
-    })
-    this.#metaWatcher = metaWatcher
+    }
 
-    const missing = existing.filter((entry) => !entry.exists).map((entry) => entry.path)
-    // At least one path (the worktree always has an index and a HEAD by the
-    // time it's selectable) exists in the ordinary case, so `'ready'` fires.
-    // On the all-missing edge case it never would (verified), so this is
-    // skipped rather than hung on forever; the paths above go watched
-    // regardless via the plain `.add()` calls below, just without this
-    // method waiting for that to finish.
-    if (existing.some((entry) => entry.exists)) await onceReady(metaWatcher)
-    for (const path of missing) metaWatcher.add(path)
+    // `index`, `HEAD` and `packed-refs`: watched via their *containing*
+    // directories (see the class doc comment for why), deduped — the main
+    // worktree's index, HEAD and packed-refs all live directly under one
+    // directory, `.git` itself, so this is one shallow watch there rather
+    // than three. `depth: 0` is what keeps a watch on the common git dir
+    // from becoming the `.git`-recursive watch this design exists to avoid.
+    // Watching the directory rather than `packed-refs` itself also quietly
+    // retires the file's own former existence race (it's routinely absent —
+    // git only writes it on a `gc`/`pack-refs`): the directory is present
+    // regardless, and its own later creation is just an ordinary `add`
+    // event inside an already-watched directory.
+    const metaDirs = [
+      ...new Set([dirname(gitPaths.index), dirname(gitPaths.head), dirname(gitPaths.packedRefs)])
+    ]
+    const existingMetaDirs = (await mapWithExistence(metaDirs))
+      .filter((entry) => entry.exists)
+      .map((entry) => entry.path)
+    if (!isCurrent()) return
+
+    if (existingMetaDirs.length > 0) {
+      const metaWatcher = watchPaths(existingMetaDirs, { ignoreInitial: true, depth: 0 })
+      metaWatcher.on('all', (_event, changedPath) => {
+        if (!isCurrent()) return
+        const reason = reasonForGitPath(changedPath, gitPaths)
+        if (reason) this.#debouncer?.trigger(reason)
+      })
+      metaWatcher.on('error', (error) => {
+        console.error(`[watcher] metadata watch failed for ${target}:`, error)
+        if (isCurrent()) void this.#teardown()
+      })
+      this.#metaWatcher = metaWatcher
+      await onceReady(metaWatcher)
+    }
   }
 
   /** Stops watching for good — `window-all-closed` and `before-quit`. */
@@ -252,10 +295,12 @@ export class WorktreeWatcher {
   async #teardown(): Promise<void> {
     const tree = this.#treeWatcher
     const meta = this.#metaWatcher
+    const refs = this.#refsWatcher
     this.#treeWatcher = null
     this.#metaWatcher = null
+    this.#refsWatcher = null
     this.#debouncer?.cancel()
     this.#debouncer = null
-    await Promise.all([tree?.close(), meta?.close()])
+    await Promise.all([tree?.close(), meta?.close(), refs?.close()])
   }
 }
