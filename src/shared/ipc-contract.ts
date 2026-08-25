@@ -66,6 +66,31 @@ export interface IpcInvokeContract {
   'workingTree:get': { args: [worktreePath: string]; result: WorkingTreeChanges }
   /** One file's diff, for the third-panel diff viewer. */
   'diff:get': { args: [request: DiffRequest]; result: FileDiff }
+  /** `git add -- <paths>`. Both sides of a rename have to be passed together. */
+  'workingTree:stage': { args: [worktreePath: string, paths: string[]]; result: void }
+  'workingTree:unstage': { args: [worktreePath: string, paths: string[]]; result: void }
+  /** Irreversible: `git restore` for tracked paths, `git clean -f` for untracked ones. */
+  'workingTree:discard': {
+    args: [worktreePath: string, paths: { tracked: string[]; untracked: string[] }]
+    result: void
+  }
+  'workingTree:commit': {
+    args: [worktreePath: string, message: string, amend: boolean]
+    result: void
+  }
+  /** `setUpstream` runs `push --set-upstream origin <branch>` instead of a plain `push`. */
+  'workingTree:push': {
+    args: [worktreePath: string, branch: string, setUpstream: boolean]
+    result: void
+  }
+  /** Whether `user.email` is configured — a warning under the commit box, never a block. */
+  'workingTree:hasIdentity': { args: [worktreePath: string]; result: boolean }
+  /** A worktree's draft commit message. */
+  'commitDraft:get': { args: [repositoryId: string, worktreePath: string]; result: string }
+  'commitDraft:set': {
+    args: [repositoryId: string, worktreePath: string, text: string]
+    result: void
+  }
   'worktrees:remove': {
     args: [repoPath: string, worktreePath: string, force: boolean]
     result: void
@@ -182,6 +207,14 @@ const CHANNELS: Record<IpcChannel, true> = {
   'worktrees:isDirty': true,
   'workingTree:get': true,
   'diff:get': true,
+  'workingTree:stage': true,
+  'workingTree:unstage': true,
+  'workingTree:discard': true,
+  'workingTree:commit': true,
+  'workingTree:push': true,
+  'workingTree:hasIdentity': true,
+  'commitDraft:get': true,
+  'commitDraft:set': true,
   'worktrees:remove': true,
   'worktrees:prune': true,
   'notes:get': true,

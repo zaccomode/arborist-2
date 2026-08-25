@@ -19,6 +19,7 @@ import {
   type FileDiff
 } from '../../../shared/diff'
 import { worktreeBasePath, type ResolvedLocation } from '../../../shared/worktree-location'
+import { sortChangedFiles } from '../../../shared/working-tree'
 import type { GitRunner } from './git-runner'
 import { FETCH_TIMEOUT_MS } from './git-executor'
 import {
@@ -246,7 +247,83 @@ export class GitService {
       ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all'],
       { repoPath: worktreePath }
     )
-    return parseStatusV2(stdout)
+    const changes = parseStatusV2(stdout)
+    // `status` groups tracked changes before untracked ones rather than
+    // sorting by path, which the Working Tree tab shouldn't surface as row
+    // order.
+    return { ...changes, files: sortChangedFiles(changes.files) }
+  }
+
+  /**
+   * `git add` on a deleted path stages the deletion (verified: ` D f.txt` →
+   * `D  f.txt`), so this is the one call for every checked-row transition
+   * into "will be in the next commit" — not just new content.
+   */
+  async stageFiles(worktreePath: string, paths: string[]): Promise<void> {
+    await this.#git.runOrThrow(['add', '--', ...paths], { repoPath: worktreePath })
+  }
+
+  async unstageFiles(worktreePath: string, paths: string[]): Promise<void> {
+    await this.#git.runOrThrow(['restore', '--staged', '--', ...paths], { repoPath: worktreePath })
+  }
+
+  /** Irreversible; the caller puts this behind a confirmation. */
+  async discardFiles(
+    worktreePath: string,
+    paths: { tracked: string[]; untracked: string[] }
+  ): Promise<void> {
+    if (paths.tracked.length > 0) {
+      await this.#git.runOrThrow(['restore', '--', ...paths.tracked], { repoPath: worktreePath })
+    }
+    if (paths.untracked.length > 0) {
+      await this.#git.runOrThrow(['clean', '-f', '--', ...paths.untracked], {
+        repoPath: worktreePath
+      })
+    }
+  }
+
+  /**
+   * A multi-line message is a single argv entry and works: no shell, so
+   * nothing needs escaping. Nothing staged exits 1 — the caller disables the
+   * button from status rather than letting this fail.
+   */
+  async commit(worktreePath: string, message: string, amend: boolean): Promise<void> {
+    await this.#git.runOrThrow(['commit', '-m', message, ...(amend ? ['--amend'] : [])], {
+      repoPath: worktreePath
+    })
+  }
+
+  /**
+   * `--set-upstream` for a branch with nothing to compare against yet.
+   * Reuses `isAuthFailure` for the message only, same as `fetchAll`.
+   */
+  async push(worktreePath: string, branch: string, setUpstream: boolean): Promise<void> {
+    const args = setUpstream ? ['push', '--set-upstream', 'origin', branch] : ['push']
+    const result = await this.#git.run(args, {
+      repoPath: worktreePath,
+      timeoutMs: FETCH_TIMEOUT_MS
+    })
+    if (result.exitCode === 0) return
+
+    if (isAuthFailure(result.stderr)) {
+      throw new AppError(
+        'Arborist uses your system git credentials; push from a terminal to check them.',
+        'push-auth-failed'
+      )
+    }
+    throw new AppError(result.stderr.trim() || 'git push failed', 'git-command-failed')
+  }
+
+  /**
+   * `git config --get user.email` exits 1 when unset — but git then guesses
+   * an identity from gecos and hostname and commits successfully with it, so
+   * this is a warning the caller shows, never a block on committing.
+   */
+  async hasIdentity(worktreePath: string): Promise<boolean> {
+    const { exitCode } = await this.#git.run(['config', '--get', 'user.email'], {
+      repoPath: worktreePath
+    })
+    return exitCode === 0
   }
 
   /**

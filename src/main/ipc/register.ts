@@ -11,7 +11,7 @@ import type { GitService } from '../services/git/git-service'
 import type { PresetService } from '../services/presets'
 import type { AutomationRunner } from '../services/automation'
 import type { UpdateService } from '../services/updates'
-import { worktreeNoteKey } from '../../shared/persisted'
+import { commitDraftKey, worktreeNoteKey } from '../../shared/persisted'
 import { resolveWorktreeLocation } from '../../shared/worktree-location'
 import { applicationPickerOptions } from '../services/system/pickers'
 
@@ -103,6 +103,20 @@ export function registerIpcHandlers({
   handle('worktrees:isDirty', (worktreePath) => gitService.isDirty(worktreePath))
   handle('workingTree:get', (worktreePath) => gitService.workingTreeChanges(worktreePath))
   handle('diff:get', (request) => gitService.fileDiff(request))
+  handle('workingTree:stage', (worktreePath, paths) => gitService.stageFiles(worktreePath, paths))
+  handle('workingTree:unstage', (worktreePath, paths) =>
+    gitService.unstageFiles(worktreePath, paths)
+  )
+  handle('workingTree:discard', (worktreePath, paths) =>
+    gitService.discardFiles(worktreePath, paths)
+  )
+  handle('workingTree:commit', (worktreePath, message, amend) =>
+    gitService.commit(worktreePath, message, amend)
+  )
+  handle('workingTree:push', (worktreePath, branch, setUpstream) =>
+    gitService.push(worktreePath, branch, setUpstream)
+  )
+  handle('workingTree:hasIdentity', (worktreePath) => gitService.hasIdentity(worktreePath))
   handle('worktrees:remove', (repoPath, worktreePath, force) =>
     gitService.removeWorktree(repoPath, worktreePath, force)
   )
@@ -124,6 +138,19 @@ export function registerIpcHandlers({
       // a record behind for every worktree anyone ever clicked into.
       if (trimmed) collection[key] = trimmed
       else delete collection[key]
+    })
+  })
+
+  handle('commitDraft:get', (repositoryId, worktreePath) => {
+    return store.data.commitDrafts[commitDraftKey(repositoryId, worktreePath)] ?? ''
+  })
+
+  handle('commitDraft:set', async (repositoryId, worktreePath, text) => {
+    const trimmed = text.trim()
+    await store.update((data) => {
+      const key = commitDraftKey(repositoryId, worktreePath)
+      if (trimmed) data.commitDrafts[key] = trimmed
+      else delete data.commitDrafts[key]
     })
   })
 

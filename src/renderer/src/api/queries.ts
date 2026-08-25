@@ -32,6 +32,9 @@ export const queryKeys = {
   commits: (repoPath: string, ref: string) => ['commits', repoPath, ref] as const,
   workingTree: (worktreePath: string) => ['working-tree', worktreePath] as const,
   fileDiff: (request: DiffRequest | null) => ['file-diff', request] as const,
+  commitDraft: (repositoryId: string, worktreePath: string) =>
+    ['commit-draft', repositoryId, worktreePath] as const,
+  hasIdentity: (worktreePath: string) => ['has-identity', worktreePath] as const,
   remoteBranches: (repoPath: string) => ['remote-branches', repoPath] as const,
   localBranches: (repoPath: string) => ['local-branches', repoPath] as const
 }
@@ -117,6 +120,26 @@ export function useFileDiff(request: DiffRequest | null): ReturnType<typeof useQ
     queryKey: queryKeys.fileDiff(request),
     queryFn: () => invoke('diff:get', request!),
     enabled: request !== null
+  })
+}
+
+/** A worktree's draft commit message. */
+export function useCommitDraft(
+  repositoryId: string,
+  worktreePath: string
+): ReturnType<typeof useQuery<string>> {
+  return useQuery({
+    queryKey: queryKeys.commitDraft(repositoryId, worktreePath),
+    queryFn: () => invoke('commitDraft:get', repositoryId, worktreePath),
+    refetchOnWindowFocus: false
+  })
+}
+
+/** Whether `user.email` resolves for this worktree — a hint, never a block. */
+export function useHasIdentity(worktreePath: string): ReturnType<typeof useQuery<boolean>> {
+  return useQuery({
+    queryKey: queryKeys.hasIdentity(worktreePath),
+    queryFn: () => invoke('workingTree:hasIdentity', worktreePath)
   })
 }
 

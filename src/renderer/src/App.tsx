@@ -19,6 +19,7 @@ import { AutomationConsole, type AutomationTarget } from '@/components/automatio
 import { SettingsDialog } from '@/components/settings/settings-dialog'
 import { DiffPanel } from '@/components/diff-panel'
 import {
+  queryKeys,
   useAddProject,
   useFetch,
   useProjects,
@@ -278,7 +279,16 @@ function App(): React.JSX.Element | null {
                 worktree={worktree}
                 project={selected}
                 refreshing={worktrees.isFetching}
-                onRefresh={() => void worktrees.refetch()}
+                onRefresh={() => {
+                  void worktrees.refetch()
+                  // The working tree only otherwise updates from Arborist's
+                  // own mutations, per Phase 5 (#48) — a manual refresh is
+                  // this tab's way to pick up a change made outside it,
+                  // until the watcher (#50) covers that automatically.
+                  void queryClient.invalidateQueries({
+                    queryKey: queryKeys.workingTree(worktree.path)
+                  })
+                }}
                 onDelete={() => setDeletingWorktree(true)}
                 onRunSetup={() => setAutomation(automationTarget(selected, worktree))}
               />
