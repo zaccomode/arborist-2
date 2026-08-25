@@ -369,11 +369,11 @@ export const scenarios: Scenario[] = [
       await window.waitForFunction(
         () => document.querySelectorAll('[data-testid="commit-graph-rows"] > li').length >= 40
       )
-      await shot('loaded-more-first')
+      await shot('paging-a')
 
       await window.getByRole('button', { name: 'Load more' }).click()
       await window.getByRole('button', { name: 'Load more' }).waitFor({ state: 'detached' })
-      await shot('loaded-more-second')
+      await shot('paging-b')
     }
   },
   {
