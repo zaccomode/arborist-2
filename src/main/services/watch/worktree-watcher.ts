@@ -321,6 +321,54 @@ export class WorktreeWatcher {
       await onceReady(metaWatcher)
       if (!isCurrent()) return
     }
+
+    // Windows only, layered on top of the directory watches above: `index`
+    // and `HEAD` watched a second time, as the literal file paths, with
+    // polling. Two attempts already tried to fix the linked-worktree case
+    // on `windows-latest` by adjusting the *directory* watch (usePolling on
+    // the directory; one watcher per directory instead of a shared array)
+    // and neither cleared it, which points at something more specific than
+    // either of those: chokidar's directory-level polling appears to work
+    // by diffing which *names* are present in a periodic `readdir`, the
+    // same shape of check native directory events already have trouble
+    // with — a rename onto an existing name changes no name in that list,
+    // so nothing about the entry looking different is what a directory poll
+    // is built to notice. `fs.watchFile` on the exact file path, which is
+    // what `usePolling` actually maps to at the file level, re-stats that
+    // one path every interval and compares the whole `Stats` object
+    // regardless of the inode behind it — the change chokidar's own cited
+    // community fixes (chokidar#611, #237) are about, and unlike those
+    // issues, this file's very first fix in this PR already established
+    // that a directory-level watch is what's needed elsewhere (a `depth: 0`
+    // watch is what lets `packed-refs`, which is often simply absent, be
+    // noticed once it's created — a *file* watch on a path with nothing
+    // there yet is a different, better-trodden case for `fs.watchFile`,
+    // which already tolerates ENOENT and starts reporting once the path
+    // appears, so it isn't dropped from this list on existence either).
+    // `packed-refs` itself is deliberately left off this second pass: it
+    // isn't part of the rename-swap pattern this targets (nothing renames
+    // onto it on every commit the way `index`/`HEAD` do), and the directory
+    // watch above already covers its (rarer) appearance.
+    if (META_WATCH_OPTIONS.usePolling) {
+      for (const file of [gitPaths.index, gitPaths.head]) {
+        const fileWatcher = watchPaths(file, {
+          ignoreInitial: true,
+          usePolling: true
+        })
+        fileWatcher.on('all', (_event, changedPath) => {
+          if (!isCurrent()) return
+          const reason = reasonForGitPath(changedPath, gitPaths)
+          if (reason) this.#debouncer?.trigger(reason)
+        })
+        fileWatcher.on('error', (error) => {
+          console.error(`[watcher] metadata file watch failed for ${target}:`, error)
+          if (isCurrent()) void this.#teardown()
+        })
+        this.#metaWatchers.push(fileWatcher)
+        await onceReady(fileWatcher)
+        if (!isCurrent()) return
+      }
+    }
   }
 
   /** Stops watching for good — `window-all-closed` and `before-quit`. */
