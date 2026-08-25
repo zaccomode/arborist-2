@@ -65,7 +65,7 @@ export function Shell({
       >
         {sidebar}
       </ResizablePanel>
-      <ResizableHandle className="mx-1 w-0 bg-transparent" withHandle />
+      <ResizableHandle className="mx-1 w-0 bg-transparent" />
       <ResizablePanel
         id="main"
         panelRef={mainPanelRef}
@@ -80,7 +80,7 @@ export function Shell({
       </ResizablePanel>
       {inspector && (
         <>
-          <ResizableHandle className="mx-1 w-0 bg-transparent" withHandle />
+          <ResizableHandle className="mx-1 w-0 bg-transparent" />
           <ResizablePanel
             id="inspector"
             defaultSize={DEFAULT_INSPECTOR_WIDTH}

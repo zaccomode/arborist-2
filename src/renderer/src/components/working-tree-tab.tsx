@@ -65,7 +65,11 @@ function FileRow({
           className="pointer-events-none"
           aria-label={`${file.path} staging state`}
         />
-        <span className="max-w-[40%] shrink-0 truncate">{name}</span>
+        {/* The directory concatenates first: shrink-0 keeps the filename at
+            its natural width, so only the path gives up space as the row
+            narrows. truncate on the filename is a last-resort fallback for
+            when the row can't fit it even with the path fully collapsed. */}
+        <span className="shrink-0 truncate">{name}</span>
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{dir}</span>
         <Badge
           variant="outline"
