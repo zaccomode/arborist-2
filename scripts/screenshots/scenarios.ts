@@ -826,7 +826,7 @@ export const scenarios: Scenario[] = [
       // once the refetch lands — the clearest signal the panel, not just the
       // row checkbox, has caught up.
       await window.getByText('inserted near the top').waitFor({ state: 'detached' })
-      await shot('staged-one-hunk')
+      await shot('one-staged')
 
       await window.getByRole('button', { name: 'f.txt', exact: true }).click()
       await window.getByRole('button', { name: 'Unstage hunk' }).waitFor({ state: 'visible' })
