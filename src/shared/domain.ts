@@ -168,3 +168,6 @@ export interface WorkingTreeChanges {
   branch: StatusBranch
   files: ChangedFile[]
 }
+
+/** The worktree detail pane's three tabs, remembered per worktree. */
+export type WorktreeTab = 'overview' | 'working-tree' | 'commit-graph'

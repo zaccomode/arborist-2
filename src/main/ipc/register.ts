@@ -101,6 +101,7 @@ export function registerIpcHandlers({
   handle('worktrees:create', (repoPath, options) => gitService.createWorktree(repoPath, options))
 
   handle('worktrees:isDirty', (worktreePath) => gitService.isDirty(worktreePath))
+  handle('workingTree:get', (worktreePath) => gitService.workingTreeChanges(worktreePath))
   handle('worktrees:remove', (repoPath, worktreePath, force) =>
     gitService.removeWorktree(repoPath, worktreePath, force)
   )

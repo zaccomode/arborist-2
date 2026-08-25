@@ -13,6 +13,7 @@ import type {
   GitDiscoveryResult,
   RemoteBranch,
   StoreStatus,
+  WorkingTreeChanges,
   Worktree
 } from './domain'
 import type { Preset, ProjectSettings, Repository, SelectionState, Settings } from './persisted'
@@ -60,6 +61,8 @@ export interface IpcInvokeContract {
     result: string
   }
   'worktrees:isDirty': { args: [worktreePath: string]; result: boolean }
+  /** `git status --porcelain=v2` for one worktree, for the Working Tree tab. */
+  'workingTree:get': { args: [worktreePath: string]; result: WorkingTreeChanges }
   'worktrees:remove': {
     args: [repoPath: string, worktreePath: string, force: boolean]
     result: void
@@ -174,6 +177,7 @@ const CHANNELS: Record<IpcChannel, true> = {
   'worktrees:suggestPath': true,
   'worktrees:create': true,
   'worktrees:isDirty': true,
+  'workingTree:get': true,
   'worktrees:remove': true,
   'worktrees:prune': true,
   'notes:get': true,

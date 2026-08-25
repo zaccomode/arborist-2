@@ -1,5 +1,7 @@
 import { create } from 'zustand'
+import type { WorktreeTab } from '@shared/domain'
 import type { SelectionState as PersistedSelection } from '@shared/persisted'
+import { worktreeNoteKey } from '@shared/persisted'
 import { invoke } from '@/api/client'
 
 interface SelectionState {
@@ -8,18 +10,26 @@ interface SelectionState {
   worktreeByProject: Record<string, string>
   /** Mutually exclusive with the worktree selection: only one detail pane shows at a time. */
   remoteBranchByProject: Record<string, string>
+  /**
+   * The worktree detail pane's active tab, keyed like `worktreeNoteKey` —
+   * session-only, so flipping between two worktrees feels right without a
+   * persistence round-trip for something this disposable.
+   */
+  tabByWorktree: Record<string, WorktreeTab>
   /** Set once the persisted selection has been read back, so a fresh session's nulls don't overwrite it. */
   hydrated: boolean
   hydrate: (data: PersistedSelection) => void
   selectProject: (projectId: string | null) => void
   selectWorktree: (worktreePath: string | null) => void
   selectRemoteBranch: (name: string | null) => void
+  selectTab: (repositoryId: string, worktreePath: string, tab: WorktreeTab) => void
 }
 
 export const useSelection = create<SelectionState>((set) => ({
   projectId: null,
   worktreeByProject: {},
   remoteBranchByProject: {},
+  tabByWorktree: {},
   hydrated: false,
   hydrate: (data) => set({ ...data, hydrated: true }),
   selectProject: (projectId) => set({ projectId }),
@@ -48,7 +58,11 @@ export const useSelection = create<SelectionState>((set) => ({
         delete remoteBranchByProject[state.projectId]
       }
       return { remoteBranchByProject, worktreeByProject }
-    })
+    }),
+  selectTab: (repositoryId, worktreePath, tab) =>
+    set((state) => ({
+      tabByWorktree: { ...state.tabByWorktree, [worktreeNoteKey(repositoryId, worktreePath)]: tab }
+    }))
 }))
 
 // Persists every change once the initial state has been read back, so a
@@ -73,4 +87,15 @@ export function useSelectedRemoteBranch(): string | null {
   return useSelection((state) =>
     state.projectId ? (state.remoteBranchByProject[state.projectId] ?? null) : null
   )
+}
+
+/** A worktree's remembered tab, defaulting to Overview, plus its setter. */
+export function useWorktreeTab(
+  repositoryId: string,
+  worktreePath: string
+): [WorktreeTab, (tab: WorktreeTab) => void] {
+  const key = worktreeNoteKey(repositoryId, worktreePath)
+  const tab = useSelection((state) => state.tabByWorktree[key] ?? 'overview')
+  const selectTab = useSelection((state) => state.selectTab)
+  return [tab, (next) => selectTab(repositoryId, worktreePath, next)]
 }
