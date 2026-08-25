@@ -150,7 +150,7 @@ export class WorktreeWatcher {
   #git: GitRunner
   #emit: (worktreePath: string, reason: WorktreeChangeReason) => void
   #treeWatcher: FSWatcher | null = null
-  #metaWatcher: FSWatcher | null = null
+  #metaWatchers: FSWatcher[] = []
   #refsWatcher: FSWatcher | null = null
   #debouncer: Debouncer<WorktreeChangeReason> | null = null
   #ignoredDirectories: string[] = []
@@ -291,8 +291,19 @@ export class WorktreeWatcher {
       .map((entry) => entry.path)
     if (!isCurrent()) return
 
-    if (existingMetaDirs.length > 0) {
-      const metaWatcher = watchPaths(existingMetaDirs, {
+    // One `FSWatcher` per directory, deliberately, rather than one call
+    // covering the whole array: chokidar has already shown once in this
+    // file (see `resolveGitWatchPaths`'s history) that handing it several
+    // paths in a single `watch()` call is not reliable — the earlier bug
+    // was an existing/not-yet-existing mix silently dropping the existing
+    // ones, and a linked worktree's two metadata directories (its own
+    // `worktrees/<name>/` plus the shared common `.git` for `packed-refs`)
+    // reproduce the same failure shape even though both exist here: only
+    // the array's last entry reliably ends up watched on `windows-latest`
+    // under `usePolling`. A separate small watcher per directory has no
+    // such multi-path array for chokidar to mishandle.
+    for (const dir of existingMetaDirs) {
+      const metaWatcher = watchPaths(dir, {
         ignoreInitial: true,
         depth: 0,
         ...META_WATCH_OPTIONS
@@ -306,8 +317,9 @@ export class WorktreeWatcher {
         console.error(`[watcher] metadata watch failed for ${target}:`, error)
         if (isCurrent()) void this.#teardown()
       })
-      this.#metaWatcher = metaWatcher
+      this.#metaWatchers.push(metaWatcher)
       await onceReady(metaWatcher)
+      if (!isCurrent()) return
     }
   }
 
@@ -346,13 +358,13 @@ export class WorktreeWatcher {
 
   async #teardown(): Promise<void> {
     const tree = this.#treeWatcher
-    const meta = this.#metaWatcher
+    const meta = this.#metaWatchers
     const refs = this.#refsWatcher
     this.#treeWatcher = null
-    this.#metaWatcher = null
+    this.#metaWatchers = []
     this.#refsWatcher = null
     this.#debouncer?.cancel()
     this.#debouncer = null
-    await Promise.all([tree?.close(), meta?.close(), refs?.close()])
+    await Promise.all([tree?.close(), ...meta.map((watcher) => watcher.close()), refs?.close()])
   }
 }
