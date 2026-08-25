@@ -1,10 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import {
   diffStats,
+  isHunklessChange,
+  isPatchHeaderLine,
   parseUnifiedDiff,
   syntheticNewFileDiff,
   truncateFileDiff,
+  wholeFilePathsFor,
   type DiffHunk,
+  type DiffRequest,
   type FileDiff
 } from '@shared/diff'
 
@@ -329,5 +333,86 @@ describe('truncateFileDiff', () => {
     expect(result.hunks).toHaveLength(2)
     expect(result.hunks[0].lines).toHaveLength(1000)
     expect(result.hunks[1].lines).toHaveLength(1000)
+  })
+})
+
+describe('isHunklessChange', () => {
+  it('is true for a binary file even if hunks were somehow present', () => {
+    expect(isHunklessChange({ ...emptyFileDiff([]), binary: true })).toBe(true)
+  })
+
+  it('is true for a mode-only change', () => {
+    expect(isHunklessChange({ ...emptyFileDiff([]), changeKind: 'mode-change' })).toBe(true)
+  })
+
+  it('is true for a pure rename with no content edit', () => {
+    expect(isHunklessChange({ ...emptyFileDiff([]), changeKind: 'renamed' })).toBe(true)
+  })
+
+  it('is false once a modified file has hunks', () => {
+    expect(isHunklessChange(emptyFileDiff([hunkOfLines(1)]))).toBe(false)
+  })
+
+  it('is false for a modified file with no hunks — nothing differs at all, not a hunk-less change', () => {
+    expect(isHunklessChange(emptyFileDiff([]))).toBe(false)
+  })
+})
+
+describe('isPatchHeaderLine', () => {
+  it.each([
+    'old mode 100644',
+    'new mode 100755',
+    'new file mode 100644',
+    'deleted file mode 100644',
+    'similarity index 82%',
+    'rename from old.txt',
+    'rename to new.txt',
+    '--- a/f.txt',
+    '+++ b/f.txt'
+  ])('recognises %s', (line) => {
+    expect(isPatchHeaderLine(line)).toBe(true)
+  })
+
+  it.each(['diff --git a/f.txt b/f.txt', 'index 111..222 100644', '@@ -1,2 +1,2 @@', ' context'])(
+    'rejects %s',
+    (line) => {
+      expect(isPatchHeaderLine(line)).toBe(false)
+    }
+  )
+})
+
+describe('wholeFilePathsFor', () => {
+  it('is just the path for an ordinary unstaged file', () => {
+    const request: DiffRequest = {
+      kind: 'unstaged',
+      worktreePath: '/repo',
+      path: 'f.txt'
+    }
+    expect(wholeFilePathsFor(request)).toEqual(['f.txt'])
+  })
+
+  it('is just the path for an untracked file', () => {
+    const request: DiffRequest = { kind: 'untracked', worktreePath: '/repo', path: 'new.txt' }
+    expect(wholeFilePathsFor(request)).toEqual(['new.txt'])
+  })
+
+  it('is both sides for a rename', () => {
+    const request: DiffRequest = {
+      kind: 'staged',
+      worktreePath: '/repo',
+      path: 'new.txt',
+      origPath: 'old.txt'
+    }
+    expect(wholeFilePathsFor(request)).toEqual(['old.txt', 'new.txt'])
+  })
+
+  it('is just the path when origPath equals path', () => {
+    const request: DiffRequest = {
+      kind: 'staged',
+      worktreePath: '/repo',
+      path: 'f.txt',
+      origPath: 'f.txt'
+    }
+    expect(wholeFilePathsFor(request)).toEqual(['f.txt'])
   })
 })

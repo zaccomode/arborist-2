@@ -718,15 +718,26 @@ export const scenarios: Scenario[] = [
     name: 'diff-panel',
     description:
       'The third panel across the states its own file kinds force: a ' +
-      'modest text diff, a binary file, a mode-only change with no hunks, ' +
-      'a file too large to show in full, and the panel closed again.',
+      'modest text diff, a binary file (now edited, not just new, so the ' +
+      'hunk-less whole-file staging offer from #49 shows), a mode-only ' +
+      'change with no hunks (offering the same), a file too large to show ' +
+      'in full, and the panel closed again.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
+      // Written before the commit below, not after: an *edited* tracked
+      // binary file is what exercises the hunk-less whole-file offer
+      // (`isHunklessChange`) — a brand-new untracked one is a different,
+      // already-covered case with no staging control in this panel at all.
+      await writeFile(
+        join(fixture.repoPath, 'image.png'),
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x03])
+      )
       // `commit()` stages everything dirty at call time, not just the paths
-      // it's given — so the script is committed cleanly first, and every
-      // uncommitted change below is made only after that commit exists.
-      await fixture.commit('Add a script', { 'script.sh': '#!/bin/sh\necho hi\n' })
+      // it's given — so the script and image are committed cleanly first,
+      // and every uncommitted change below is made only after that commit
+      // exists.
+      await fixture.commit('Add a script and an image', { 'script.sh': '#!/bin/sh\necho hi\n' })
       await chmod(join(fixture.repoPath, 'script.sh'), 0o755)
       await writeFile(
         join(fixture.repoPath, 'README.md'),
@@ -735,7 +746,7 @@ export const scenarios: Scenario[] = [
       )
       await writeFile(
         join(fixture.repoPath, 'image.png'),
-        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x03])
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x03, 0xff, 0xff])
       )
       const big = Array.from({ length: 2500 }, (_, i) => `line ${i}`).join('\n') + '\n'
       await writeFile(join(fixture.repoPath, 'big.txt'), big, 'utf8')
@@ -755,10 +766,12 @@ export const scenarios: Scenario[] = [
 
       await window.getByRole('button', { name: 'image.png', exact: true }).click()
       await window.getByText('Binary file, not shown.').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'Stage file' }).waitFor({ state: 'visible' })
       await shot('binary')
 
       await window.getByRole('button', { name: 'script.sh', exact: true }).click()
       await window.getByText('File mode changed, no content changes.').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'Stage file' }).waitFor({ state: 'visible' })
       await shot('mode-only')
 
       await window.getByRole('button', { name: 'big.txt', exact: true }).click()
@@ -770,6 +783,64 @@ export const scenarios: Scenario[] = [
       await window.getByRole('button', { name: 'Close' }).click()
       await window.getByTestId('diff-panel').waitFor({ state: 'detached' })
       await shot('closed')
+    }
+  },
+  {
+    name: 'diff-panel-hunks',
+    description:
+      'Hunk-level staging (#49): a two-hunk unstaged diff, staging just ' +
+      'the top hunk — the file row goes indeterminate and that hunk drops ' +
+      'out of the unstaged view — then switching to the staged side and ' +
+      'unstaging it again, back to the same two-hunk unstaged view it ' +
+      'started from.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      const lines = Array.from({ length: 40 }, (_, i) => `line ${i}`)
+      await fixture.commit('Add f.txt', { 'f.txt': lines.join('\n') + '\n' })
+      // Two edits far enough apart that they stay separate hunks under the
+      // app's `-U3` context, the same shape #49 says needs no recomputed
+      // header once only one of the two is staged.
+      lines.splice(1, 0, 'inserted near the top')
+      lines[31] = 'edited near line 30'
+      await writeFile(join(fixture.repoPath, 'f.txt'), lines.join('\n') + '\n', 'utf8')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'f.txt', exact: true }).click()
+      await window.getByTestId('diff-panel').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'Stage hunk' }).nth(1).waitFor({ state: 'visible' })
+      await shot('unstaged')
+
+      await window.getByRole('button', { name: 'Stage hunk' }).first().click()
+      await window
+        .locator('[aria-label="f.txt staging state"][data-state="indeterminate"]')
+        .waitFor({ state: 'visible' })
+      // The staged hunk's own text is gone from this (still-unstaged) view
+      // once the refetch lands — the clearest signal the panel, not just the
+      // row checkbox, has caught up.
+      await window.getByText('inserted near the top').waitFor({ state: 'detached' })
+      await shot('staged-one-hunk')
+
+      await window.getByRole('button', { name: 'f.txt', exact: true }).click()
+      await window.getByRole('button', { name: 'Unstage hunk' }).waitFor({ state: 'visible' })
+      await window.getByText('inserted near the top').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'Unstage hunk' }).click()
+      await window
+        .locator('[aria-label="f.txt staging state"][data-state="unchecked"]')
+        .waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'f.txt', exact: true }).click()
+      await window.getByRole('button', { name: 'Stage hunk' }).nth(1).waitFor({ state: 'visible' })
+      await window.getByText('inserted near the top').waitFor({ state: 'visible' })
+      await shot('after')
     }
   },
   {
