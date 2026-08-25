@@ -31,6 +31,52 @@ export function statusLabel(file: ChangedFile): string {
   return `${index}${worktree}`
 }
 
+/** The status badge's colour category, keyed by callers into actual classes. */
+export type StatusKind = 'added' | 'modified' | 'deleted' | 'renamed' | 'conflict' | 'muted'
+
+/**
+ * Which colour category a status badge falls into, by the change it's most
+ * useful to notice first when a file has more than one (`AM` reads as
+ * "added", not "modified" — the file being brand new is the more surprising
+ * fact). Order: added, deleted, renamed/copied, type-changed, modified.
+ *
+ * Returns a category rather than a Tailwind class string: Tailwind's
+ * content scanner only covers the renderer root, not `src/shared`, so a
+ * class name returned from here never makes it into the compiled CSS.
+ */
+export function statusKind(file: ChangedFile): StatusKind {
+  if (file.kind === 'untracked') return 'added'
+  if (file.kind === 'ignored') return 'muted'
+  if (file.kind === 'unmerged') return 'conflict'
+
+  const codes = [file.index, file.worktree]
+  if (codes.includes('A')) return 'added'
+  if (codes.includes('D')) return 'deleted'
+  if (codes.includes('R') || codes.includes('C')) return 'renamed'
+  if (codes.includes('T') || codes.includes('M')) return 'modified'
+  return 'muted'
+}
+
+/**
+ * Whether a row in the Working Tree tab can open the diff panel. An
+ * unmerged file has no ordinary diff to show — `git diff` gives a combined
+ * `--cc` diff for it, which #53's conflict card replaces rather than this
+ * panel rendering.
+ */
+export function isInspectable(file: ChangedFile): boolean {
+  return file.kind !== 'unmerged'
+}
+
+/**
+ * Which side of the file a click on its row opens: whichever side actually
+ * has content, preferring staged when a file has both (`MM`) since that's
+ * what the next commit will contain.
+ */
+export function diffSideFor(file: ChangedFile): 'staged' | 'unstaged' | 'untracked' {
+  if (file.kind === 'untracked') return 'untracked'
+  return file.index !== '.' ? 'staged' : 'unstaged'
+}
+
 /**
  * Splits a repo-relative path into its file name and containing directory,
  * for a row that shows the name prominently and the directory dimmed

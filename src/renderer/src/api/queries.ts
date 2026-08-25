@@ -12,6 +12,7 @@ import type {
   WorkingTreeChanges,
   Worktree
 } from '@shared/domain'
+import type { DiffRequest, FileDiff } from '@shared/diff'
 import type { PresetCatalogue, ResolvedPreset } from '@shared/presets'
 import type { ProjectSettings, Repository, Settings } from '@shared/persisted'
 import { invoke } from '@/api/client'
@@ -30,6 +31,7 @@ export const queryKeys = {
   projectSettings: (projectId: string) => ['project-settings', projectId] as const,
   commits: (repoPath: string, ref: string) => ['commits', repoPath, ref] as const,
   workingTree: (worktreePath: string) => ['working-tree', worktreePath] as const,
+  fileDiff: (request: DiffRequest | null) => ['file-diff', request] as const,
   remoteBranches: (repoPath: string) => ['remote-branches', repoPath] as const,
   localBranches: (repoPath: string) => ['local-branches', repoPath] as const
 }
@@ -106,6 +108,15 @@ export function useWorkingTree(
     queryKey: queryKeys.workingTree(worktreePath ?? ''),
     queryFn: () => invoke('workingTree:get', worktreePath!),
     enabled: worktreePath !== null
+  })
+}
+
+/** The inspector panel's diff, for whichever file or commit is selected. */
+export function useFileDiff(request: DiffRequest | null): ReturnType<typeof useQuery<FileDiff>> {
+  return useQuery({
+    queryKey: queryKeys.fileDiff(request),
+    queryFn: () => invoke('diff:get', request!),
+    enabled: request !== null
   })
 }
 

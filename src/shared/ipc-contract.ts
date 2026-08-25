@@ -16,6 +16,7 @@ import type {
   WorkingTreeChanges,
   Worktree
 } from './domain'
+import type { DiffRequest, FileDiff } from './diff'
 import type { Preset, ProjectSettings, Repository, SelectionState, Settings } from './persisted'
 import type { AutomationEvent } from './automation'
 import type { PresetCatalogue, PresetRunResult, ResolvedPreset } from './presets'
@@ -63,6 +64,8 @@ export interface IpcInvokeContract {
   'worktrees:isDirty': { args: [worktreePath: string]; result: boolean }
   /** `git status --porcelain=v2` for one worktree, for the Working Tree tab. */
   'workingTree:get': { args: [worktreePath: string]; result: WorkingTreeChanges }
+  /** One file's diff, for the third-panel diff viewer. */
+  'diff:get': { args: [request: DiffRequest]; result: FileDiff }
   'worktrees:remove': {
     args: [repoPath: string, worktreePath: string, force: boolean]
     result: void
@@ -178,6 +181,7 @@ const CHANNELS: Record<IpcChannel, true> = {
   'worktrees:create': true,
   'worktrees:isDirty': true,
   'workingTree:get': true,
+  'diff:get': true,
   'worktrees:remove': true,
   'worktrees:prune': true,
   'notes:get': true,

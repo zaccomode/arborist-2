@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { splitDisplayPath, stagingState, statusLabel } from '@shared/working-tree'
+import {
+  diffSideFor,
+  isInspectable,
+  splitDisplayPath,
+  stagingState,
+  statusKind,
+  statusLabel
+} from '@shared/working-tree'
 import type { ChangedFile } from '@shared/domain'
 
 function file(overrides: Partial<ChangedFile>): ChangedFile {
@@ -55,6 +62,64 @@ describe('statusLabel', () => {
 
   it('shows the raw conflict code for an unmerged file', () => {
     expect(statusLabel(file({ kind: 'unmerged', conflict: 'AA' }))).toBe('AA')
+  })
+})
+
+describe('statusKind', () => {
+  it('categorises an untracked or added file as added', () => {
+    expect(statusKind(file({ kind: 'untracked' }))).toBe('added')
+    expect(statusKind(file({ index: 'A' }))).toBe('added')
+  })
+
+  it('categorises a modified file as modified', () => {
+    expect(statusKind(file({ worktree: 'M' }))).toBe('modified')
+  })
+
+  it('categorises a deleted file as deleted', () => {
+    expect(statusKind(file({ worktree: 'D' }))).toBe('deleted')
+  })
+
+  it('categorises a rename or copy as renamed', () => {
+    expect(statusKind(file({ index: 'R' }))).toBe('renamed')
+    expect(statusKind(file({ index: 'C' }))).toBe('renamed')
+  })
+
+  it('categorises an unmerged file as a conflict', () => {
+    expect(statusKind(file({ kind: 'unmerged', conflict: 'UU' }))).toBe('conflict')
+  })
+
+  it('mutes an ignored file', () => {
+    expect(statusKind(file({ kind: 'ignored' }))).toBe('muted')
+  })
+
+  it('prefers added over a second, less surprising change on the same file', () => {
+    expect(statusKind(file({ index: 'A', worktree: 'M' }))).toBe('added')
+  })
+})
+
+describe('isInspectable', () => {
+  it('is false only for an unmerged file', () => {
+    expect(isInspectable(file({ kind: 'unmerged', conflict: 'UU' }))).toBe(false)
+    expect(isInspectable(file({ kind: 'tracked' }))).toBe(true)
+    expect(isInspectable(file({ kind: 'untracked' }))).toBe(true)
+  })
+})
+
+describe('diffSideFor', () => {
+  it('opens untracked for an untracked file', () => {
+    expect(diffSideFor(file({ kind: 'untracked' }))).toBe('untracked')
+  })
+
+  it('opens unstaged when only the worktree side has a change', () => {
+    expect(diffSideFor(file({ worktree: 'M' }))).toBe('unstaged')
+  })
+
+  it('opens staged when the index side has a change', () => {
+    expect(diffSideFor(file({ index: 'A' }))).toBe('staged')
+  })
+
+  it('prefers staged for a file staged and unstaged at once', () => {
+    expect(diffSideFor(file({ index: 'M', worktree: 'M' }))).toBe('staged')
   })
 })
 

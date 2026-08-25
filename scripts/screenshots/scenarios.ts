@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'fs/promises'
+import { chmod, mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 import type { Page } from 'playwright'
 // Node's native type stripping resolves ESM imports literally, so this needs
@@ -712,6 +712,93 @@ export const scenarios: Scenario[] = [
     setup: async () => ({ ARBORIST_FAKE_UPDATE: 'up-to-date' }),
     drive: async (window) => {
       await window.getByText("You're up to date").waitFor({ state: 'visible' })
+    }
+  },
+  {
+    name: 'diff-panel',
+    description:
+      'The third panel across the states its own file kinds force: a ' +
+      'modest text diff, a binary file, a mode-only change with no hunks, ' +
+      'a file too large to show in full, and the panel closed again.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      // `commit()` stages everything dirty at call time, not just the paths
+      // it's given — so the script is committed cleanly first, and every
+      // uncommitted change below is made only after that commit exists.
+      await fixture.commit('Add a script', { 'script.sh': '#!/bin/sh\necho hi\n' })
+      await chmod(join(fixture.repoPath, 'script.sh'), 0o755)
+      await writeFile(
+        join(fixture.repoPath, 'README.md'),
+        '# fixture\nedited for the diff panel\n',
+        'utf8'
+      )
+      await writeFile(
+        join(fixture.repoPath, 'image.png'),
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x03])
+      )
+      const big = Array.from({ length: 2500 }, (_, i) => `line ${i}`).join('\n') + '\n'
+      await writeFile(join(fixture.repoPath, 'big.txt'), big, 'utf8')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: /README\.md/ }).click()
+      await window.getByTestId('diff-panel').waitFor({ state: 'visible' })
+      await window.getByText('edited for the diff panel').waitFor({ state: 'visible' })
+      await shot('modest-diff')
+
+      await window.getByRole('button', { name: /image\.png/ }).click()
+      await window.getByText('Binary file, not shown.').waitFor({ state: 'visible' })
+      await shot('binary')
+
+      await window.getByRole('button', { name: /script\.sh/ }).click()
+      await window.getByText('File mode changed, no content changes.').waitFor({ state: 'visible' })
+      await shot('mode-only')
+
+      await window.getByRole('button', { name: /big\.txt/ }).click()
+      await window
+        .getByText('This diff is too large to show in full and has been truncated.')
+        .waitFor({ state: 'visible' })
+      await shot('truncated')
+
+      await window.getByRole('button', { name: 'Close' }).click()
+      await window.getByTestId('diff-panel').waitFor({ state: 'detached' })
+      await shot('closed')
+    }
+  },
+  {
+    name: 'shell-panels',
+    description:
+      'The shell at a narrower window width: two panels with the middle ' +
+      'one scaling with the window, then a third opened — the middle panel ' +
+      'switches to an absolute width, protected by its 360px minSize so a ' +
+      '520px inspector cannot squeeze it away.',
+    setup: async ({ workDir, userDataDir }) => {
+      const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
+      await writeFile(
+        join(userDataDir, 'window-state.json'),
+        JSON.stringify({ width: 900, height: 720, maximized: false }),
+        'utf8'
+      )
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('button', { name: /feature\/dirty/ }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+      await shot('two-panels')
+
+      await window.getByRole('button', { name: /README\.md/ }).click()
+      await window.getByTestId('diff-panel').waitFor({ state: 'visible' })
+      await shot('three-panels')
     }
   }
 ]
