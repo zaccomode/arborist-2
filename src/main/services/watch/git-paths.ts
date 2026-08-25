@@ -1,6 +1,7 @@
-import { isAbsolute, join, sep } from 'path'
+import { isAbsolute, join } from 'path'
 import type { GitRunner } from '../git/git-runner'
 import type { WorktreeChangeReason } from '../../../shared/ipc-contract'
+import { normaliseForCompare } from '../../../shared/paths'
 
 /**
  * The git metadata paths this worktree's watcher watches as explicit files —
@@ -62,15 +63,34 @@ export async function resolveGitWatchPaths(
  * the rest are exact files. Returns `null` for a path that belongs to none of
  * them, which should not happen given how the watcher is constructed but is
  * cheaper to check than to assume away.
+ *
+ * Compared through `normaliseForCompare` rather than by raw string equality —
+ * four straight attempts at fixing the linked-worktree case on
+ * `windows-latest` by changing *how* the metadata paths were watched (native
+ * events, polling on the directory, one watcher per directory, polling on the
+ * literal file) all failed identically, which is what a watch that fires but
+ * a comparison that silently never matches looks like, not what a watch that
+ * never fires looks like. `git rev-parse --git-path` for a *linked* worktree
+ * has to resolve the `.git` file's `gitdir:` indirection first, which is
+ * exactly the step that doesn't exist for the main worktree — the one case
+ * that was passing the whole time — and a resolution step is exactly where a
+ * casing or form difference from the literal path Node created the fixture
+ * with could creep in on a case-insensitive filesystem. `samePath` already
+ * exists for this reason elsewhere in the app; this is the same comparison.
  */
 export function reasonForGitPath(
   changedPath: string,
-  paths: GitWatchPaths
+  paths: GitWatchPaths,
+  platform: NodeJS.Platform = process.platform
 ): WorktreeChangeReason | null {
-  if (changedPath === paths.index) return 'index'
-  if (changedPath === paths.head) return 'head'
-  if (changedPath === paths.packedRefs) return 'refs'
-  const refsHeadsPrefix = paths.refsHeads.endsWith(sep) ? paths.refsHeads : paths.refsHeads + sep
-  if (changedPath === paths.refsHeads || changedPath.startsWith(refsHeadsPrefix)) return 'refs'
+  const normalisedChanged = normaliseForCompare(changedPath, platform)
+  if (normalisedChanged === normaliseForCompare(paths.index, platform)) return 'index'
+  if (normalisedChanged === normaliseForCompare(paths.head, platform)) return 'head'
+  if (normalisedChanged === normaliseForCompare(paths.packedRefs, platform)) return 'refs'
+  const normalisedRefsHeads = normaliseForCompare(paths.refsHeads, platform)
+  const refsHeadsPrefix = normalisedRefsHeads + (platform === 'win32' ? '\\' : '/')
+  if (normalisedChanged === normalisedRefsHeads || normalisedChanged.startsWith(refsHeadsPrefix)) {
+    return 'refs'
+  }
   return null
 }

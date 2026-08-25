@@ -93,4 +93,30 @@ describe('reasonForGitPath', () => {
   it('maps a path outside all four to null', () => {
     expect(reasonForGitPath(join(commonDir, 'FETCH_HEAD'), paths)).toBeNull()
   })
+
+  it('matches case-insensitively on win32, since a linked worktree resolves through gitdir indirection that can differ in case from the literal path a fixture (or a folder picker) was created with', () => {
+    const winPaths = {
+      index: 'C:\\Users\\runner\\proj\\.git\\worktrees\\feat\\index',
+      head: 'C:\\Users\\runner\\proj\\.git\\worktrees\\feat\\HEAD',
+      refsHeads: 'C:\\Users\\runner\\proj\\.git\\refs\\heads',
+      packedRefs: 'C:\\Users\\runner\\proj\\.git\\packed-refs'
+    }
+    expect(
+      reasonForGitPath('c:\\users\\RUNNER\\proj\\.git\\worktrees\\feat\\INDEX', winPaths, 'win32')
+    ).toBe('index')
+    expect(
+      reasonForGitPath('C:\\Users\\Runner\\Proj\\.git\\refs\\heads\\feature\\x', winPaths, 'win32')
+    ).toBe('refs')
+    expect(reasonForGitPath('/nix/store/proj/.git/index', winPaths, 'win32')).toBeNull()
+  })
+
+  it('stays case-sensitive off win32', () => {
+    const posixPaths = {
+      index: '/repo/.git/index',
+      head: '/repo/.git/HEAD',
+      refsHeads: '/repo/.git/refs/heads',
+      packedRefs: '/repo/.git/packed-refs'
+    }
+    expect(reasonForGitPath('/repo/.git/INDEX', posixPaths, 'linux')).toBeNull()
+  })
 })
