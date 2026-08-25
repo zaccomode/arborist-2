@@ -22,6 +22,7 @@ import { GitService } from './services/git/git-service'
 import { PresetService } from './services/presets'
 import { AutomationRunner } from './services/automation'
 import { UpdateService } from './services/updates'
+import { WorktreeWatcher } from './services/watch/worktree-watcher'
 
 const DEFAULT_WINDOW: WindowState = { width: 1100, height: 720, maximized: false }
 
@@ -66,6 +67,7 @@ function scriptedUpdateStatus(): UpdateStatus | undefined {
 }
 
 let store: Store | null = null
+let watcher: WorktreeWatcher | null = null
 
 function createWindow(remembered: WindowState, windowStatePath: string): void {
   // Re-checked at creation rather than at load, so a window opened by
@@ -184,11 +186,19 @@ app.whenReady().then(async () => {
     () => store!.data.settings
   )
 
+  const worktreeWatcher = new WorktreeWatcher(gitRunner, (worktreePath, reason) =>
+    broadcast('worktree:changed', { worktreePath, reason })
+  )
+  watcher = worktreeWatcher
+
   registerIpcHandlers({
     gitRunner,
     store,
     projects: new ProjectService(store, gitRunner),
-    gitService: new GitService(gitRunner),
+    // Every mutating operation opens a suppression window on the watcher
+    // before it runs, so Arborist's own write is never read back in as an
+    // external change — see `SuppressWatcher`'s doc comment in git-service.ts.
+    gitService: new GitService(gitRunner, (worktreePath) => worktreeWatcher.suppress(worktreePath)),
     presets: new PresetService(store, gitRunner, (script, cwd, values) =>
       // A shell preset is a one-command script with the worktree as its
       // working directory, so it rides the automation runner rather than
@@ -196,7 +206,8 @@ app.whenReady().then(async () => {
       automation.start({ script, worktreePath: cwd, values })
     ),
     automation,
-    updates
+    updates,
+    watcher: worktreeWatcher
   })
 
   const windowStatePath = join(userData, 'window-state.json')
@@ -218,6 +229,7 @@ app.on('before-quit', (event) => {
   if (flushing || !store) return
   event.preventDefault()
   flushing = true
+  void watcher?.stop()
   store
     .flush()
     .catch((error: unknown) => console.error('Failed to save on quit:', error))
@@ -225,6 +237,7 @@ app.on('before-quit', (event) => {
 })
 
 app.on('window-all-closed', () => {
+  void watcher?.stop()
   if (process.platform !== 'darwin') {
     app.quit()
   }

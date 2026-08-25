@@ -102,6 +102,14 @@ async function seedProject(
   )
 }
 
+/**
+ * Set by `working-tree-external-change`'s `setup` and read by its `drive` —
+ * the one scenario that writes to the fixture's working tree *after* the app
+ * has already launched, which needs the repository path in both places and
+ * `setup`/`drive` share no other channel.
+ */
+let externalChangeRepoPath = ''
+
 export const scenarios: Scenario[] = [
   {
     name: 'shell',
@@ -996,6 +1004,43 @@ export const scenarios: Scenario[] = [
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByRole('button', { name: 'Publish branch' }).waitFor({ state: 'visible' })
       await shot('no-upstream')
+    }
+  },
+  {
+    name: 'working-tree-external-change',
+    description:
+      'The one capture with the watcher (#50) switched on: a file edited on ' +
+      'disk by something other than Arborist — an editor, a build, a commit ' +
+      'from the terminal — and the Working Tree tab picking it up on its ' +
+      'own, with no manual refresh. Every other scenario keeps the watcher ' +
+      'off, per the determinism note on ARBORIST_DISABLE_WATCHER.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      externalChangeRepoPath = fixture.repoPath
+      // Overrides the runner's own default of '1', which every other
+      // scenario relies on for a deterministic capture.
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath, ARBORIST_DISABLE_WATCHER: '0' }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByText('No changes.').waitFor({ state: 'visible' })
+      await shot('before')
+
+      // Written straight to disk, the way an editor or a build would —
+      // never through `invoke('workingTree:…')`, which is the case already
+      // covered without a watcher at all.
+      await writeFile(
+        join(externalChangeRepoPath, 'README.md'),
+        '# fixture\nedited outside Arborist\n',
+        'utf8'
+      )
+      await window
+        .getByRole('button', { name: 'README.md', exact: true })
+        .waitFor({ state: 'visible' })
+      await shot('after')
     }
   }
 ]

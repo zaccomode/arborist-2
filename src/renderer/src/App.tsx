@@ -169,6 +169,40 @@ function App(): React.JSX.Element | null {
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [queryClient])
 
+  const worktreePath = worktree?.path ?? null
+  const repoPath = selected?.path ?? null
+
+  useEffect(() => {
+    // Main owns one watcher at a time; this tells it which worktree that is,
+    // including telling it to stop (null) once nothing here is selected.
+    void invoke('watch:select', worktreePath)
+  }, [worktreePath])
+
+  useEffect(() => {
+    // Reason lets this invalidate precisely rather than refetching
+    // everything on every push — see `WorktreeChangeReason`'s doc comment.
+    // Guarded on a worktree/repo match because the event this listener is
+    // still attached to on unmount could otherwise land after the selection
+    // moved on but before the effect cleanup ran.
+    if (!worktreePath || !repoPath || !worktree) return
+    return window.arborist.subscribe('worktree:changed', (payload) => {
+      if (!samePath(payload.worktreePath, worktreePath)) return
+      queryClient.invalidateQueries({ queryKey: queryKeys.workingTree(worktreePath) })
+      if (payload.reason === 'index') {
+        // `fileDiff`'s query key is `['file-diff', request]`; this prefix
+        // invalidates every diff open on this worktree regardless of which
+        // file or side `request` names.
+        queryClient.invalidateQueries({ queryKey: ['file-diff'] })
+      }
+      if (payload.reason === 'head' || payload.reason === 'refs') {
+        queryClient.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.commits(repoPath, worktree.branch ?? worktree.head ?? '')
+        })
+      }
+    })
+  }, [worktreePath, repoPath, worktree, queryClient])
+
   const handleFetch = (path: string): void => {
     fetchProject.mutate(path, {
       onError: (error) => toast.error('Fetch failed', { description: error.message })
@@ -177,7 +211,6 @@ function App(): React.JSX.Element | null {
   const fetchMutate = fetchProject.mutate
 
   const intervalMinutes = settings.data?.autoFetchIntervalMinutes ?? 0
-  const repoPath = selected?.path ?? null
   useEffect(() => {
     // Off by default, and only while the app is focused: polling a corporate
     // remote every few minutes from a window nobody is looking at is a way to
@@ -281,10 +314,11 @@ function App(): React.JSX.Element | null {
                 refreshing={worktrees.isFetching}
                 onRefresh={() => {
                   void worktrees.refetch()
-                  // The working tree only otherwise updates from Arborist's
-                  // own mutations, per Phase 5 (#48) — a manual refresh is
-                  // this tab's way to pick up a change made outside it,
-                  // until the watcher (#50) covers that automatically.
+                  // The watcher (#50) covers a change made outside Arborist
+                  // automatically, but stays off in a screenshot/e2e run
+                  // (`ARBORIST_DISABLE_WATCHER`) and can miss a change made
+                  // while nothing was selected yet — this button is the
+                  // manual fallback for both.
                   void queryClient.invalidateQueries({
                     queryKey: queryKeys.workingTree(worktree.path)
                   })
