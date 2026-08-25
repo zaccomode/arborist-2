@@ -13,6 +13,45 @@ const MAX_DEBOUNCE_WAIT_MS = 1000
 /** The default suppression window `suppress()` opens for a mutating write. */
 const DEFAULT_SUPPRESS_MS = 400
 
+/**
+ * Windows-only: applied to the metadata watchers (`refs/heads`, and the
+ * directories holding `index`/`HEAD`/`packed-refs`), never the tree watcher.
+ *
+ * `git add`/`commit` replace these files by writing a lockfile and renaming
+ * it over the target rather than editing in place. On Windows, a rename onto
+ * an existing name is a documented gap in `fs.watch`'s `ReadDirectoryChangesW`
+ * backend: no event is emitted for the *original* path at all (nodejs/node-v0.x-archive#8372),
+ * as opposed to macOS/Linux, which at least emit something for it (chokidar's
+ * own `isMacos || isLinux || isFreeBSD` recovery path — see the class doc
+ * comment — exists to catch exactly that something). Watching the containing
+ * directory rather than the literal file, the fix this file shipped with
+ * first, doesn't route around this: chokidar's own directory-watch machinery
+ * (`_handleDir`/`_handleRead` in chokidar's `handler.js`) only re-arms a
+ * *file* watch for a name it hasn't seen in that directory before — a rename
+ * onto an existing, already-tracked name is invisible to it too, for the same
+ * underlying reason. `usePolling: true` switches these few, small watches
+ * from `fs.watch` to `fs.watchFile`, which re-`stat`s the literal path on an
+ * interval instead of holding a watch bound to a specific handle — so it
+ * doesn't matter what got swapped in underneath. This is a documented,
+ * widely-used community workaround for exactly this Windows gap (see e.g.
+ * chokidar#611, chokidar#237), not a guess; verifying it actually clears CI
+ * on `windows-latest` is the one part of this that can't be confirmed
+ * locally. Scoped to just these few files/directories — never the tree
+ * watcher, which is the unbounded-cost recursive watch this class exists to
+ * avoid turning the metadata watch into.
+ *
+ * A plain function of `platform` rather than a constant read from
+ * `process.platform` directly, so `tests/unit/watch-meta-options.test.ts`
+ * can exercise the win32 branch on whatever platform this suite itself
+ * happens to run on — the one part of this fix that can't be exercised
+ * end-to-end without a Windows runner.
+ */
+export function metaWatchOptions(platform: NodeJS.Platform): { usePolling?: true } {
+  return platform === 'win32' ? { usePolling: true } : {}
+}
+
+const META_WATCH_OPTIONS = metaWatchOptions(process.platform)
+
 async function pathExists(path: string): Promise<boolean> {
   try {
     await fs.stat(path)
@@ -86,6 +125,12 @@ function onceReady(watcher: FSWatcher): Promise<void> {
  *   recursively-watched directory as before — nested branch names need the
  *   recursion, and unlike a single file, the directory holding them is
  *   never wholesale-replaced, so it was never exposed to this problem.
+ *   Watching the containing directory still wasn't enough on Windows —
+ *   chokidar's own directory-watch machinery only re-arms a *file* watch for
+ *   a name it hasn't seen in that directory before, so a rename onto an
+ *   already-tracked name (exactly what's happening here) is just as
+ *   invisible to it as watching the file directly was. See
+ *   `META_WATCH_OPTIONS` below for the platform-specific fix on top of this.
  *
  * Every raw event funnels through one `Debouncer` keyed by
  * `WorktreeChangeReason`, so a burst on one reason (a long `npm install`
@@ -209,7 +254,10 @@ export class WorktreeWatcher {
     const refsHeadsExists = await pathExists(gitPaths.refsHeads)
     if (!isCurrent()) return
     if (refsHeadsExists) {
-      const refsWatcher = watchPaths(gitPaths.refsHeads, { ignoreInitial: true })
+      const refsWatcher = watchPaths(gitPaths.refsHeads, {
+        ignoreInitial: true,
+        ...META_WATCH_OPTIONS
+      })
       refsWatcher.on('all', (_event, changedPath) => {
         if (!isCurrent()) return
         const reason = reasonForGitPath(changedPath, gitPaths)
@@ -244,7 +292,11 @@ export class WorktreeWatcher {
     if (!isCurrent()) return
 
     if (existingMetaDirs.length > 0) {
-      const metaWatcher = watchPaths(existingMetaDirs, { ignoreInitial: true, depth: 0 })
+      const metaWatcher = watchPaths(existingMetaDirs, {
+        ignoreInitial: true,
+        depth: 0,
+        ...META_WATCH_OPTIONS
+      })
       metaWatcher.on('all', (_event, changedPath) => {
         if (!isCurrent()) return
         const reason = reasonForGitPath(changedPath, gitPaths)
