@@ -52,10 +52,15 @@ function CommitRow({ commit }: { commit: CommitLogEntry }): React.JSX.Element {
 }
 
 /**
- * Commit history for a worktree's branch, or for a remote branch that has no
- * local checkout at all — `repoPath` only has to be somewhere inside the
- * repository, since remote-tracking refs are visible from any worktree that
- * shares it.
+ * A flat commit list for a single ref — used only for a remote branch with
+ * no local checkout (`RemoteBranchDetail`), where there's no worktree to
+ * pair with an upstream and no lanes worth drawing for one ref alone.
+ * `repoPath` only has to be somewhere inside the repository, since
+ * remote-tracking refs are visible from any worktree that shares it.
+ *
+ * A worktree's own Commit Graph tab uses `<CommitGraph>` instead — lanes,
+ * a click-through commit inspector, and the branch-plus-upstream ref pair
+ * this component was never asked to handle.
  */
 export function RecentCommits({
   repoPath,

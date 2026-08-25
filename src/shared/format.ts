@@ -82,6 +82,42 @@ export function worktreeTitle(worktree: Worktree): string {
 }
 
 /**
+ * The refs the commit graph logs: the worktree's own tip (its branch, or
+ * HEAD when detached) plus its upstream, when one is configured and hasn't
+ * been deleted on the remote (`WorktreeStatus.gone`) — "local and remote on
+ * this branch," per the concept note. Empty only for a worktree with
+ * neither a branch nor a resolvable HEAD (a bare repository's own entry),
+ * which has nothing to log at all.
+ */
+export function commitGraphTips(worktree: Worktree): string[] {
+  const tip = worktree.branch ?? worktree.head
+  if (!tip) return []
+  const status = worktree.status
+  const upstream = status && !status.gone ? status.upstream : null
+  return upstream && upstream !== tip ? [tip, upstream] : [tip]
+}
+
+/**
+ * What the Commit Graph tab heads itself with, so its scope reads as
+ * intentional rather than broken: "local and remote on this branch" is
+ * usually a near-straight line with the occasional fork, and users expect
+ * the graph to show every branch. Naming the two tips it actually covers —
+ * "main and origin/main" — is the honest alternative to widening the query
+ * to `--branches`, which would be expensive and noisy for what the concept
+ * actually asks for.
+ */
+export function commitGraphScopeLabel(worktree: Worktree): string {
+  const tips = commitGraphTips(worktree)
+  if (tips.length === 0) return ''
+  // `worktreeTitle` already renders a detached HEAD short and labelled
+  // ("detached at ab12345") rather than the raw 40-character hash
+  // `commitGraphTips` needs for the actual git invocation.
+  const tipLabel = worktreeTitle(worktree)
+  const upstream = tips[1]
+  return upstream ? `${tipLabel} and ${upstream}` : tipLabel
+}
+
+/**
  * The worktree's relationship with its upstream, as a sentence. The sidebar
  * has room for a couple of arrows; the detail pane has room for words.
  */

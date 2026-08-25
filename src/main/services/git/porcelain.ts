@@ -11,6 +11,7 @@ import type {
   BranchInfo,
   ChangeCode,
   ChangedFile,
+  CommitFileStat,
   CommitLogEntry,
   CommitSummary,
   StashEntry,
@@ -205,7 +206,7 @@ export function parseCommit(output: string): CommitSummary | null {
 export const LOG_RECORD_SEPARATOR = '\u001e'
 export const LOG_FIELD_SEPARATOR = '\u001f'
 
-export const LOG_FORMAT = ['%H', '%h', '%an', '%ad', '%s'].join(LOG_FIELD_SEPARATOR)
+export const LOG_FORMAT = ['%H', '%h', '%an', '%ad', '%s', '%P'].join(LOG_FIELD_SEPARATOR)
 
 /**
  * Matches `git --shortstat`'s one summary line. Each count is its own
@@ -227,7 +228,8 @@ export function parseCommitLog(output: string): CommitLogEntry[] {
     .filter((chunk) => chunk.length > 0)
     .map((chunk) => {
       const [header = '', ...rest] = chunk.split(/\r?\n/)
-      const [hash, shortHash, author, date, subject] = header.split(LOG_FIELD_SEPARATOR)
+      const [hash, shortHash, author, date, subject, parentsField] =
+        header.split(LOG_FIELD_SEPARATOR)
       if (!hash) return null
 
       const stats = SHORTSTAT.exec(rest.join('\n'))
@@ -237,12 +239,69 @@ export function parseCommitLog(output: string): CommitLogEntry[] {
         author: author ?? '',
         date: date ?? '',
         subject: subject ?? '',
+        parents: parentsField ? parentsField.split(' ').filter((parent) => parent.length > 0) : [],
         filesChanged: Number(stats?.[1] ?? 0),
         insertions: Number(stats?.[2] ?? 0),
         deletions: Number(stats?.[3] ?? 0)
       }
     })
     .filter((entry): entry is CommitLogEntry => entry !== null)
+}
+
+/**
+ * Parses `git show --format= --numstat -z --diff-merges=first-parent -M
+ * <hash>` for the commit inspector's file list. `-z` NUL-terminates each
+ * record; a renamed or copied file's own path field comes back empty,
+ * followed by two more NUL-terminated fields for the old and new paths —
+ * the same field-count subtlety `parseStatusV2`'s rename record has, just
+ * tab- rather than space-delimited ahead of the NUL split. A binary file's
+ * two counts print as `-` rather than a number.
+ */
+export function parseCommitNumstat(output: string): CommitFileStat[] {
+  const records = splitNulRecords(output)
+  const files: CommitFileStat[] = []
+  let i = 0
+
+  while (i < records.length) {
+    const record = records[i]
+    if (record === undefined || record === '') {
+      i++
+      continue
+    }
+
+    const firstTab = record.indexOf('\t')
+    const secondTab = firstTab === -1 ? -1 : record.indexOf('\t', firstTab + 1)
+    if (firstTab === -1 || secondTab === -1) {
+      i++
+      continue
+    }
+
+    const insertionsField = record.slice(0, firstTab)
+    const deletionsField = record.slice(firstTab + 1, secondTab)
+    const pathField = record.slice(secondTab + 1)
+    const binary = insertionsField === '-' || deletionsField === '-'
+    const insertions = binary ? null : Number(insertionsField)
+    const deletions = binary ? null : Number(deletionsField)
+
+    if (pathField === '') {
+      // Rename/copy: the old and new paths are two further NUL-terminated
+      // fields rather than packed into this one.
+      files.push({
+        path: records[i + 2] ?? '',
+        origPath: records[i + 1] ?? '',
+        insertions,
+        deletions,
+        binary
+      })
+      i += 3
+      continue
+    }
+
+    files.push({ path: pathField, origPath: null, insertions, deletions, binary })
+    i++
+  }
+
+  return files
 }
 
 /**

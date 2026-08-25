@@ -247,40 +247,130 @@ export const scenarios: Scenario[] = [
       await shot('working-tree-clean')
 
       await window.getByRole('tab', { name: 'Commit Graph' }).click()
-      await window.getByTestId('recent-commits').waitFor({ state: 'visible' })
+      await window.getByTestId('commit-graph-rows').waitFor({ state: 'visible' })
       await shot('commit-graph')
     }
   },
   {
     name: 'recent-commits',
     description:
-      'The Recent Commits panel: cards with the shortstat line, and load ' +
-      'more revealing the page behind it.',
+      "The flat Recent Commits list — RemoteBranchDetail's own, for a " +
+      'remote branch with no local checkout, which stays a plain list ' +
+      "rather than a lane graph since there's only the one ref to show: " +
+      'cards with the shortstat line, and load more revealing the page ' +
+      'behind it.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
       for (let i = 0; i < 25; i++) {
-        await fixture.commit(`Change ${i}`, { [`file-${i}.txt`]: `${i}\n` })
+        await fixture.commitFromElsewhere('feature-remote', `Change ${i}`)
       }
       // Long enough to wrap onto a second line rather than fit on one, so
       // the capture shows the subject wrapping rather than truncating.
-      await fixture.commit(
-        'Rework the badge matrix fixture so every worktree state the sidebar can show — ahead/behind, dirty, locked, missing, deleted upstream, detached — has its own row and its own fixture helper',
-        { 'badge-matrix.txt': 'rework' }
+      await fixture.commitFromElsewhere(
+        'feature-remote',
+        'Rework the badge matrix fixture so every worktree state the sidebar can show — ahead/behind, dirty, locked, missing, deleted upstream, detached — has its own row and its own fixture helper'
       )
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByRole('button', { name: /main/ }).first().click()
-      await window.getByRole('tab', { name: 'Commit Graph' }).click()
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Fetch' }).click()
+      await window.getByRole('button', { name: /origin\/feature-remote/ }).waitFor({
+        state: 'visible'
+      })
+      await window.getByRole('button', { name: /origin\/feature-remote/ }).click()
+      await window.getByTestId('remote-branch-detail').waitFor({ state: 'visible' })
       await window.getByTestId('recent-commits').waitFor({ state: 'visible' })
       await shot('list')
 
       await window.getByRole('button', { name: 'Load more' }).click()
       await window.getByRole('button', { name: 'Load more' }).waitFor({ state: 'detached' })
       await shot('loaded-more')
+    }
+  },
+  {
+    name: 'commit-graph',
+    description:
+      'The Commit Graph tab (#52): lanes for a linear stretch and a ' +
+      "merge's visible fork and join, the commit inspector open on an " +
+      "ordinary commit and on a merge — with a file's patch open from " +
+      'inside the merge, and back again — and load more paged twice so ' +
+      'the lane fold staying continuous across pages is visible.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+
+      // Plain, single-parent padding, oldest first — pages two and three
+      // are a clean straight line, which is what makes "the fold keeps
+      // going correctly across a page boundary" checkable by eye.
+      for (let i = 0; i < 40; i++) {
+        await fixture.commit(`Housekeeping ${i}`, { 'internals.txt': `pass ${i}\n` })
+      }
+
+      // A linear stretch right above the fork, so both are on the very
+      // first page without loading anything more.
+      await fixture.commit('Add feature flag scaffold', {
+        'flags.ts': 'export const flags = {}\n'
+      })
+      await fixture.commit('Wire up telemetry', { 'telemetry.ts': 'track()\n' })
+      await fixture.commit('Bump dependencies', { 'package.json': '{}\n' })
+      await fixture.commit('Fix lint warnings', { 'lint.ts': '// clean\n' })
+
+      await fixture.git(['checkout', '-b', 'feature/graph-demo'])
+      await fixture.commit('Start graph demo feature', { 'demo.ts': 'start\n' })
+      await fixture.commit('Finish graph demo feature', { 'demo.ts': 'start\nfinish\n' })
+
+      await fixture.git(['checkout', 'main'])
+      await fixture.commit('Tidy up docs', { 'README.md': '# fixture\ntidied\n' })
+      await fixture.git([
+        'merge',
+        '--no-ff',
+        'feature/graph-demo',
+        '-m',
+        'Merge feature/graph-demo into main'
+      ])
+
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Commit Graph' }).click()
+      await window.getByTestId('commit-graph-rows').waitFor({ state: 'visible' })
+      await shot('graph')
+
+      await window.getByRole('button', { name: /Tidy up docs/ }).click()
+      await window.getByTestId('commit-inspector').waitFor({ state: 'visible' })
+      await window.getByTestId('commit-files').waitFor({ state: 'visible' })
+      await shot('inspector-normal')
+
+      await window.getByRole('button', { name: /Merge feature\/graph-demo into main/ }).click()
+      await window.getByTestId('commit-files').waitFor({ state: 'visible' })
+      await shot('inspector-merge')
+
+      await window.getByRole('button', { name: 'demo.ts', exact: true }).click()
+      await window.getByTestId('diff-panel').waitFor({ state: 'visible' })
+      await window.getByText('+finish').waitFor({ state: 'visible' })
+      await shot('inspector-file')
+
+      await window.getByRole('button', { name: 'Back to commit' }).click()
+      await window.getByTestId('commit-files').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'Close' }).click()
+      await window.getByTestId('commit-inspector').waitFor({ state: 'detached' })
+
+      await window.getByRole('button', { name: 'Load more' }).click()
+      await window.waitForFunction(
+        () => document.querySelectorAll('[data-testid="commit-graph-rows"] > li').length >= 40
+      )
+      await shot('loaded-more-once')
+
+      await window.getByRole('button', { name: 'Load more' }).click()
+      await window.getByRole('button', { name: 'Load more' }).waitFor({ state: 'detached' })
+      await shot('loaded-more-twice')
     }
   },
   {

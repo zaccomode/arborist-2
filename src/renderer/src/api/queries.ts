@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-query'
 import type {
   BranchInfo,
+  CommitFileStat,
   CommitLogEntry,
   RemoteBranch,
   StashEntry,
@@ -30,7 +31,9 @@ export const queryKeys = {
   presetCatalogue: ['preset-catalogue'] as const,
   settings: ['settings'] as const,
   projectSettings: (projectId: string) => ['project-settings', projectId] as const,
-  commits: (repoPath: string, ref: string) => ['commits', repoPath, ref] as const,
+  commits: (repoPath: string, refs: readonly string[]) => ['commits', repoPath, ...refs] as const,
+  commit: (repoPath: string, hash: string) => ['commit', repoPath, hash] as const,
+  commitFiles: (repoPath: string, hash: string) => ['commit-files', repoPath, hash] as const,
   workingTree: (worktreePath: string) => ['working-tree', worktreePath] as const,
   fileDiff: (request: DiffRequest | null) => ['file-diff', request] as const,
   commitDraft: (repositoryId: string, worktreePath: string) =>
@@ -198,21 +201,60 @@ export function useProjectSettings(
 }
 
 /**
- * Recent commits on `ref`, 20 at a time. `repoPath`/`ref` are nullable so a
- * caller with nothing selected yet can call this unconditionally rather than
- * branching around the hook.
+ * Recent commits on `ref`, 20 at a time. `ref` is a single tip for the
+ * Recent Commits panel (a branch, HEAD, or a remote ref), or a `[tip,
+ * upstream]` pair for the commit graph — see `commitGraphTips`.
+ * `repoPath`/`ref` are nullable so a caller with nothing selected yet can
+ * call this unconditionally rather than branching around the hook.
+ *
+ * `--skip`-based paging (in `commitLog`, main-side) is stable exactly as
+ * long as nothing shifts underneath it mid-scroll. Both a mutation
+ * (staging, committing, branch switching) and the file watcher invalidate
+ * every `['commits', repoPath, ...]` query wholesale rather than patching
+ * one page in place — see `App.tsx`'s `worktree:changed` handler — which
+ * resets this back to page 0 instead of ever re-fetching a page whose
+ * `--skip` offset has become stale. Cursor-based paging isn't needed
+ * because of that, not despite it.
  */
 export function useCommitLog(
   repoPath: string | null,
-  ref: string | null
+  ref: string | readonly string[] | null
 ): ReturnType<typeof useInfiniteQuery<CommitLogEntry[]>> {
+  const refs = ref === null ? null : Array.isArray(ref) ? ref : [ref]
   return useInfiniteQuery({
-    queryKey: queryKeys.commits(repoPath ?? '', ref ?? ''),
+    queryKey: queryKeys.commits(repoPath ?? '', refs ?? []),
     queryFn: ({ pageParam }) =>
-      invoke('commits:recent', repoPath!, ref!, COMMIT_PAGE_SIZE, pageParam),
+      invoke('commits:recent', repoPath!, [...refs!], COMMIT_PAGE_SIZE, pageParam),
     initialPageParam: 0,
     getNextPageParam: (lastPage, pages) =>
       lastPage.length === COMMIT_PAGE_SIZE ? pages.flat().length : undefined,
-    enabled: repoPath !== null && ref !== null
+    enabled: repoPath !== null && refs !== null && refs.length > 0
+  })
+}
+
+/** One commit's metadata, for the commit inspector's header. */
+export function useCommit(
+  repoPath: string | null,
+  hash: string | null
+): ReturnType<typeof useQuery<CommitLogEntry | null>> {
+  return useQuery({
+    queryKey: queryKeys.commit(repoPath ?? '', hash ?? ''),
+    queryFn: async () => {
+      const commits = await invoke('commits:recent', repoPath!, [hash!], 1, 0)
+      return commits[0] ?? null
+    },
+    enabled: repoPath !== null && hash !== null
+  })
+}
+
+/** One commit's changed files, for the commit inspector's file list. */
+export function useCommitFiles(
+  repoPath: string | null,
+  hash: string | null
+): ReturnType<typeof useQuery<CommitFileStat[]>> {
+  return useQuery({
+    queryKey: queryKeys.commitFiles(repoPath ?? '', hash ?? ''),
+    queryFn: () => invoke('commits:files', repoPath!, hash!),
+    enabled: repoPath !== null && hash !== null
   })
 }

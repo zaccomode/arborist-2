@@ -4,6 +4,7 @@ import { AppError } from '../../../shared/errors'
 import { mapWithConcurrency } from '../../../shared/concurrency'
 import type {
   BranchInfo,
+  CommitFileStat,
   CommitLogEntry,
   RemoteBranch,
   StashEntry,
@@ -46,6 +47,7 @@ import {
   parseBranchList,
   parseCommit,
   parseCommitLog,
+  parseCommitNumstat,
   parseRemoteBranchList,
   parseStashList,
   parseStatus,
@@ -763,31 +765,57 @@ export class GitService {
   }
 
   /**
-   * Recent commits on `ref`, newest first, with `--shortstat` for the Recent
-   * Commits panel. `repoPath` only has to be somewhere inside the
-   * repository: it need not be the worktree `ref` belongs to, which is what
-   * lets this run against a remote branch that has no local checkout at all.
+   * Recent commits on `refs`, newest first, with `--shortstat` for the
+   * Recent Commits panel and the commit graph alike. `repoPath` only has to
+   * be somewhere inside the repository: it need not be the worktree a ref
+   * belongs to, which is what lets this run against a remote branch that
+   * has no local checkout at all. `refs` is normally one tip (a branch, or
+   * HEAD when detached), plus a second for the commit graph's own worktree
+   * plus upstream — see `commitGraphTips` in `src/shared/format.ts`. The
+   * trailing `--` stops a branch or tag named like a path from being
+   * ambiguous with one.
+   *
+   * `--topo-order` is what makes the commit graph's lane fold
+   * (`assignLanes`) meaningful at all: it guarantees a parent is never
+   * printed before its child, which plain date order doesn't.
    */
   async commitLog(
     repoPath: string,
-    ref: string,
+    refs: string[],
     limit: number,
     skip: number
   ): Promise<CommitLogEntry[]> {
     const { stdout } = await this.#git.runOrThrow(
       [
         'log',
-        ref,
+        '--topo-order',
+        '--date=iso-strict',
+        '--shortstat',
+        `--format=${LOG_RECORD_SEPARATOR}${LOG_FORMAT}`,
         '-n',
         String(limit),
         `--skip=${skip}`,
-        '--date=iso-strict',
-        '--shortstat',
-        `--format=${LOG_RECORD_SEPARATOR}${LOG_FORMAT}`
+        ...refs,
+        '--'
       ],
       { repoPath }
     )
     return parseCommitLog(stdout)
+  }
+
+  /**
+   * One commit's changed files, for the commit inspector opened from the
+   * graph. `-M` turns a delete+add pair back into a rename so the file list
+   * (and the per-file diff a click opens, which reuses `fileDiff`'s
+   * `'commit'` request kind) reads the same way `git show` does on a
+   * terminal.
+   */
+  async commitFiles(repoPath: string, hash: string): Promise<CommitFileStat[]> {
+    const { stdout } = await this.#git.runOrThrow(
+      ['show', '--format=', '--numstat', '-z', '--diff-merges=first-parent', '-M', hash],
+      { repoPath }
+    )
+    return parseCommitNumstat(stdout)
   }
 
   async #enrich(entry: WorktreeEntry): Promise<WorktreeStatus> {

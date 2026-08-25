@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/context-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CommitBox } from '@/components/commit-box'
+import { FilePathCell } from '@/components/file-path-cell'
 import { StashSection } from '@/components/stash-section'
 import { invoke } from '@/api/client'
 import { queryKeys, useWorkingTree } from '@/api/queries'
@@ -68,7 +69,6 @@ function FileRow({
   onToggleStage: () => void
   onDiscard: () => void
 }): React.JSX.Element {
-  const { name, dir } = splitDisplayPath(file.path)
   const inspectable = isInspectable(file)
   const stageable = file.kind !== 'unmerged'
 
@@ -107,13 +107,7 @@ function FileRow({
               onClick={(event) => event.stopPropagation()}
               aria-label={`${file.path} staging state`}
             />
-            {/* The directory concatenates first: shrink-0 keeps the filename
-                at its natural width, so only the path gives up space as the
-                row narrows. truncate on the filename is a last-resort
-                fallback for when the row can't fit it even with the path
-                fully collapsed. */}
-            <span className="shrink-0 truncate">{name}</span>
-            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{dir}</span>
+            <FilePathCell path={file.path} />
             <Badge
               variant="outline"
               className={`ml-auto shrink-0 font-mono text-[11px] ${STATUS_COLOR[statusKind(file)]}`}

@@ -223,9 +223,10 @@ export function registerIpcHandlers({
   handle('presets:run', (presetId, context) => presets.run(presetId, context))
 
   handle('repos:fetch', (repoPath) => gitService.fetchAll(repoPath))
-  handle('commits:recent', (repoPath, ref, limit, skip) =>
-    gitService.commitLog(repoPath, ref, limit, skip)
+  handle('commits:recent', (repoPath, refs, limit, skip) =>
+    gitService.commitLog(repoPath, refs, limit, skip)
   )
+  handle('commits:files', (repoPath, hash) => gitService.commitFiles(repoPath, hash))
 
   handle('git:discover', () => gitRunner.locator.discover())
 
