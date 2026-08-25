@@ -68,8 +68,8 @@ export class GitFixture {
     this.remotePath = join(root, 'remote.git')
   }
 
-  git(args: string[], cwd: string = this.repoPath): Promise<string> {
-    return runGit(args, cwd)
+  git(args: string[], cwd: string = this.repoPath, env: NodeJS.ProcessEnv = {}): Promise<string> {
+    return runGit(args, cwd, env)
   }
 
   /** Writes files (paths relative to `cwd`) and commits them. Returns the sha. */

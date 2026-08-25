@@ -325,13 +325,16 @@ export const scenarios: Scenario[] = [
 
       await fixture.git(['checkout', 'main'])
       await fixture.commit('Tidy up docs', { 'README.md': '# fixture\ntidied\n' })
-      await fixture.git([
-        'merge',
-        '--no-ff',
-        'feature/graph-demo',
-        '-m',
-        'Merge feature/graph-demo into main'
-      ])
+      // A pinned date, unlike `fixture.commit()`'s own auto-incrementing one
+      // — `git merge` isn't routed through that helper, and without this the
+      // merge commit's hash (and its "now" timestamp) would be real
+      // wall-clock time, breaking the byte-for-byte reproducibility every
+      // other capture in this file relies on.
+      await fixture.git(
+        ['merge', '--no-ff', 'feature/graph-demo', '-m', 'Merge feature/graph-demo into main'],
+        undefined,
+        { GIT_AUTHOR_DATE: '2026-01-05T09:48:00Z', GIT_COMMITTER_DATE: '2026-01-05T09:48:00Z' }
+      )
 
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
@@ -345,7 +348,7 @@ export const scenarios: Scenario[] = [
       await window.getByRole('button', { name: /Tidy up docs/ }).click()
       await window.getByTestId('commit-inspector').waitFor({ state: 'visible' })
       await window.getByTestId('commit-files').waitFor({ state: 'visible' })
-      await shot('inspector-normal')
+      await shot('inspector-plain')
 
       await window.getByRole('button', { name: /Merge feature\/graph-demo into main/ }).click()
       await window.getByTestId('commit-files').waitFor({ state: 'visible' })
@@ -366,11 +369,11 @@ export const scenarios: Scenario[] = [
       await window.waitForFunction(
         () => document.querySelectorAll('[data-testid="commit-graph-rows"] > li').length >= 40
       )
-      await shot('loaded-more-once')
+      await shot('loaded-more-first')
 
       await window.getByRole('button', { name: 'Load more' }).click()
       await window.getByRole('button', { name: 'Load more' }).waitFor({ state: 'detached' })
-      await shot('loaded-more-twice')
+      await shot('loaded-more-second')
     }
   },
   {
