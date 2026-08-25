@@ -6,11 +6,19 @@ import type {
   BranchInfo,
   CommitLogEntry,
   RemoteBranch,
+  StashEntry,
   WorkingTreeChanges,
   Worktree,
   WorktreeEntry,
   WorktreeStatus
 } from '../../../shared/domain'
+import {
+  decideBranchSwitch,
+  parseNameOnlyZ,
+  worktreeUsingBranch,
+  type BranchSwitchInputs,
+  type BranchSwitchPlan
+} from '../../../shared/branch-switch'
 import {
   isPatchHeaderLine,
   parseUnifiedDiff,
@@ -20,7 +28,7 @@ import {
   type FileDiff
 } from '../../../shared/diff'
 import { worktreeBasePath, type ResolvedLocation } from '../../../shared/worktree-location'
-import { sortChangedFiles } from '../../../shared/working-tree'
+import { sortChangedFiles, stagePathsFor } from '../../../shared/working-tree'
 import type { GitRunner } from './git-runner'
 import { FETCH_TIMEOUT_MS } from './git-executor'
 import {
@@ -39,6 +47,7 @@ import {
   parseCommit,
   parseCommitLog,
   parseRemoteBranchList,
+  parseStashList,
   parseStatus,
   parseStatusV2,
   parseUpstreamTrack,
@@ -46,6 +55,20 @@ import {
 } from './porcelain'
 
 export const DEFAULT_REFRESH_CONCURRENCY = 6
+
+/**
+ * Baseline `BranchSwitchInputs` for `planBranchSwitch`'s early returns:
+ * whichever check short-circuits overrides only the fields it actually
+ * learned, and every check after it would have used these same defaults
+ * anyway (a check that never ran can't have found a conflict).
+ */
+const NO_CONFLICT: BranchSwitchInputs = {
+  branchExists: true,
+  inUseAt: null,
+  hasUnmerged: false,
+  changedPaths: [],
+  diffPaths: []
+}
 
 /**
  * Neutralises the user's own config either side of the flag list would
@@ -360,6 +383,130 @@ export class GitService {
       )
     }
     throw new AppError(result.stderr.trim() || 'git push failed', 'git-command-failed')
+  }
+
+  /**
+   * What switching `worktreePath` to `branch` would do, gathered from data
+   * this pre-checks rather than reads out of `git switch`'s stderr — see
+   * `decideBranchSwitch` for the decision itself. Each check short-circuits
+   * the ones after it: a branch that doesn't exist, for instance, never gets
+   * as far as a status call, since nothing downstream of it can change that
+   * answer.
+   */
+  async planBranchSwitch(
+    repoPath: string,
+    worktreePath: string,
+    branch: string
+  ): Promise<BranchSwitchPlan> {
+    const branchExists = await this.branchExists(repoPath, branch)
+    if (!branchExists) return decideBranchSwitch({ ...NO_CONFLICT, branchExists })
+
+    const { stdout: worktreeListOut } = await this.#git.runOrThrow(
+      ['worktree', 'list', '--porcelain'],
+      { repoPath }
+    )
+    const inUseAt =
+      worktreeUsingBranch(parseWorktreeList(worktreeListOut), branch, worktreePath)?.path ?? null
+    if (inUseAt) return decideBranchSwitch({ ...NO_CONFLICT, branchExists, inUseAt })
+
+    const changes = await this.workingTreeChanges(worktreePath)
+    const hasUnmerged = changes.files.some((file) => file.kind === 'unmerged')
+    const changedPaths = changes.files
+      .filter((file) => file.kind !== 'ignored')
+      .flatMap(stagePathsFor)
+    if (hasUnmerged || changedPaths.length === 0) {
+      return decideBranchSwitch({ ...NO_CONFLICT, branchExists, hasUnmerged, changedPaths })
+    }
+
+    const { stdout } = await this.#git.runOrThrow(
+      ['diff', '--name-only', '-z', 'HEAD', branch, '--'],
+      { repoPath: worktreePath }
+    )
+    return decideBranchSwitch({
+      branchExists,
+      inUseAt,
+      hasUnmerged,
+      changedPaths,
+      diffPaths: parseNameOnlyZ(stdout)
+    })
+  }
+
+  /**
+   * `git switch <branch>`, run once `planBranchSwitch` has cleared it — never
+   * `--ignore-other-worktrees` (verified: it succeeds and leaves two
+   * worktrees on one branch, the exact failure mode Arborist exists to
+   * prevent) and never a force/discard variant.
+   */
+  async switchBranch(worktreePath: string, branch: string): Promise<void> {
+    this.#suppressWatcher(worktreePath)
+    await this.#git.runOrThrow(['switch', branch], { repoPath: worktreePath })
+  }
+
+  /**
+   * `git stash push`, returning whether anything was actually stashed:
+   * `stash push` exits 0 with nothing stashed when the tree is already
+   * clean, so "did it stash?" needs this pre-check rather than the exit code.
+   */
+  async stashPush(
+    worktreePath: string,
+    message: string,
+    includeUntracked: boolean
+  ): Promise<boolean> {
+    const dirty = await this.isDirty(worktreePath)
+    if (!dirty) return false
+
+    this.#suppressWatcher(worktreePath)
+    await this.#git.runOrThrow(
+      [
+        'stash',
+        'push',
+        ...(includeUntracked ? ['--include-untracked'] : []),
+        ...(message.trim() ? ['-m', message.trim()] : [])
+      ],
+      { repoPath: worktreePath }
+    )
+    return true
+  }
+
+  /** For the Working Tree tab's Stash section. */
+  async listStashes(worktreePath: string): Promise<StashEntry[]> {
+    const { stdout } = await this.#git.runOrThrow(['stash', 'list', '--format=%gd%x00%s%x00%aI'], {
+      repoPath: worktreePath
+    })
+    return parseStashList(stdout)
+  }
+
+  /**
+   * `git stash pop`. A conflicting pop exits 1 and leaves `UU` entries in
+   * status *without* dropping the stash — the worst outcome would be
+   * resolving that ambiguity by auto-retrying or auto-dropping, so this
+   * classifies the failure by re-reading status rather than by guessing from
+   * the exit code, and leaves the conflict for the caller to surface
+   * honestly (full conflict-resolution UI is #53, not this phase).
+   */
+  async stashPop(worktreePath: string, ref: string): Promise<{ conflict: boolean }> {
+    return this.#stashApplyLike(worktreePath, ['stash', 'pop', ref])
+  }
+
+  /** `git stash apply`: like `stashPop`, but never drops the stash either way. */
+  async stashApply(worktreePath: string, ref: string): Promise<{ conflict: boolean }> {
+    return this.#stashApplyLike(worktreePath, ['stash', 'apply', ref])
+  }
+
+  async #stashApplyLike(worktreePath: string, args: string[]): Promise<{ conflict: boolean }> {
+    this.#suppressWatcher(worktreePath)
+    const result = await this.#git.run(args, { repoPath: worktreePath })
+    if (result.exitCode === 0) return { conflict: false }
+
+    const status = await this.workingTreeChanges(worktreePath)
+    if (status.files.some((file) => file.kind === 'unmerged')) return { conflict: true }
+
+    throw new AppError(result.stderr.trim() || `git ${args.join(' ')} failed`, 'git-command-failed')
+  }
+
+  async stashDrop(worktreePath: string, ref: string): Promise<void> {
+    this.#suppressWatcher(worktreePath)
+    await this.#git.runOrThrow(['stash', 'drop', ref], { repoPath: worktreePath })
   }
 
   /**

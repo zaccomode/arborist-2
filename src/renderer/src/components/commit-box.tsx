@@ -28,12 +28,15 @@ export function CommitBox({
   repositoryId,
   repoPath,
   worktree,
-  stagedCount
+  stagedCount,
+  focusToken
 }: {
   repositoryId: string
   repoPath: string
   worktree: Worktree
   stagedCount: number
+  /** Bumped to focus the textarea — see "Commit first" on the switch-branch dialog. */
+  focusToken?: number
 }): React.JSX.Element {
   const worktreePath = worktree.path
   const queryClient = useQueryClient()
@@ -45,6 +48,13 @@ export function CommitBox({
   const [error, setError] = useState<string | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const unsaved = useRef<string | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    // 0 is the token's own starting value, not a real request — this only
+    // fires once something has actually asked for focus.
+    if (focusToken) textareaRef.current?.focus()
+  }, [focusToken])
 
   const persistDraft = (value: string): void => {
     unsaved.current = null
@@ -123,6 +133,7 @@ export function CommitBox({
   return (
     <div className="mt-4 border-t pt-4">
       <Textarea
+        ref={textareaRef}
         data-testid="commit-message"
         className="field-sizing-fixed h-20 resize-y bg-transparent"
         placeholder="Write your commit message…"

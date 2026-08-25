@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { CircleAlert, GitBranch, Hash, House, MoreVertical, RefreshCw } from 'lucide-react'
 import type { Worktree, WorktreeTab } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
@@ -14,6 +15,7 @@ import { Chip } from '@/components/chip'
 import { NotesEditor } from '@/components/notes-editor'
 import { OpenInGrid } from '@/components/open-in-grid'
 import { RecentCommits } from '@/components/recent-commits'
+import { SwitchBranchDialog } from '@/components/switch-branch-dialog'
 import { WorkingTreeTab } from '@/components/working-tree-tab'
 import { invoke } from '@/api/client'
 import { useWorktreeTab } from '@/state/selection'
@@ -35,6 +37,16 @@ export function WorktreeDetail({
 }): React.JSX.Element {
   const hash = worktree.status?.lastCommit?.shortHash ?? worktree.head?.slice(0, 7) ?? null
   const [tab, setTab] = useWorktreeTab(project.id, worktree.path)
+  const [switchOpen, setSwitchOpen] = useState(false)
+  // Bumped rather than a plain boolean, so a second "Commit first" while the
+  // Working Tree tab is already open still refocuses the box — a boolean
+  // that was already true wouldn't re-trigger the effect that reads it.
+  const [focusCommitToken, setFocusCommitToken] = useState(0)
+
+  const handleCommitFirst = (): void => {
+    setTab('working-tree')
+    setFocusCommitToken((token) => token + 1)
+  }
 
   return (
     <div className="flex h-full flex-col" data-testid="worktree-detail">
@@ -74,6 +86,9 @@ export function WorktreeDetail({
             <DropdownMenuContent align="end">
               <DropdownMenuItem disabled={worktree.prunable} onSelect={onRunSetup}>
                 Run setup
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={worktree.prunable} onSelect={() => setSwitchOpen(true)}>
+                Switch branch…
               </DropdownMenuItem>
               {/* The repository's own worktree cannot be removed, so the action
                   is absent rather than present and failing. */}
@@ -156,7 +171,12 @@ export function WorktreeDetail({
         </TabsContent>
 
         <TabsContent value="working-tree" className="min-h-0 flex-1 overflow-y-auto p-6 pt-4">
-          <WorkingTreeTab repositoryId={project.id} repoPath={project.path} worktree={worktree} />
+          <WorkingTreeTab
+            repositoryId={project.id}
+            repoPath={project.path}
+            worktree={worktree}
+            focusCommitToken={focusCommitToken}
+          />
         </TabsContent>
 
         <TabsContent value="commit-graph" className="min-h-0 flex-1 overflow-y-auto p-6 pt-4">
@@ -167,6 +187,15 @@ export function WorktreeDetail({
           />
         </TabsContent>
       </Tabs>
+
+      <SwitchBranchDialog
+        open={switchOpen}
+        onOpenChange={setSwitchOpen}
+        repoPath={project.path}
+        projectId={project.id}
+        worktree={worktree}
+        onCommitFirst={handleCommitFirst}
+      />
     </div>
   )
 }
