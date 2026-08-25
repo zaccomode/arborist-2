@@ -50,4 +50,15 @@ describe('workingTreeChanges', () => {
 
     expect(changes.files).toEqual([])
   }, 30_000)
+
+  it('orders files alphabetically rather than tracked-before-untracked', async () => {
+    // git's own output groups tracked changes before untracked ones, so an
+    // untracked file sorting earlier than a tracked one is what this proves.
+    await fs.writeFile(join(fixture.repoPath, 'README.md'), 'edited\n', 'utf8')
+    await fs.writeFile(join(fixture.repoPath, 'AAA-untracked.txt'), 'new\n', 'utf8')
+
+    const changes = await service.workingTreeChanges(fixture.repoPath)
+
+    expect(changes.files.map((file) => file.path)).toEqual(['AAA-untracked.txt', 'README.md'])
+  }, 30_000)
 })

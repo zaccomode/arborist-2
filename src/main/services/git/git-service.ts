@@ -19,6 +19,7 @@ import {
   type FileDiff
 } from '../../../shared/diff'
 import { worktreeBasePath, type ResolvedLocation } from '../../../shared/worktree-location'
+import { sortChangedFiles } from '../../../shared/working-tree'
 import type { GitRunner } from './git-runner'
 import { FETCH_TIMEOUT_MS } from './git-executor'
 import {
@@ -246,7 +247,11 @@ export class GitService {
       ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all'],
       { repoPath: worktreePath }
     )
-    return parseStatusV2(stdout)
+    const changes = parseStatusV2(stdout)
+    // `status` groups tracked changes before untracked ones rather than
+    // sorting by path, which the Working Tree tab shouldn't surface as row
+    // order.
+    return { ...changes, files: sortChangedFiles(changes.files) }
   }
 
   /**

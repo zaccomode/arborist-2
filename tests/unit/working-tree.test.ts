@@ -3,6 +3,7 @@ import {
   diffSideFor,
   isInspectable,
   pushLabel,
+  sortChangedFiles,
   splitDisplayPath,
   stagedFileCount,
   stagePathsFor,
@@ -136,6 +137,23 @@ describe('stagePathsFor', () => {
       'old.txt',
       'new.txt'
     ])
+  })
+})
+
+describe('sortChangedFiles', () => {
+  it('orders files alphabetically by path, ignoring their status grouping', () => {
+    const files = [
+      file({ path: 'z.txt', kind: 'untracked' }),
+      file({ path: 'a.txt', worktree: 'M' }),
+      file({ path: 'm.txt', index: 'A' })
+    ]
+    expect(sortChangedFiles(files).map((f) => f.path)).toEqual(['a.txt', 'm.txt', 'z.txt'])
+  })
+
+  it('does not mutate the input array', () => {
+    const files = [file({ path: 'b.txt' }), file({ path: 'a.txt' })]
+    sortChangedFiles(files)
+    expect(files.map((f) => f.path)).toEqual(['b.txt', 'a.txt'])
   })
 })
 

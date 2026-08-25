@@ -77,6 +77,16 @@ export function diffSideFor(file: ChangedFile): 'staged' | 'unstaged' | 'untrack
   return file.index !== '.' ? 'staged' : 'unstaged'
 }
 
+/**
+ * The Working Tree tab's row order: alphabetical by path, regardless of
+ * status. `git status` groups tracked changes before untracked ones, which
+ * reads as an arbitrary shuffle rather than a sort — this ignores that
+ * grouping entirely rather than sorting within it.
+ */
+export function sortChangedFiles(files: ChangedFile[]): ChangedFile[] {
+  return [...files].sort((a, b) => a.path.localeCompare(b.path))
+}
+
 /** The paths to pass `git add`/`git restore --staged`: both sides of a rename, or just the path. */
 export function stagePathsFor(file: ChangedFile): string[] {
   return file.origPath && file.origPath !== file.path ? [file.origPath, file.path] : [file.path]
