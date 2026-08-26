@@ -119,6 +119,7 @@ export function CommitInspector({
           <DiffPanel
             request={request}
             label={splitDisplayPath(selectedFile.path).name}
+            hasBothSides={false}
             onClose={onClose}
           />
         </div>
