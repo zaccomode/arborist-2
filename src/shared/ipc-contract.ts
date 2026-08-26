@@ -109,20 +109,41 @@ export interface IpcInvokeContract {
    * What switching this worktree to `branch` would do — every failure mode
    * `git switch` can hit is pre-checkable, so the renderer asks this before
    * ever running the switch itself. See `BranchSwitchPlan`.
+   *
+   * `create`, non-null, is the switch-branch picker's "create a new branch"
+   * option: `branch` not existing yet is then expected rather than the
+   * `branch-missing` outcome, and `startPoint` (null for HEAD) is what it
+   * would be created from.
    */
   'branches:switchPrecheck': {
-    args: [repoPath: string, worktreePath: string, branch: string]
+    args: [
+      repoPath: string,
+      worktreePath: string,
+      branch: string,
+      create: { startPoint: string | null } | null
+    ]
     result: BranchSwitchPlan
   }
-  /** Runs the switch a cleared `branches:switchPrecheck` described. */
-  'branches:switch': { args: [worktreePath: string, branch: string]; result: void }
+  /**
+   * Runs the switch a cleared `branches:switchPrecheck` described. `create`
+   * must match whatever was passed to the precheck: runs `git switch -c
+   * <branch> [<startPoint>]` instead of a plain switch.
+   */
+  'branches:switch': {
+    args: [worktreePath: string, branch: string, create: { startPoint: string | null } | null]
+    result: void
+  }
   /**
    * `git stash push`. Returns whether anything was actually stashed — a
-   * clean tree exits 0 with nothing stashed, so the result can't be read off
-   * success alone.
+   * clean tree (or, with `paths`, a clean selection) exits 0 with nothing
+   * stashed, so the result can't be read off success alone.
+   *
+   * `paths`, non-null, limits the stash to those paths — the Changed Files
+   * header's "Stash selected files" — leaving every other path's
+   * staged/unstaged state untouched.
    */
   'stash:push': {
-    args: [worktreePath: string, message: string, includeUntracked: boolean]
+    args: [worktreePath: string, message: string, includeUntracked: boolean, paths: string[] | null]
     result: boolean
   }
   /** For the Working Tree tab's Stash section. */

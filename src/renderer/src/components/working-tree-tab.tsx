@@ -33,6 +33,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { CommitBox } from '@/components/commit-box'
 import { FilePathCell } from '@/components/file-path-cell'
+import { NewStashMenu } from '@/components/new-stash-menu'
 import { StashSection } from '@/components/stash-section'
 import { invoke } from '@/api/client'
 import { queryKeys, useWorkingTree } from '@/api/queries'
@@ -232,6 +233,7 @@ export function WorkingTreeTab({
               aria-label="All changed files"
             />
             Changed Files
+            <NewStashMenu repoPath={repoPath} worktreePath={worktreePath} files={files} />
           </div>
           <ul data-testid="working-tree-files" className="divide-y">
             {files.map((file) => (

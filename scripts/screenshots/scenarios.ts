@@ -1300,6 +1300,54 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'switch-branch-create',
+    description:
+      'Creating a new branch from the switch-branch picker (#69 review): ' +
+      'the empty state\'s hint text before anything is typed — this fixture ' +
+      'has no other local branches to pick, so that empty state is what ' +
+      'greets the picker — the "Create branch" row that then appears once ' +
+      'a typed name matches no existing branch, the Base picker it reveals ' +
+      '(defaulting to HEAD), and the worktree afterwards, now checked out ' +
+      'on the branch that was just created.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'Worktree actions' }).click()
+      await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
+      await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
+      await window.getByRole('combobox').first().click()
+      await window
+        .getByText('No matching branch. Type a name to create one.')
+        .waitFor({ state: 'visible' })
+      await shot('empty')
+
+      await window.getByPlaceholder('Search branches…').fill('feature/new-thing')
+      await window.getByText('Create branch “feature/new-thing”').waitFor({
+        state: 'visible'
+      })
+      await shot('create-option')
+
+      await window.getByText('Create branch “feature/new-thing”').click()
+      await window.getByText('New branch — created from HEAD (main).').waitFor({
+        state: 'visible'
+      })
+      await shot('form')
+
+      await window.getByRole('button', { name: 'Create and switch' }).click()
+      await window
+        .getByText('Created feature/new-thing and switched to it.')
+        .waitFor({ state: 'visible' })
+      await shot('after')
+    }
+  },
+  {
     name: 'stash-list',
     description:
       "The Working Tree tab's Stash section (#51): empty, one entry after " +
@@ -1321,7 +1369,10 @@ export const scenarios: Scenario[] = [
       await window.getByText('No stashes.').waitFor({ state: 'visible' })
       await shot('empty')
 
-      await window.getByRole('button', { name: 'Stash changes…' }).click()
+      // Nothing is checked for staging, so the menu falls back to "Stash all
+      // changes…" — the pre-existing one-click behaviour this replaces.
+      await window.getByRole('button', { name: 'Changed files actions' }).click()
+      await window.getByRole('menuitem', { name: 'Stash all changes…' }).click()
       await window.getByLabel('Message').fill('Keep this for later')
       await window.getByRole('button', { name: 'Stash', exact: true }).click()
       await window.getByTestId('stash-list').waitFor({ state: 'visible' })
@@ -1344,6 +1395,42 @@ export const scenarios: Scenario[] = [
       await window.getByText('That left conflicts to resolve').waitFor({ state: 'visible' })
       await window.getByText('UU', { exact: true }).waitFor({ state: 'visible' })
       await shot('pop-conflict')
+    }
+  },
+  {
+    name: 'stash-selected-files',
+    description:
+      'The Changed Files header\'s "Stash…" menu (#69 review), scoped to ' +
+      'whatever is checked: the menu offering to stash just the one staged ' +
+      'file, and the working tree after — the staged file gone, the ' +
+      'unstaged one untouched, exactly what `git stash push -- <pathspec>` ' +
+      'promises.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await writeFile(join(fixture.repoPath, 'staged.txt'), 'staged content\n', 'utf8')
+      await writeFile(join(fixture.repoPath, 'README.md'), '# fixture\nunstaged edit\n', 'utf8')
+      await fixture.git(['add', 'staged.txt'])
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+      await window
+        .locator('[aria-label="staged.txt staging state"][data-state="checked"]')
+        .waitFor({ state: 'visible' })
+      await shot('before')
+
+      await window.getByRole('button', { name: 'Changed files actions' }).click()
+      await window.getByRole('menuitem', { name: 'Stash 1 selected file…' }).click()
+      await shot('dialog')
+
+      await window.getByRole('button', { name: 'Stash', exact: true }).click()
+      await window.getByTestId('stash-list').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'README.md', exact: true }).waitFor()
+      await shot('after')
     }
   }
 ]

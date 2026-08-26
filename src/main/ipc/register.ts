@@ -123,12 +123,14 @@ export function registerIpcHandlers({
     gitService.push(worktreePath, branch, setUpstream)
   )
   handle('workingTree:hasIdentity', (worktreePath) => gitService.hasIdentity(worktreePath))
-  handle('branches:switchPrecheck', (repoPath, worktreePath, branch) =>
-    gitService.planBranchSwitch(repoPath, worktreePath, branch)
+  handle('branches:switchPrecheck', (repoPath, worktreePath, branch, create) =>
+    gitService.planBranchSwitch(repoPath, worktreePath, branch, create)
   )
-  handle('branches:switch', (worktreePath, branch) => gitService.switchBranch(worktreePath, branch))
-  handle('stash:push', (worktreePath, message, includeUntracked) =>
-    gitService.stashPush(worktreePath, message, includeUntracked)
+  handle('branches:switch', (worktreePath, branch, create) =>
+    gitService.switchBranch(worktreePath, branch, create)
+  )
+  handle('stash:push', (worktreePath, message, includeUntracked, paths) =>
+    gitService.stashPush(worktreePath, message, includeUntracked, paths)
   )
   handle('stash:list', (worktreePath) => gitService.listStashes(worktreePath))
   handle('stash:pop', (worktreePath, ref) => gitService.stashPop(worktreePath, ref))
