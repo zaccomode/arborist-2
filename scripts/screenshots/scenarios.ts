@@ -1313,7 +1313,7 @@ export const scenarios: Scenario[] = [
     }
   },
   {
-    name: 'conflict-editor-setting',
+    name: 'conflict-editor-default',
     description:
       'Project settings’ Presets tab: the per-project conflict-editor ' +
       'override (#53), showing what "Inherit" resolves to on a stock install, ' +
