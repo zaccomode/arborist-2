@@ -1330,11 +1330,11 @@ export const scenarios: Scenario[] = [
       await window.getByRole('button', { name: 'Project settings' }).click()
       await window.getByRole('tab', { name: 'Presets' }).click()
       await window.getByTestId('project-conflict-editor').waitFor({ state: 'visible' })
-      await shot('inherit')
+      await shot('current')
 
       await window.getByLabel('Conflict editor').click()
       await window.getByRole('listbox').waitFor({ state: 'visible' })
-      await shot('options')
+      await shot('picker')
     }
   }
 ]
