@@ -109,7 +109,15 @@ async function capture(scenario: Scenario, outDir: string): Promise<void> {
   const workDir = join(tmpdir(), 'arborist-shot-work', scenario.name)
   await rm(workDir, { recursive: true, force: true })
   await mkdir(workDir, { recursive: true })
-  const env = (await scenario.setup?.({ userDataDir, workDir })) ?? {}
+  // Off by default: a watcher makes a capture race a filesystem event, which
+  // reads as a flaky styling bug rather than the timing issue it is. The one
+  // scenario that means to show the watcher working opts back in by
+  // returning `ARBORIST_DISABLE_WATCHER: '0'` from its own `setup`, which
+  // overrides this default below.
+  const env = {
+    ARBORIST_DISABLE_WATCHER: '1',
+    ...(await scenario.setup?.({ userDataDir, workDir }))
+  }
   const app = await launch(userDataDir, env)
 
   try {

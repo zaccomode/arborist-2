@@ -193,7 +193,26 @@ export interface IpcInvokeContract {
   'updates:check': { args: []; result: UpdateStatus }
   /** Restarts into a staged update. The only thing in the app that quits it. */
   'updates:install': { args: []; result: void }
+  /**
+   * Tells main which worktree's filesystem and git metadata to watch — the
+   * selected worktree only, never every worktree or every project. `null`
+   * stops watching. Driven by a `useEffect` on the selected worktree; main
+   * owns one watcher at a time and replaces it on each call. See
+   * `worktree:changed` for what a watched change produces.
+   */
+  'watch:select': { args: [worktreePath: string | null]; result: void }
 }
+
+/**
+ * Why `worktree:changed` fired, so the renderer can invalidate precisely
+ * rather than refetching everything on every push: `worktree` (a file inside
+ * the working tree changed) means status alone is stale; `index` (the
+ * resolved-per-worktree index file, see `worktree-watcher.ts`) means status
+ * and diffs; `head`/`refs` (HEAD, refs/heads, or packed-refs, all under the
+ * resolved git-common-dir) mean status, commits and the worktree list, since
+ * those move the branch pointer itself.
+ */
+export type WorktreeChangeReason = 'worktree' | 'index' | 'head' | 'refs'
 
 export type IpcChannel = keyof IpcInvokeContract
 
@@ -264,7 +283,8 @@ const CHANNELS: Record<IpcChannel, true> = {
   'updates:support': true,
   'updates:status': true,
   'updates:check': true,
-  'updates:install': true
+  'updates:install': true,
+  'watch:select': true
 }
 
 export const IPC_CHANNELS: readonly IpcChannel[] = Object.keys(CHANNELS) as IpcChannel[]
@@ -281,6 +301,12 @@ export interface IpcEventContract {
   'app:openSettings': void
   /** Every updater transition, so the toast follows a download it did not start. */
   'updates:changed': UpdateStatus
+  /**
+   * A change detected under the watched worktree — see `watch:select` and
+   * `WorktreeChangeReason`. Only ever describes the one worktree main is
+   * currently watching.
+   */
+  'worktree:changed': { worktreePath: string; reason: WorktreeChangeReason }
 }
 
 export type IpcEventChannel = keyof IpcEventContract
@@ -291,7 +317,8 @@ const EVENT_CHANNELS: Record<IpcEventChannel, true> = {
   'app:refresh': true,
   'app:newWorktree': true,
   'app:openSettings': true,
-  'updates:changed': true
+  'updates:changed': true,
+  'worktree:changed': true
 }
 
 export const IPC_EVENT_CHANNELS: readonly IpcEventChannel[] = Object.keys(

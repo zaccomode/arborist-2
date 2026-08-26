@@ -117,13 +117,24 @@ function patchHeaderLineIndices(
  * comes back with a `statusError` and no status, and the refresh still
  * returns everything else.
  */
+/**
+ * Opens a suppression window on the working-tree watcher before a mutating
+ * operation runs, so Arborist's own write doesn't get read back as an
+ * external change. Defaults to a no-op: most callers of `GitService`
+ * (tests, anything constructed before the watcher exists) have no watcher to
+ * suppress.
+ */
+export type SuppressWatcher = (worktreePath: string) => void
+
 export class GitService {
   #git: GitRunner
   /** One in-flight fetch per repository, so concurrent callers share it. */
   #fetching = new Map<string, Promise<void>>()
+  #suppressWatcher: SuppressWatcher
 
-  constructor(git: GitRunner) {
+  constructor(git: GitRunner, suppressWatcher: SuppressWatcher = () => {}) {
     this.#git = git
+    this.#suppressWatcher = suppressWatcher
   }
 
   /**
@@ -293,10 +304,12 @@ export class GitService {
    * into "will be in the next commit" — not just new content.
    */
   async stageFiles(worktreePath: string, paths: string[]): Promise<void> {
+    this.#suppressWatcher(worktreePath)
     await this.#git.runOrThrow(['add', '--', ...paths], { repoPath: worktreePath })
   }
 
   async unstageFiles(worktreePath: string, paths: string[]): Promise<void> {
+    this.#suppressWatcher(worktreePath)
     await this.#git.runOrThrow(['restore', '--staged', '--', ...paths], { repoPath: worktreePath })
   }
 
@@ -305,6 +318,7 @@ export class GitService {
     worktreePath: string,
     paths: { tracked: string[]; untracked: string[] }
   ): Promise<void> {
+    this.#suppressWatcher(worktreePath)
     if (paths.tracked.length > 0) {
       await this.#git.runOrThrow(['restore', '--', ...paths.tracked], { repoPath: worktreePath })
     }
@@ -321,6 +335,7 @@ export class GitService {
    * button from status rather than letting this fail.
    */
   async commit(worktreePath: string, message: string, amend: boolean): Promise<void> {
+    this.#suppressWatcher(worktreePath)
     await this.#git.runOrThrow(['commit', '-m', message, ...(amend ? ['--amend'] : [])], {
       repoPath: worktreePath
     })
@@ -517,6 +532,7 @@ export class GitService {
       throw new AppError('This file changed since the diff was shown.', 'diff-stale')
     }
 
+    this.#suppressWatcher(worktreePath)
     const headerBytes = Buffer.concat(
       patchHeaderLineIndices(buffer, lineRanges, parsedFile.hunks[0].lineRange.start).map((i) =>
         sliceLine(buffer, lineRanges, i)

@@ -11,6 +11,7 @@ import type { GitService } from '../services/git/git-service'
 import type { PresetService } from '../services/presets'
 import type { AutomationRunner } from '../services/automation'
 import type { UpdateService } from '../services/updates'
+import type { WorktreeWatcher } from '../services/watch/worktree-watcher'
 import { commitDraftKey, worktreeNoteKey } from '../../shared/persisted'
 import { resolveWorktreeLocation } from '../../shared/worktree-location'
 import { applicationPickerOptions } from '../services/system/pickers'
@@ -39,6 +40,7 @@ export interface IpcDeps {
   presets: PresetService
   automation: AutomationRunner
   updates: UpdateService
+  watcher: WorktreeWatcher
 }
 
 export function registerIpcHandlers({
@@ -48,7 +50,8 @@ export function registerIpcHandlers({
   gitService,
   presets,
   automation,
-  updates
+  updates,
+  watcher
 }: IpcDeps): void {
   handle('system:pickFolder', async () => {
     // A native dialog cannot be driven by Playwright, so e2e tests and
@@ -266,4 +269,6 @@ export function registerIpcHandlers({
   handle('updates:status', () => updates.status)
   handle('updates:check', () => updates.check(true))
   handle('updates:install', () => updates.install())
+
+  handle('watch:select', (worktreePath) => watcher.watch(worktreePath))
 }
