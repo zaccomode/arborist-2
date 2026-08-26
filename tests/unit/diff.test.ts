@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  diffRequestIdentity,
   diffStats,
   isHunklessChange,
   isPatchHeaderLine,
@@ -7,6 +8,7 @@ import {
   syntheticNewFileDiff,
   truncateFileDiff,
   wholeFilePathsFor,
+  withDiffSide,
   type DiffHunk,
   type DiffRequest,
   type FileDiff
@@ -414,5 +416,89 @@ describe('wholeFilePathsFor', () => {
       origPath: 'f.txt'
     }
     expect(wholeFilePathsFor(request)).toEqual(['f.txt'])
+  })
+})
+
+describe('diffRequestIdentity', () => {
+  it('is the same identity for the unstaged and staged sides of one file', () => {
+    const unstaged: DiffRequest = { kind: 'unstaged', worktreePath: '/repo', path: 'f.txt' }
+    const staged: DiffRequest = { kind: 'staged', worktreePath: '/repo', path: 'f.txt' }
+    expect(diffRequestIdentity(unstaged)).toBe(diffRequestIdentity(staged))
+  })
+
+  it('differs for two different paths', () => {
+    const a: DiffRequest = { kind: 'unstaged', worktreePath: '/repo', path: 'a.txt' }
+    const b: DiffRequest = { kind: 'unstaged', worktreePath: '/repo', path: 'b.txt' }
+    expect(diffRequestIdentity(a)).not.toBe(diffRequestIdentity(b))
+  })
+
+  it('differs for the same path in two different worktrees', () => {
+    const a: DiffRequest = { kind: 'unstaged', worktreePath: '/repo-a', path: 'f.txt' }
+    const b: DiffRequest = { kind: 'unstaged', worktreePath: '/repo-b', path: 'f.txt' }
+    expect(diffRequestIdentity(a)).not.toBe(diffRequestIdentity(b))
+  })
+
+  it('differs between an untracked file and a tracked file of the same path', () => {
+    const untracked: DiffRequest = { kind: 'untracked', worktreePath: '/repo', path: 'f.txt' }
+    const tracked: DiffRequest = { kind: 'unstaged', worktreePath: '/repo', path: 'f.txt' }
+    expect(diffRequestIdentity(untracked)).not.toBe(diffRequestIdentity(tracked))
+  })
+
+  it('differs between two commits, and between two paths within one commit', () => {
+    const commitA: DiffRequest = { kind: 'commit', repoPath: '/repo', hash: 'aaa', path: 'f.txt' }
+    const commitB: DiffRequest = { kind: 'commit', repoPath: '/repo', hash: 'bbb', path: 'f.txt' }
+    const otherPath: DiffRequest = { kind: 'commit', repoPath: '/repo', hash: 'aaa', path: 'g.txt' }
+    expect(diffRequestIdentity(commitA)).not.toBe(diffRequestIdentity(commitB))
+    expect(diffRequestIdentity(commitA)).not.toBe(diffRequestIdentity(otherPath))
+  })
+})
+
+describe('withDiffSide', () => {
+  it('returns the request unchanged when no manual side is picked', () => {
+    const request: DiffRequest = { kind: 'unstaged', worktreePath: '/repo', path: 'f.txt' }
+    expect(withDiffSide(request, null)).toBe(request)
+  })
+
+  it('overrides an unstaged request with the manually picked staged side', () => {
+    const request: DiffRequest = { kind: 'unstaged', worktreePath: '/repo', path: 'f.txt' }
+    expect(withDiffSide(request, 'staged')).toEqual({
+      kind: 'staged',
+      worktreePath: '/repo',
+      path: 'f.txt'
+    })
+  })
+
+  it('overrides a staged request with the manually picked unstaged side', () => {
+    const request: DiffRequest = { kind: 'staged', worktreePath: '/repo', path: 'f.txt' }
+    expect(withDiffSide(request, 'unstaged')).toEqual({
+      kind: 'unstaged',
+      worktreePath: '/repo',
+      path: 'f.txt'
+    })
+  })
+
+  it('preserves origPath when overriding the side', () => {
+    const request: DiffRequest = {
+      kind: 'unstaged',
+      worktreePath: '/repo',
+      path: 'new.txt',
+      origPath: 'old.txt'
+    }
+    expect(withDiffSide(request, 'staged')).toEqual({
+      kind: 'staged',
+      worktreePath: '/repo',
+      path: 'new.txt',
+      origPath: 'old.txt'
+    })
+  })
+
+  it('ignores a manual side for an untracked file, which has none to pick', () => {
+    const request: DiffRequest = { kind: 'untracked', worktreePath: '/repo', path: 'new.txt' }
+    expect(withDiffSide(request, 'staged')).toBe(request)
+  })
+
+  it('ignores a manual side for a historical commit, which has none to pick', () => {
+    const request: DiffRequest = { kind: 'commit', repoPath: '/repo', hash: 'aaa', path: 'f.txt' }
+    expect(withDiffSide(request, 'unstaged')).toBe(request)
   })
 })
