@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import type { RemoteBranch, Worktree } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
 import type { DiffRequest } from '@shared/diff'
-import { splitDisplayPath } from '@shared/working-tree'
+import { splitDisplayPath, stagingState } from '@shared/working-tree'
 import { useQueryClient } from '@tanstack/react-query'
 import { Shell } from '@/components/shell'
 import { Sidebar } from '@/components/sidebar'
@@ -112,6 +112,11 @@ function App(): React.JSX.Element | null {
           origPath: inspectorFile?.origPath ?? null
         }
       : null
+  // Whether the diff panel needs a way to switch sides: only relevant for a
+  // file with real content on both — a partially-staged `MM` (or an `AM`
+  // partially-staged new file), the case `diffSideFor` can only pick one
+  // side of. `stagingState`'s `indeterminate` is exactly that condition.
+  const diffHasBothSides = inspectorFile ? stagingState(inspectorFile) === 'indeterminate' : false
 
   useEffect(() => {
     void invoke('selection:get').then((data) => useSelection.getState().hydrate(data))
@@ -359,6 +364,13 @@ function App(): React.JSX.Element | null {
                 onClose={closeInspector}
               />
             )
+          diffRequest && (
+            <DiffPanel
+              request={diffRequest}
+              label={splitDisplayPath(diffRequest.path).name}
+              hasBothSides={diffHasBothSides}
+              onClose={closeInspector}
+            />
           )
         }
       />

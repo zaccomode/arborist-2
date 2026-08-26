@@ -970,9 +970,13 @@ export const scenarios: Scenario[] = [
     description:
       'Hunk-level staging (#49): a two-hunk unstaged diff, staging just ' +
       'the top hunk — the file row goes indeterminate and that hunk drops ' +
-      'out of the unstaged view — then switching to the staged side and ' +
-      'unstaging it again, back to the same two-hunk unstaged view it ' +
-      'started from.',
+      'out of the unstaged view, and the panel offers Unstaged/Staged tabs ' +
+      'now that the file has content on both sides. Switching to Staged ' +
+      'in place shows the hunk that moved, without closing and reopening ' +
+      'the panel (#67 — previously the only way back to the unstaged side, ' +
+      'once anything was staged, was gone for good); switching back and ' +
+      'unstaging it there returns to the same two-hunk unstaged view it ' +
+      'started from, tabs gone again since only one side has content.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -1006,18 +1010,26 @@ export const scenarios: Scenario[] = [
       // once the refetch lands — the clearest signal the panel, not just the
       // row checkbox, has caught up.
       await window.getByText('inserted near the top').waitFor({ state: 'detached' })
+      // The file now has content on both sides, so the panel offers its own
+      // way to see the other one — no more relying on re-clicking the row,
+      // which can only ever reopen the side `diffSideFor` prefers.
+      await window.getByRole('tab', { name: 'Staged', exact: true }).waitFor({ state: 'visible' })
       await shot('one-staged')
 
-      await window.getByRole('button', { name: 'f.txt', exact: true }).click()
+      // Flip to the staged side in place — no closing and reopening the panel.
+      await window.getByRole('tab', { name: 'Staged', exact: true }).click()
       await window.getByRole('button', { name: 'Unstage hunk' }).waitFor({ state: 'visible' })
       await window.getByText('inserted near the top').waitFor({ state: 'visible' })
+      await shot('switched-to-staged')
 
       await window.getByRole('button', { name: 'Unstage hunk' }).click()
       await window
         .locator('[aria-label="f.txt staging state"][data-state="unchecked"]')
         .waitFor({ state: 'visible' })
-
-      await window.getByRole('button', { name: 'f.txt', exact: true }).click()
+      // Back to one side only, so the tabs go away again, and unstaging the
+      // last staged hunk from within the Staged tab lands back on the
+      // (now-current) unstaged view rather than an empty "No changes".
+      await window.getByRole('tab', { name: 'Staged', exact: true }).waitFor({ state: 'detached' })
       await window.getByRole('button', { name: 'Stage hunk' }).nth(1).waitFor({ state: 'visible' })
       await window.getByText('inserted near the top').waitFor({ state: 'visible' })
       await shot('after')
