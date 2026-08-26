@@ -71,6 +71,31 @@ export interface GraphRow<C extends GraphCommit = GraphCommit> {
   overflow: boolean
 }
 
+/**
+ * Lanes whose line reaches this row's bottom edge and so has to keep going
+ * below it: every lane merely passing through, this row's own lane (unless
+ * its first parent is dangling, which fades to a short stub instead of
+ * reaching the edge), and any `parent` edge that isn't itself dangling for
+ * the same reason. A `merge` edge never qualifies — it only ever runs from
+ * the top of the row down to the dot, nowhere near the bottom edge.
+ *
+ * Pulled out of the renderer rather than left as JSX-adjacent logic: the
+ * renderer draws each row as a fixed-height SVG *head* plus, only for these
+ * lanes, a flexible *tail* that stretches to cover however much taller a
+ * wrapped commit subject makes the row — so this is exactly the set that
+ * decides whether a row gets a tail at all, and where it draws.
+ */
+export function tailLanes<C extends GraphCommit>(row: GraphRow<C>): number[] {
+  const lanes = new Set(row.throughLanes)
+  const hasFirstParent = row.commit.parents.length > 0
+  const firstParentDangling = hasFirstParent && row.danglingParents.includes(row.commit.parents[0])
+  if (hasFirstParent && !firstParentDangling) lanes.add(row.lane)
+  for (const edge of row.edges) {
+    if (edge.kind === 'parent' && !edge.dangling) lanes.add(edge.lane)
+  }
+  return [...lanes]
+}
+
 const DEFAULT_MAX_LANES = 8
 
 /**

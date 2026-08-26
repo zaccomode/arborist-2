@@ -295,10 +295,14 @@ export const scenarios: Scenario[] = [
     name: 'commit-graph',
     description:
       'The Commit Graph tab (#52): lanes for a linear stretch and a ' +
-      "merge's visible fork and join, the commit inspector open on an " +
-      "ordinary commit and on a merge — with a file's patch open from " +
-      'inside the merge, and back again — and load more paged twice so ' +
-      'the lane fold staying continuous across pages is visible.',
+      "merge's visible fork and join, a long subject wrapping onto " +
+      'several lines rather than truncating (right where a lane is also ' +
+      'passing through, so the rail keeps tracking a taller row), the ' +
+      'commit inspector open on an ordinary commit — with a deeply ' +
+      "nested file's location truncating ahead of its name — and on a " +
+      "merge, with a file's patch open from inside the merge, and back " +
+      'again, and load more paged twice so the lane fold staying ' +
+      'continuous across pages is visible.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -321,10 +325,27 @@ export const scenarios: Scenario[] = [
 
       await fixture.git(['checkout', '-b', 'feature/graph-demo'])
       await fixture.commit('Start graph demo feature', { 'demo.ts': 'start\n' })
-      await fixture.commit('Finish graph demo feature', { 'demo.ts': 'start\nfinish\n' })
+      // Long enough to wrap onto several lines rather than truncate, and
+      // placed on the fork's own lane so the row it grows into still has
+      // main's lane passing through behind it the whole time — the case
+      // that actually exercises the rail's tail past a fixed `ROW_HEIGHT`.
+      await fixture.commit(
+        'Finish graph demo feature, with a subject long enough that it has ' +
+          'to wrap onto several lines instead of being truncated with an ' +
+          'ellipsis, so long messages stay readable in the commit graph',
+        { 'demo.ts': 'start\nfinish\n' }
+      )
 
       await fixture.git(['checkout', 'main'])
-      await fixture.commit('Tidy up docs', { 'README.md': '# fixture\ntidied\n' })
+      const deepDocPath =
+        'docs/guides/getting-started/installation/prerequisites/system-requirements.md'
+      await mkdir(
+        join(fixture.repoPath, 'docs/guides/getting-started/installation/prerequisites'),
+        {
+          recursive: true
+        }
+      )
+      await fixture.commit('Tidy up docs', { [deepDocPath]: '# Requirements\ntidied\n' })
       // A pinned date, unlike `fixture.commit()`'s own auto-incrementing one
       // — `git merge` isn't routed through that helper, and without this the
       // merge commit's hash (and its "now" timestamp) would be real
@@ -374,6 +395,56 @@ export const scenarios: Scenario[] = [
       await window.getByRole('button', { name: 'Load more' }).click()
       await window.getByRole('button', { name: 'Load more' }).waitFor({ state: 'detached' })
       await shot('paging-b')
+    }
+  },
+  {
+    name: 'commit-graph-crossing-lanes',
+    description:
+      'Two feature branches open at once and merged back one after the ' +
+      "other: the second merge's own edge has to cross the first merge's " +
+      'still-open lane on its way to a free column. The through lane ' +
+      'stays unbroken and the crossing edge visibly ducks behind it, ' +
+      'rather than the edge painting a gap into a lane it has nothing to ' +
+      'do with.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await fixture.commit('Base work', { 'a.txt': 'a\n' })
+
+      await fixture.git(['checkout', '-b', 'feature/one'])
+      await fixture.commit('Feature one, step 1', { 'f1.txt': '1\n' })
+      await fixture.commit('Feature one, step 2', { 'f1.txt': '1\n2\n' })
+
+      await fixture.git(['checkout', 'main'])
+      await fixture.commit('More main work', { 'b.txt': 'b\n' })
+
+      await fixture.git(['checkout', '-b', 'feature/two'])
+      await fixture.commit('Feature two, step 1', { 'f2.txt': '1\n' })
+
+      await fixture.git(['checkout', 'main'])
+      // Pinned dates for the same reason as the `commit-graph` scenario's
+      // own merge: `git merge` bypasses `fixture.commit()`'s auto-incrementing
+      // clock, so without this the merge commits' hashes (and timestamps)
+      // would be real wall-clock time.
+      await fixture.git(
+        ['merge', '--no-ff', 'feature/one', '-m', 'Merge feature/one into main'],
+        undefined,
+        { GIT_AUTHOR_DATE: '2026-01-05T09:10:00Z', GIT_COMMITTER_DATE: '2026-01-05T09:10:00Z' }
+      )
+      await fixture.commit('Post merge one', { 'c.txt': 'c\n' })
+      await fixture.git(
+        ['merge', '--no-ff', 'feature/two', '-m', 'Merge feature/two into main'],
+        undefined,
+        { GIT_AUTHOR_DATE: '2026-01-05T09:12:00Z', GIT_COMMITTER_DATE: '2026-01-05T09:12:00Z' }
+      )
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Commit Graph' }).click()
+      await window.getByTestId('commit-graph-rows').waitFor({ state: 'visible' })
+      await shot('graph')
     }
   },
   {
