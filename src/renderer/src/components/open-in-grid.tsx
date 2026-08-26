@@ -35,6 +35,8 @@ export function OpenInGrid({
         commitHash: worktree.status?.lastCommit?.hash ?? worktree.head,
         repoName: project.name,
         repoPath: project.path,
+        filePath: null,
+        fileLine: null,
         projectId: project.id
       })
       // A shell preset runs somewhere the user can watch it; everything else

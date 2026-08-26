@@ -174,6 +174,7 @@ export function WorktreeDetail({
           <WorkingTreeTab
             repositoryId={project.id}
             repoPath={project.path}
+            repoName={project.name}
             worktree={worktree}
             focusCommitToken={focusCommitToken}
           />

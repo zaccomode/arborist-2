@@ -2,11 +2,19 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react'
 import type { Preset } from '@shared/persisted'
-import { builtInPresetId } from '@shared/presets'
+import { builtInPresetId, filterForTarget, resolveConflictEditorPreset } from '@shared/presets'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { PresetIcon } from '@/components/preset-icon'
-import { usePresetCatalogue } from '@/api/queries'
+import { queryKeys, usePresetCatalogue, usePresets, useSettings } from '@/api/queries'
 import { invoke } from '@/api/client'
 import { PresetEditor } from '@/components/settings/preset-editor'
 
@@ -31,11 +39,24 @@ function newPreset(): Preset {
 export function PresetSettings(): React.JSX.Element {
   const queryClient = useQueryClient()
   const catalogue = usePresetCatalogue()
+  const settings = useSettings()
+  // App-level, no project: the same list a project inherits from when it has
+  // no override of its own.
+  const appPresets = usePresets(null, null)
   const [editing, setEditing] = useState<Preset | null>(null)
 
   const refresh = async (): Promise<void> => {
     await queryClient.invalidateQueries({ queryKey: ['presets'] })
     await queryClient.invalidateQueries({ queryKey: ['preset-catalogue'] })
+  }
+
+  const filePresets = filterForTarget(appPresets.data ?? [], 'file')
+
+  const setConflictEditor = async (value: string): Promise<void> => {
+    await invoke('settings:update', {
+      conflictEditorPresetId: value === 'auto' ? null : value
+    })
+    await queryClient.invalidateQueries({ queryKey: queryKeys.settings })
   }
 
   const builtIns = catalogue.data?.builtIns ?? []
@@ -61,6 +82,34 @@ export function PresetSettings(): React.JSX.Element {
 
   return (
     <div className="space-y-6 py-2" data-testid="preset-settings">
+      {settings.data && filePresets.length > 0 && (
+        <section className="space-y-2" data-testid="conflict-editor-setting">
+          <Label htmlFor="conflict-editor-preset">Conflict editor</Label>
+          <p className="text-xs text-muted-foreground">
+            Which preset &quot;Open in editor&quot; runs for a conflicted file. A project can
+            override this.
+          </p>
+          <Select
+            value={settings.data.conflictEditorPresetId ?? 'auto'}
+            onValueChange={(value) => void setConflictEditor(value)}
+          >
+            <SelectTrigger id="conflict-editor-preset" className="w-64">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">
+                Automatic ({resolveConflictEditorPreset(null, filePresets)?.name ?? 'none'})
+              </SelectItem>
+              {filePresets.map((preset) => (
+                <SelectItem key={preset.id} value={preset.id}>
+                  {preset.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </section>
+      )}
+
       <section>
         <p className="text-xs font-medium text-muted-foreground">Built in</p>
         <ul className="mt-2 space-y-1">

@@ -1398,6 +1398,55 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'conflict-merge',
+    description:
+      'The Conflicts section (#53): the banner and both conflict rows mid-merge ' +
+      '(a UU and an AA, from the same fixture #43 added), the list after ' +
+      '"Mark resolved" clears one of them, and the section gone after Abort.',
+    setup: async ({ workDir }) => {
+      // The same steps `makeConflictFixture()` runs, but rooted at `workDir`
+      // rather than a random tmpdir — a fixture path can end up on screen,
+      // and `makeConflictFixture()`'s own tmpdir would change every run.
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await fixture.commit('Add uu.txt', { 'uu.txt': 'base\n' })
+
+      const worktreePath = await fixture.addWorktree('conflict', { branch: 'feature/conflict' })
+      await fixture.commit('Feature edits uu.txt', { 'uu.txt': 'feature\n' }, worktreePath)
+      await fixture.commit('Feature adds aa.txt', { 'aa.txt': 'feature\n' }, worktreePath)
+
+      await fixture.commit('Main edits uu.txt', { 'uu.txt': 'main\n' })
+      await fixture.commit('Main adds aa.txt', { 'aa.txt': 'main\n' })
+
+      await fixture.git(['merge', 'main'], worktreePath).catch(() => {
+        // A merge conflict exits non-zero; that is the point of this fixture.
+      })
+
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('button', { name: /feature\/conflict/ }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('conflict-section').waitFor({ state: 'visible' })
+      await window.getByTestId('conflict-files').getByText('AA', { exact: true }).waitFor()
+      await shot('mid-merge')
+
+      await window.getByRole('button', { name: 'aa.txt conflict actions' }).click()
+      await window.getByRole('menuitem', { name: 'Mark resolved' }).click()
+      await window.getByTestId('conflict-files').getByText('AA', { exact: true }).waitFor({
+        state: 'detached'
+      })
+      await shot('one-resolved')
+
+      await window.getByRole('button', { name: 'Abort' }).click()
+      await window.getByTestId('conflict-section').waitFor({ state: 'detached' })
+      await window.getByText('No changes.').waitFor({ state: 'visible' })
+      await shot('aborted')
+    }
+  },
+  {
     name: 'stash-selected-files',
     description:
       'The Changed Files header\'s "Stash…" menu (#69 review), scoped to ' +
@@ -1431,6 +1480,31 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('stash-list').waitFor({ state: 'visible' })
       await window.getByRole('button', { name: 'README.md', exact: true }).waitFor()
       await shot('after')
+    }
+  },
+  {
+    name: 'conflict-editor-default',
+    description:
+      'Project settings’ Presets tab: the per-project conflict-editor ' +
+      'override (#53), showing what "Inherit" resolves to on a stock install, ' +
+      'and the picker open over the other file-capable presets it offers.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'Project settings' }).click()
+      await window.getByRole('tab', { name: 'Presets' }).click()
+      await window.getByTestId('project-conflict-editor').waitFor({ state: 'visible' })
+      await shot('current')
+
+      await window.getByLabel('Conflict editor').click()
+      await window.getByRole('listbox').waitFor({ state: 'visible' })
+      await shot('picker')
     }
   }
 ]

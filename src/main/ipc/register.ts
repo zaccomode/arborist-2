@@ -123,6 +123,14 @@ export function registerIpcHandlers({
     gitService.push(worktreePath, branch, setUpstream)
   )
   handle('workingTree:hasIdentity', (worktreePath) => gitService.hasIdentity(worktreePath))
+  handle('conflicts:state', (worktreePath) => gitService.conflictState(worktreePath))
+  handle('conflicts:keepOurs', (worktreePath, path) => gitService.keepOurs(worktreePath, path))
+  handle('conflicts:abort', (worktreePath, operation) =>
+    gitService.abortConflict(worktreePath, operation)
+  )
+  handle('conflicts:continue', (worktreePath, operation) =>
+    gitService.continueConflict(worktreePath, operation)
+  )
   handle('branches:switchPrecheck', (repoPath, worktreePath, branch, create) =>
     gitService.planBranchSwitch(repoPath, worktreePath, branch, create)
   )
@@ -222,7 +230,7 @@ export function registerIpcHandlers({
   handle('presets:save', (preset) => presets.save(preset))
   handle('presets:delete', (presetId) => presets.remove(presetId))
   handle('presets:reorder', (orderedIds) => presets.reorder(orderedIds))
-  handle('presets:run', (presetId, context) => presets.run(presetId, context))
+  handle('presets:run', (presetId, context, target) => presets.run(presetId, context, target))
 
   handle('repos:fetch', (repoPath) => gitService.fetchAll(repoPath))
   handle('commits:recent', (repoPath, refs, limit, skip) =>

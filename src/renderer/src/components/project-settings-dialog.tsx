@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { invoke } from '@/api/client'
 import { NotesEditor } from '@/components/notes-editor'
+import { ProjectConflictEditor } from '@/components/settings/project-conflict-editor'
 import { ProjectPresetOverrides } from '@/components/settings/project-preset-overrides'
 import { ProjectPresets } from '@/components/settings/project-presets'
 import { ProjectWorktreeLocation } from '@/components/settings/project-worktree-location'
@@ -37,7 +38,9 @@ function sampleValues(project: Repository): Parameters<typeof substitute>[1] {
     branch: 'feature/ABC-123',
     commitHash: '46862b9',
     repoName: project.name,
-    repoPath: project.path
+    repoPath: project.path,
+    filePath: null,
+    fileLine: null
   }
 }
 
@@ -169,6 +172,7 @@ export function ProjectSettingsDialog({
           </TabsContent>
 
           <TabsContent value="presets" className="min-h-0 flex-1 space-y-6 overflow-y-auto pt-4">
+            <ProjectConflictEditor projectId={project.id} />
             <ProjectPresetOverrides projectId={project.id} />
             <ProjectPresets projectId={project.id} />
           </TabsContent>

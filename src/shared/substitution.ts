@@ -16,9 +16,21 @@ export interface SubstitutionValues {
   commitHash: string | null
   repoName: string
   repoPath: string
+  /** The conflicted (or otherwise selected) file, absolute. Null for a worktree-target preset. */
+  filePath: string | null
+  /** Not in scope for #53 — conflict-marker parsing isn't done, so this stays null there too. */
+  fileLine: number | null
 }
 
-export const KNOWN_TOKENS = ['path', 'branch', 'commitHash', 'repoName', 'repoPath'] as const
+export const KNOWN_TOKENS = [
+  'path',
+  'branch',
+  'commitHash',
+  'repoName',
+  'repoPath',
+  'filePath',
+  'fileLine'
+] as const
 
 export type TokenName = (typeof KNOWN_TOKENS)[number]
 
@@ -67,7 +79,12 @@ export function substitute(
 ): string {
   return template.replace(TOKEN_PATTERN, (match, name: string) => {
     if (!isKnownToken(name)) return match
-    return escapeValue(values[name] ?? '', mode)
+    const raw = values[name]
+    // `fileLine` is the one numeric token; every other token is already a
+    // string or null. `String(raw)` rather than a type-specific branch, since
+    // a future numeric token needs no new case here.
+    const value = raw === null || raw === undefined ? '' : String(raw)
+    return escapeValue(value, mode)
   })
 }
 

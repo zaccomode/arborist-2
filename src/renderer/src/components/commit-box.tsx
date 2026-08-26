@@ -79,6 +79,10 @@ export function CommitBox({
   const invalidate = (): void => {
     queryClient.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
     queryClient.invalidateQueries({ queryKey: queryKeys.workingTree(worktreePath) })
+    // An ordinary commit finishes a merge exactly the way `merge --continue`
+    // does when it's run mid-merge — MERGE_HEAD clears either way, so the
+    // Conflicts section needs telling regardless of which path got there.
+    queryClient.invalidateQueries({ queryKey: queryKeys.conflictState(worktreePath) })
   }
 
   const message = text ?? draft.data ?? ''

@@ -21,6 +21,13 @@ import {
   type BranchSwitchPlan
 } from '../../../shared/branch-switch'
 import {
+  abortArgsFor,
+  continueArgsFor,
+  type ConflictOperation,
+  type ConflictState
+} from '../../../shared/conflicts'
+import { detectConflictState } from './conflict-state'
+import {
   isPatchHeaderLine,
   parseUnifiedDiff,
   syntheticNewFileDiff,
@@ -569,6 +576,37 @@ export class GitService {
       repoPath: worktreePath
     })
     return exitCode === 0
+  }
+
+  /** Which operation (if any) has the worktree mid-conflict, for the Conflicts banner. */
+  async conflictState(worktreePath: string): Promise<ConflictState> {
+    return detectConflictState(this.#git, worktreePath)
+  }
+
+  /**
+   * `git checkout --ours -- <path>` then `git add -- <path>`: resolves a
+   * `UU` conflict to "our" side and marks it resolved in one action, rather
+   * than leaving the row conflicted until a separate "Mark resolved" click.
+   */
+  async keepOurs(worktreePath: string, path: string): Promise<void> {
+    this.#suppressWatcher(worktreePath)
+    await this.#git.runOrThrow(['checkout', '--ours', '--', path], { repoPath: worktreePath })
+    await this.#git.runOrThrow(['add', '--', path], { repoPath: worktreePath })
+  }
+
+  async abortConflict(worktreePath: string, operation: ConflictOperation): Promise<void> {
+    this.#suppressWatcher(worktreePath)
+    await this.#git.runOrThrow(abortArgsFor(operation), { repoPath: worktreePath })
+  }
+
+  /**
+   * `--continue` opens the commit-message editor by default, which
+   * `continueArgsFor` neutralises — without that this hangs the child until
+   * `DEFAULT_TIMEOUT_MS` with no indication anything is wrong.
+   */
+  async continueConflict(worktreePath: string, operation: ConflictOperation): Promise<void> {
+    this.#suppressWatcher(worktreePath)
+    await this.#git.runOrThrow(continueArgsFor(operation), { repoPath: worktreePath })
   }
 
   /**
