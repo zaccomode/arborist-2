@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { assignLanes, type GraphCommit } from '../../src/shared/commit-graph'
+import { assignLanes, tailLanes, type GraphCommit } from '../../src/shared/commit-graph'
 
 /** A minimal `GraphCommit` — the tests only ever care about hash and parents. */
 function c(hash: string, parents: string[] = []): GraphCommit {
@@ -193,5 +193,54 @@ describe('assignLanes', () => {
     const rows = assignLanes([c('tip-a', []), c('tip-b', [])])
     expect(rows[0]).toMatchObject({ lane: 0, newLane: true })
     expect(rows[1]).toMatchObject({ lane: 0, newLane: true })
+  })
+})
+
+describe('tailLanes', () => {
+  it('keeps a straight line in its own lane, but never a root commit', () => {
+    const commits = [c('c3', ['c2']), c('c2', ['c1']), c('c1', [])]
+    const rows = assignLanes(commits)
+
+    expect(tailLanes(rows[0])).toEqual([0])
+    expect(tailLanes(rows[1])).toEqual([0])
+    // The root has no first parent, so nothing below it needs a tail.
+    expect(tailLanes(rows[2])).toEqual([])
+  })
+
+  it('carries a through lane, and a fork edge, but never a join', () => {
+    const merge = c('merge', ['main1', 'feat2'])
+    const main1 = c('main1', ['base'])
+    const feat2 = c('feat2', ['feat1'])
+    const feat1 = c('feat1', ['base'])
+    const base = c('base', [])
+    const rows = assignLanes([merge, main1, feat2, feat1, base])
+    const byHash = Object.fromEntries(rows.map((row) => [row.commit.hash, row]))
+
+    // The merge commit's own lane continues (0), and its `parent` edge to
+    // feat2's lane (1) also reaches the bottom edge — both need a tail.
+    expect(tailLanes(byHash.merge).sort()).toEqual([0, 1])
+
+    // main1 passes feat2's lane through untouched, on top of its own.
+    expect(tailLanes(byHash.main1).sort()).toEqual([0, 1])
+
+    // `base` is where the two lanes join: its own lane continues (were it
+    // not a root, which it is here) but the incoming `merge` edge from lane
+    // 1 never reaches the bottom, so lane 1 is absent.
+    expect(tailLanes(byHash.base)).toEqual([])
+  })
+
+  it('excludes a lane that fades to a dangling stub instead of reaching the edge', () => {
+    const rows = assignLanes([c('tip', ['not-loaded'])])
+    expect(tailLanes(rows[0])).toEqual([])
+  })
+
+  it('excludes a dangling parent edge the same way it excludes a dangling own lane', () => {
+    const merge = c('merge', ['main1', 'not-loaded-feat-tip'])
+    const main1 = c('main1', [])
+    const rows = assignLanes([merge, main1])
+
+    // Only the first parent's lane (0) reaches the bottom edge; the second
+    // parent's edge (lane 1) is dangling and fades out inside the row.
+    expect(tailLanes(rows[0])).toEqual([0])
   })
 })

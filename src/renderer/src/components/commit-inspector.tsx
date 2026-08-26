@@ -33,7 +33,7 @@ function CommitFileRow({
         type="button"
         onClick={onSelect}
         aria-label={file.path}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent"
+        className="flex w-full min-w-0 items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent"
       >
         <FilePathCell path={file.path} />
         <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">
@@ -119,6 +119,7 @@ export function CommitInspector({
           <DiffPanel
             request={request}
             label={splitDisplayPath(selectedFile.path).name}
+            hasBothSides={false}
             onClose={onClose}
           />
         </div>
@@ -135,7 +136,7 @@ export function CommitInspector({
             <>
               <p className="flex items-baseline gap-1.5">
                 {isMerge && <GitMerge className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />}
-                <span className="truncate font-semibold break-words">{commit.subject}</span>
+                <span className="min-w-0 flex-1 font-semibold break-words">{commit.subject}</span>
               </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {commit.author} &bull; {formatCommitTimestamp(commit.date)}
@@ -164,33 +165,46 @@ export function CommitInspector({
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
-        {filesQuery.isPending && (
-          <div className="space-y-2 p-4">
-            {[0, 1, 2].map((row) => (
-              <Skeleton key={row} className="h-4 w-full" />
-            ))}
-          </div>
-        )}
+        {/*
+         * `w-0 min-w-full`, not just `w-full`: Radix's Viewport wraps
+         * `children` in a `display: table` div (sized to fit content, for
+         * its own scroll-size measurement) so a row's un-truncated text can
+         * otherwise inflate that table wider than the panel — pushing every
+         * row's content off the right edge uncontained instead of eliding
+         * it. `w-0` gives this div a definite (not content-driven) preferred
+         * width for that measurement, and `min-w-full` still stretches it to
+         * fill the viewport, so the rows inside get an actual pixel width to
+         * truncate against.
+         */}
+        <div className="w-0 min-w-full">
+          {filesQuery.isPending && (
+            <div className="space-y-2 p-4">
+              {[0, 1, 2].map((row) => (
+                <Skeleton key={row} className="h-4 w-full" />
+              ))}
+            </div>
+          )}
 
-        {!filesQuery.isPending && files.length === 0 && (
-          <p className="p-4 text-sm text-muted-foreground">No files changed.</p>
-        )}
+          {!filesQuery.isPending && files.length === 0 && (
+            <p className="p-4 text-sm text-muted-foreground">No files changed.</p>
+          )}
 
-        {files.length > 0 && (
-          <ul data-testid="commit-files" className="divide-y">
-            {files.map((file) => (
-              <CommitFileRow
-                key={file.path}
-                file={file}
-                onSelect={() => setSelectedFile({ path: file.path, origPath: file.origPath })}
-              />
-            ))}
-          </ul>
-        )}
+          {files.length > 0 && (
+            <ul data-testid="commit-files" className="divide-y">
+              {files.map((file) => (
+                <CommitFileRow
+                  key={file.path}
+                  file={file}
+                  onSelect={() => setSelectedFile({ path: file.path, origPath: file.origPath })}
+                />
+              ))}
+            </ul>
+          )}
 
-        {filesQuery.error && (
-          <p className="p-4 text-xs text-destructive">{(filesQuery.error as Error).message}</p>
-        )}
+          {filesQuery.error && (
+            <p className="p-4 text-xs text-destructive">{(filesQuery.error as Error).message}</p>
+          )}
+        </div>
       </ScrollArea>
     </div>
   )

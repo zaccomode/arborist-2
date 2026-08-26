@@ -309,11 +309,16 @@ export class GitService {
    * Whether the worktree has uncommitted changes, asked fresh rather than
    * read off the last refresh: this decides whether deleting it needs the
    * second confirmation, and the answer has to be current.
+   *
+   * `paths`, when given, narrows this to just those paths — `stashPush` uses
+   * it to ask "is there anything to stash *among the selected files*"
+   * instead of "anywhere in the tree".
    */
-  async isDirty(worktreePath: string): Promise<boolean> {
-    const { stdout } = await this.#git.runOrThrow(['status', '--porcelain'], {
-      repoPath: worktreePath
-    })
+  async isDirty(worktreePath: string, paths?: string[]): Promise<boolean> {
+    const { stdout } = await this.#git.runOrThrow(
+      ['status', '--porcelain', ...(paths && paths.length > 0 ? ['--', ...paths] : [])],
+      { repoPath: worktreePath }
+    )
     return parseStatus(stdout).dirty
   }
 
@@ -401,22 +406,37 @@ export class GitService {
    * the ones after it: a branch that doesn't exist, for instance, never gets
    * as far as a status call, since nothing downstream of it can change that
    * answer.
+   *
+   * `create` is set for the switch-branch picker's "create a new branch"
+   * option (#69 review): `branch` not existing is then the expected shape of
+   * a fresh branch rather than an error, and the diff that finds conflicting
+   * paths runs against `create.startPoint` (HEAD when null) instead of a
+   * branch ref that doesn't exist yet. `git switch -c` from a start point
+   * other than HEAD can conflict exactly like switching to an existing
+   * divergent branch can (verified directly), so this is not a rubber stamp.
    */
   async planBranchSwitch(
     repoPath: string,
     worktreePath: string,
-    branch: string
+    branch: string,
+    create: { startPoint: string | null } | null = null
   ): Promise<BranchSwitchPlan> {
     const branchExists = await this.branchExists(repoPath, branch)
-    if (!branchExists) return decideBranchSwitch({ ...NO_CONFLICT, branchExists })
+    if (!branchExists && !create) return decideBranchSwitch({ ...NO_CONFLICT, branchExists })
+    const creating = create !== null
 
-    const { stdout: worktreeListOut } = await this.#git.runOrThrow(
-      ['worktree', 'list', '--porcelain'],
-      { repoPath }
-    )
-    const inUseAt =
-      worktreeUsingBranch(parseWorktreeList(worktreeListOut), branch, worktreePath)?.path ?? null
-    if (inUseAt) return decideBranchSwitch({ ...NO_CONFLICT, branchExists, inUseAt })
+    let inUseAt: string | null = null
+    if (branchExists) {
+      const { stdout: worktreeListOut } = await this.#git.runOrThrow(
+        ['worktree', 'list', '--porcelain'],
+        { repoPath }
+      )
+      inUseAt =
+        worktreeUsingBranch(parseWorktreeList(worktreeListOut), branch, worktreePath)?.path ?? null
+      if (inUseAt) {
+        return decideBranchSwitch({ ...NO_CONFLICT, branchExists, inUseAt, creating })
+      }
+    }
 
     const changes = await this.workingTreeChanges(worktreePath)
     const hasUnmerged = changes.files.some((file) => file.kind === 'unmerged')
@@ -424,15 +444,24 @@ export class GitService {
       .filter((file) => file.kind !== 'ignored')
       .flatMap(stagePathsFor)
     if (hasUnmerged || changedPaths.length === 0) {
-      return decideBranchSwitch({ ...NO_CONFLICT, branchExists, hasUnmerged, changedPaths })
+      return decideBranchSwitch({
+        ...NO_CONFLICT,
+        branchExists,
+        inUseAt,
+        hasUnmerged,
+        changedPaths,
+        creating
+      })
     }
 
+    const target = branchExists ? branch : create?.startPoint || 'HEAD'
     const { stdout } = await this.#git.runOrThrow(
-      ['diff', '--name-only', '-z', 'HEAD', branch, '--'],
+      ['diff', '--name-only', '-z', 'HEAD', target, '--'],
       { repoPath: worktreePath }
     )
     return decideBranchSwitch({
       branchExists,
+      creating,
       inUseAt,
       hasUnmerged,
       changedPaths,
@@ -445,23 +474,41 @@ export class GitService {
    * `--ignore-other-worktrees` (verified: it succeeds and leaves two
    * worktrees on one branch, the exact failure mode Arborist exists to
    * prevent) and never a force/discard variant.
+   *
+   * `create` runs `git switch -c <branch> [<startPoint>]` instead, for the
+   * switch-branch picker's "create a new branch" option.
    */
-  async switchBranch(worktreePath: string, branch: string): Promise<void> {
+  async switchBranch(
+    worktreePath: string,
+    branch: string,
+    create: { startPoint: string | null } | null = null
+  ): Promise<void> {
     this.#suppressWatcher(worktreePath)
-    await this.#git.runOrThrow(['switch', branch], { repoPath: worktreePath })
+    const args = create
+      ? ['switch', '-c', branch, ...(create.startPoint ? [create.startPoint] : [])]
+      : ['switch', branch]
+    await this.#git.runOrThrow(args, { repoPath: worktreePath })
   }
 
   /**
    * `git stash push`, returning whether anything was actually stashed:
-   * `stash push` exits 0 with nothing stashed when the tree is already
-   * clean, so "did it stash?" needs this pre-check rather than the exit code.
+   * `stash push` exits 0 with nothing stashed when the tree (or, with
+   * `paths`, the given paths) is already clean, so "did it stash?" needs
+   * this pre-check rather than the exit code.
+   *
+   * `paths`, when given, limits the stash to those paths — `git stash push
+   * -- <pathspec>...` (verified directly, including alongside
+   * `--include-untracked`) leaves every other path's staged/unstaged state
+   * exactly as it was, so this is what the Changed Files header's scoped
+   * "Stash selected files" uses.
    */
   async stashPush(
     worktreePath: string,
     message: string,
-    includeUntracked: boolean
+    includeUntracked: boolean,
+    paths: string[] | null = null
   ): Promise<boolean> {
-    const dirty = await this.isDirty(worktreePath)
+    const dirty = await this.isDirty(worktreePath, paths ?? undefined)
     if (!dirty) return false
 
     this.#suppressWatcher(worktreePath)
@@ -470,7 +517,8 @@ export class GitService {
         'stash',
         'push',
         ...(includeUntracked ? ['--include-untracked'] : []),
-        ...(message.trim() ? ['-m', message.trim()] : [])
+        ...(message.trim() ? ['-m', message.trim()] : []),
+        ...(paths && paths.length > 0 ? ['--', ...paths] : [])
       ],
       { repoPath: worktreePath }
     )

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Worktree } from '@shared/domain'
+import { validateBranchName } from '@shared/branch-name'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -24,8 +25,11 @@ import {
 import { Label } from '@/components/ui/label'
 import { BranchCombobox, type BaseRefOption } from '@/components/branch-combobox'
 import { invoke } from '@/api/client'
-import { queryKeys, useLocalBranches } from '@/api/queries'
+import { queryKeys, useLocalBranches, useRemoteBranches } from '@/api/queries'
 import { useWorktreeInspector } from '@/state/selection'
+
+/** What creates the branch instead of merely switching to it: `null` start point means HEAD. */
+type CreateOption = { startPoint: string | null } | null
 
 /**
  * The uncommitted-changes conflict this dialog can hand off to, once the
@@ -34,6 +38,8 @@ import { useWorktreeInspector } from '@/state/selection'
 interface Conflict {
   branch: string
   paths: string[]
+  /** Carried through so "Stash and switch" still creates the branch, if that's what this was. */
+  create: CreateOption
 }
 
 /**
@@ -67,8 +73,10 @@ export function SwitchBranchDialog({
   const queryClient = useQueryClient()
   const [, , closeInspector] = useWorktreeInspector(projectId, worktree.path)
   const localBranches = useLocalBranches(open ? repoPath : null)
+  const remoteBranches = useRemoteBranches(open ? repoPath : null)
 
   const [branch, setBranch] = useState('')
+  const [newBranchBase, setNewBranchBase] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [conflict, setConflict] = useState<Conflict | null>(null)
@@ -76,6 +84,31 @@ export function SwitchBranchDialog({
   const options: BaseRefOption[] = (localBranches.data ?? [])
     .filter((entry) => entry.name !== worktree.branch)
     .map((entry) => ({ value: entry.name, label: entry.name, group: 'local' as const }))
+
+  // Whether the typed name is a branch that doesn't exist yet, rather than
+  // one picked from `options` — the create-a-new-branch flow (#69 review).
+  // Checked against every local branch, not just `options`: typing the
+  // worktree's own current branch is an existing branch too, even though
+  // it's excluded from the picker above.
+  const isNewBranch =
+    branch.trim().length > 0 &&
+    !localBranches.isPending &&
+    !(localBranches.data ?? []).some((entry) => entry.name === branch)
+  const newBranchValidation = isNewBranch ? validateBranchName(branch) : null
+
+  const baseOptions: BaseRefOption[] = [
+    { value: '', label: `HEAD${worktree.branch ? ` (${worktree.branch})` : ''}`, group: 'head' },
+    ...(localBranches.data ?? []).map((entry) => ({
+      value: entry.name,
+      label: entry.name,
+      group: 'local' as const
+    })),
+    ...(remoteBranches.data ?? []).map((entry) => ({
+      value: entry.name,
+      label: entry.name,
+      group: 'remote' as const
+    }))
+  ]
 
   /**
    * Closes the picker and clears its fields, so the next open starts fresh
@@ -86,6 +119,7 @@ export function SwitchBranchDialog({
   const setOpen = (next: boolean): void => {
     if (!next) {
       setBranch('')
+      setNewBranchBase('')
       setError(null)
     }
     onOpenChange(next)
@@ -97,23 +131,34 @@ export function SwitchBranchDialog({
     // Prefix match: the exact key carries the *old* branch as its ref, which
     // is exactly the query this switch just made stale.
     queryClient.invalidateQueries({ queryKey: ['commits', repoPath] })
+    queryClient.invalidateQueries({ queryKey: queryKeys.localBranches(repoPath) })
     closeInspector()
   }
 
-  const finishSwitch = async (target: string, carriesChanges: boolean): Promise<void> => {
-    await invoke('branches:switch', worktree.path, target)
+  const finishSwitch = async (
+    target: string,
+    carriesChanges: boolean,
+    create: CreateOption
+  ): Promise<void> => {
+    await invoke('branches:switch', worktree.path, target, create)
     afterSwitch()
-    if (carriesChanges) toast('Your uncommitted changes came with you.')
+    if (create) toast(`Created ${target} and switched to it.`)
+    else if (carriesChanges) toast('Your uncommitted changes came with you.')
     setOpen(false)
   }
 
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
     if (!branch) return
+    if (newBranchValidation && !newBranchValidation.valid) {
+      setError(newBranchValidation.reason)
+      return
+    }
     setError(null)
     setBusy(true)
+    const create: CreateOption = isNewBranch ? { startPoint: newBranchBase || null } : null
     try {
-      const plan = await invoke('branches:switchPrecheck', repoPath, worktree.path, branch)
+      const plan = await invoke('branches:switchPrecheck', repoPath, worktree.path, branch, create)
       switch (plan.outcome) {
         case 'branch-missing':
           setError('That branch no longer exists.')
@@ -127,11 +172,11 @@ export function SwitchBranchDialog({
         case 'conflicting':
           // Hands off to the AlertDialog below rather than stacking under it
           // — captured first, since closing resets `branch`.
-          setConflict({ branch, paths: plan.paths })
+          setConflict({ branch, paths: plan.paths, create })
           setOpen(false)
           break
         case 'clear':
-          await finishSwitch(branch, plan.carriesChanges)
+          await finishSwitch(branch, plan.carriesChanges, create)
           break
       }
     } catch (cause) {
@@ -146,12 +191,21 @@ export function SwitchBranchDialog({
     setError(null)
     setBusy(true)
     try {
-      await invoke('stash:push', worktree.path, `Arborist: switching to ${conflict.branch}`, true)
-      await invoke('branches:switch', worktree.path, conflict.branch)
+      await invoke(
+        'stash:push',
+        worktree.path,
+        `Arborist: switching to ${conflict.branch}`,
+        true,
+        null
+      )
+      await invoke('branches:switch', worktree.path, conflict.branch, conflict.create)
       afterSwitch()
-      toast('Stashed your changes and switched branches.', {
-        description: 'Pop the stash from the Stash section when you want them back.'
-      })
+      toast(
+        conflict.create
+          ? `Stashed your changes and created ${conflict.branch}.`
+          : 'Stashed your changes and switched branches.',
+        { description: 'Pop the stash from the Stash section when you want them back.' }
+      )
       setConflict(null)
     } catch (cause) {
       setError((cause as Error).message)
@@ -182,8 +236,35 @@ export function SwitchBranchDialog({
                 onChange={setBranch}
                 options={options}
                 loading={localBranches.isPending}
+                allowCreate
               />
+              {isNewBranch && newBranchValidation?.valid === false && (
+                <p data-testid="switch-branch-new-name-error" className="text-xs text-destructive">
+                  {newBranchValidation.reason}
+                </p>
+              )}
+              {isNewBranch && newBranchValidation?.valid && (
+                <p className="text-xs text-muted-foreground">
+                  New branch — created from{' '}
+                  {newBranchBase
+                    ? newBranchBase
+                    : `HEAD${worktree.branch ? ` (${worktree.branch})` : ''}`}
+                  .
+                </p>
+              )}
             </div>
+
+            {isNewBranch && newBranchValidation?.valid && (
+              <div className="mt-4 space-y-2">
+                <Label htmlFor="switch-branch-base">Base</Label>
+                <BranchCombobox
+                  value={newBranchBase}
+                  onChange={setNewBranchBase}
+                  options={baseOptions}
+                  loading={localBranches.isPending || remoteBranches.isPending}
+                />
+              </div>
+            )}
 
             {error && (
               <p data-testid="switch-branch-error" className="mt-3 text-sm text-destructive">
@@ -195,8 +276,11 @@ export function SwitchBranchDialog({
               <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={!branch || busy}>
-                Switch
+              <Button
+                type="submit"
+                disabled={!branch || busy || (isNewBranch && newBranchValidation?.valid === false)}
+              >
+                {isNewBranch ? 'Create and switch' : 'Switch'}
               </Button>
             </DialogFooter>
           </form>
@@ -207,7 +291,8 @@ export function SwitchBranchDialog({
         <AlertDialogContent data-testid="switch-branch-conflict-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Switching to {conflict?.branch} would overwrite uncommitted changes
+              {conflict?.create ? 'Creating' : 'Switching to'} {conflict?.branch} would overwrite
+              uncommitted changes
             </AlertDialogTitle>
             <AlertDialogDescription>
               These files differ on both sides and can&apos;t just carry over:

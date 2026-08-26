@@ -8,6 +8,7 @@ import {
   stagedFileCount,
   stagePathsFor,
   stagingState,
+  stashScope,
   statusKind,
   statusLabel
 } from '@shared/working-tree'
@@ -176,6 +177,42 @@ describe('pushLabel', () => {
 
   it('offers to publish when there is no upstream, regardless of ahead', () => {
     expect(pushLabel(0, false)).toBe('Publish branch')
+  })
+})
+
+describe('stashScope', () => {
+  it('falls back to stashing everything when nothing is checked for staging', () => {
+    const files = [
+      file({ path: 'a.txt', worktree: 'M' }),
+      file({ path: 'b.txt', kind: 'untracked' })
+    ]
+    expect(stashScope(files)).toEqual({ files: [], paths: null })
+  })
+
+  it('scopes to the checked files alone, leaving the rest out of the pathspec', () => {
+    const files = [
+      file({ path: 'a.txt', index: 'A' }),
+      file({ path: 'b.txt', worktree: 'M' }),
+      file({ path: 'c.txt', kind: 'untracked' })
+    ]
+    const scope = stashScope(files)
+    expect(scope.files.map((f) => f.path)).toEqual(['a.txt'])
+    expect(scope.paths).toEqual(['a.txt'])
+  })
+
+  it('counts an indeterminate (partially staged) file as checked', () => {
+    const files = [file({ path: 'a.txt', index: 'M', worktree: 'M' })]
+    expect(stashScope(files)).toEqual({ files, paths: ['a.txt'] })
+  })
+
+  it('carries both sides of a checked rename into the pathspec', () => {
+    const files = [file({ path: 'new.txt', origPath: 'old.txt', index: 'R' })]
+    expect(stashScope(files).paths).toEqual(['old.txt', 'new.txt'])
+  })
+
+  it('never selects an unmerged file, even though stagingState reports it as indeterminate', () => {
+    const files = [file({ kind: 'unmerged', conflict: 'UU' })]
+    expect(stashScope(files)).toEqual({ files: [], paths: null })
   })
 })
 
