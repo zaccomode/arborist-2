@@ -98,9 +98,11 @@ export function CommitBox({
       if (timer.current) clearTimeout(timer.current)
       await invoke('commitDraft:set', repositoryId, worktreePath, '')
       queryClient.invalidateQueries({ queryKey: queryKeys.commitDraft(repositoryId, worktreePath) })
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.commits(repoPath, worktree.branch ?? worktree.head ?? '')
-      })
+      // The whole `['commits', repoPath, ...]` prefix — see `useCommitLog`'s
+      // doc comment on why resetting every open commit query back to page 0
+      // (rather than patching one page in place) is what keeps `--skip`
+      // paging safe against a commit landing mid-list.
+      queryClient.invalidateQueries({ queryKey: ['commits', repoPath] })
       setAmend(false)
       invalidate()
     } catch (cause) {

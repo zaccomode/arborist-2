@@ -9,6 +9,7 @@
 
 import type {
   BranchInfo,
+  CommitFileStat,
   CommitLogEntry,
   GitDiscoveryResult,
   RemoteBranch,
@@ -215,15 +216,19 @@ export interface IpcInvokeContract {
    */
   'repos:fetch': { args: [repoPath: string]; result: void }
   /**
-   * Recent commits on `ref`, newest first. `repoPath` need only be somewhere
-   * inside the repository — for a remote branch with no local checkout it is
-   * the project's own path, since remote-tracking refs are visible from any
-   * worktree that shares the repository.
+   * Recent commits on `refs`, newest first. `repoPath` need only be
+   * somewhere inside the repository — for a remote branch with no local
+   * checkout it is the project's own path, since remote-tracking refs are
+   * visible from any worktree that shares the repository. `refs` is one tip
+   * for the Recent Commits panel (a branch, HEAD, or a remote ref), or that
+   * tip plus its upstream for the commit graph — see `commitGraphTips`.
    */
   'commits:recent': {
-    args: [repoPath: string, ref: string, limit: number, skip: number]
+    args: [repoPath: string, refs: string[], limit: number, skip: number]
     result: CommitLogEntry[]
   }
+  /** A commit's changed files, for the commit inspector's file list. */
+  'commits:files': { args: [repoPath: string, hash: string]; result: CommitFileStat[] }
   'git:discover': { args: []; result: GitDiscoveryResult }
   /** Sets (or clears, with null) the manual git path and re-runs discovery. */
   'git:setPath': { args: [path: string | null]; result: GitDiscoveryResult }
@@ -328,6 +333,7 @@ const CHANNELS: Record<IpcChannel, true> = {
   'presets:run': true,
   'repos:fetch': true,
   'commits:recent': true,
+  'commits:files': true,
   'automation:script': true,
   'automation:setScript': true,
   'automation:start': true,

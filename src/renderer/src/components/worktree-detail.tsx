@@ -12,9 +12,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Chip } from '@/components/chip'
+import { CommitGraph } from '@/components/commit-graph'
 import { NotesEditor } from '@/components/notes-editor'
 import { OpenInGrid } from '@/components/open-in-grid'
-import { RecentCommits } from '@/components/recent-commits'
 import { SwitchBranchDialog } from '@/components/switch-branch-dialog'
 import { WorkingTreeTab } from '@/components/working-tree-tab'
 import { invoke } from '@/api/client'
@@ -180,10 +180,11 @@ export function WorktreeDetail({
         </TabsContent>
 
         <TabsContent value="commit-graph" className="min-h-0 flex-1 overflow-y-auto p-6 pt-4">
-          <RecentCommits
-            key={`commits:${project.id}:${worktree.path}`}
+          <CommitGraph
+            key={`commit-graph:${project.id}:${worktree.path}`}
+            repositoryId={project.id}
             repoPath={project.path}
-            gitRef={worktree.branch ?? worktree.head}
+            worktree={worktree}
           />
         </TabsContent>
       </Tabs>

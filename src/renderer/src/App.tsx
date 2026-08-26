@@ -17,6 +17,7 @@ import { DeleteWorktreeDialogs } from '@/components/delete-worktree'
 import { ProjectSettingsDialog } from '@/components/project-settings-dialog'
 import { AutomationConsole, type AutomationTarget } from '@/components/automation-console'
 import { SettingsDialog } from '@/components/settings/settings-dialog'
+import { CommitInspector } from '@/components/commit-inspector'
 import { DiffPanel } from '@/components/diff-panel'
 import {
   queryKeys,
@@ -201,9 +202,12 @@ function App(): React.JSX.Element | null {
       }
       if (payload.reason === 'head' || payload.reason === 'refs') {
         queryClient.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.commits(repoPath, worktree.branch ?? worktree.head ?? '')
-        })
+        // The whole `['commits', repoPath, ...]` prefix, not one exact ref
+        // list: this resets every open commit-graph or Recent Commits query
+        // on this repository back to page 0 — see `useCommitLog`'s doc
+        // comment on why that reset (rather than patching one page in
+        // place) is what makes `--skip`-based paging safe at all.
+        queryClient.invalidateQueries({ queryKey: ['commits', repoPath] })
       }
     })
   }, [worktreePath, repoPath, worktree, queryClient])
@@ -345,13 +349,22 @@ function App(): React.JSX.Element | null {
           </>
         }
         inspector={
-          diffRequest && (
-            <DiffPanel
-              request={diffRequest}
-              label={splitDisplayPath(diffRequest.path).name}
-              hasBothSides={diffHasBothSides}
+          inspector?.kind === 'commit' && repoPath ? (
+            <CommitInspector
+              key={inspector.hash}
+              repoPath={repoPath}
+              hash={inspector.hash}
               onClose={closeInspector}
             />
+          ) : (
+            diffRequest && (
+              <DiffPanel
+                request={diffRequest}
+                label={splitDisplayPath(diffRequest.path).name}
+                hasBothSides={diffHasBothSides}
+                onClose={closeInspector}
+              />
+            )
           )
         }
       />
