@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { Check, ChevronsUpDown, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -20,24 +20,38 @@ export interface BaseRefOption {
 }
 
 /**
- * A searchable picker for `worktrees:create`'s `baseRef`: HEAD, local
- * branches, and remote branches, in that order. A real repository has
- * dozens of branches, which is what the search is for — cmdk filters the
- * list against whatever is typed.
+ * A searchable picker for `worktrees:create`'s `baseRef`, and for the
+ * switch-branch picker: HEAD, local branches, and remote branches, in that
+ * order. A real repository has dozens of branches, which is what the search
+ * is for — cmdk filters the list against whatever is typed.
+ *
+ * `allowCreate` adds a "Create branch “x”" row whenever the typed search
+ * doesn't exactly match an existing option — the switch-branch dialog's
+ * create-a-new-branch flow (#69 review). The base-ref picker on
+ * create-worktree leaves it unset: every base there has to already exist.
  */
 export function BranchCombobox({
   value,
   onChange,
   options,
-  loading
+  loading,
+  allowCreate
 }: {
   value: string
   onChange: (value: string) => void
   options: BaseRefOption[]
   loading: boolean
+  allowCreate?: boolean
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
   const selected = options.find((option) => option.value === value)
+
+  const trimmedSearch = search.trim()
+  const showCreate =
+    allowCreate &&
+    trimmedSearch.length > 0 &&
+    !options.some((option) => option.value === trimmedSearch)
 
   const groups: { key: BaseRefOption['group']; heading: string }[] = [
     { key: 'head', heading: 'Start point' },
@@ -45,8 +59,18 @@ export function BranchCombobox({
     { key: 'remote', heading: 'Remote branches' }
   ]
 
+  const triggerLabel = selected?.label ?? (value || (allowCreate ? 'Select a branch' : 'HEAD'))
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        // Fresh search next time it opens, rather than showing whatever was
+        // typed (and possibly since abandoned) the last time.
+        if (!next) setSearch('')
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -55,7 +79,7 @@ export function BranchCombobox({
           aria-expanded={open}
           className="w-full justify-between font-normal"
         >
-          <span className="truncate">{selected?.label ?? 'HEAD'}</span>
+          <span className="truncate">{triggerLabel}</span>
           <ChevronsUpDown className="shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -68,9 +92,23 @@ export function BranchCombobox({
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <Command>
-          <CommandInput placeholder="Search branches…" />
+          <CommandInput placeholder="Search branches…" value={search} onValueChange={setSearch} />
           <CommandList>
             <CommandEmpty>{loading ? 'Loading…' : 'No matching branch.'}</CommandEmpty>
+            {showCreate && (
+              <CommandGroup heading="Create">
+                <CommandItem
+                  value={`create ${trimmedSearch}`}
+                  onSelect={() => {
+                    onChange(trimmedSearch)
+                    setOpen(false)
+                  }}
+                >
+                  <Plus />
+                  <span className="truncate">Create branch “{trimmedSearch}”</span>
+                </CommandItem>
+              </CommandGroup>
+            )}
             {groups.map(({ key, heading }) => {
               const entries = options.filter((option) => option.group === key)
               if (entries.length === 0) return null
