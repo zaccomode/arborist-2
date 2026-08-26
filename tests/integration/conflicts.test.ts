@@ -48,8 +48,12 @@ describe('conflictState — merge', () => {
     await setUp()
     await service.keepOurs(c.worktreePath, 'uu.txt')
 
+    // Normalised because `core.autocrlf` restores CRLF on checkout on
+    // Windows: what this asserts is which side won, not which line ending
+    // the platform writes it with — see `discardFiles`'s test in
+    // staging.test.ts for the same normalisation.
     const content = await fs.readFile(join(c.worktreePath, 'uu.txt'), 'utf8')
-    expect(content).toBe('feature\n')
+    expect(content.replace(/\r\n/g, '\n')).toBe('feature\n')
 
     const changes = await service.workingTreeChanges(c.worktreePath)
     expect(changes.files.find((file) => file.path === 'uu.txt')).toBeUndefined()
