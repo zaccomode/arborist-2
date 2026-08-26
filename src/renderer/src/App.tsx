@@ -361,16 +361,10 @@ function App(): React.JSX.Element | null {
               <DiffPanel
                 request={diffRequest}
                 label={splitDisplayPath(diffRequest.path).name}
+                hasBothSides={diffHasBothSides}
                 onClose={closeInspector}
               />
             )
-          diffRequest && (
-            <DiffPanel
-              request={diffRequest}
-              label={splitDisplayPath(diffRequest.path).name}
-              hasBothSides={diffHasBothSides}
-              onClose={closeInspector}
-            />
           )
         }
       />
