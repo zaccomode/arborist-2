@@ -1127,10 +1127,13 @@ export const scenarios: Scenario[] = [
     name: 'switch-branch-create',
     description:
       'Creating a new branch from the switch-branch picker (#69 review): ' +
-      'the "Create branch" row that appears once the typed name matches no ' +
-      'existing branch, the Base picker it reveals (defaulting to HEAD), ' +
-      'and the worktree afterwards, now checked out on the branch that was ' +
-      'just created.',
+      'the empty state\'s "Create a new branch" button and hint text before ' +
+      'anything is typed — this fixture has no other local branches to ' +
+      'pick, so that empty state is what greets the picker — the "Create ' +
+      'branch" row that then appears once a typed name matches no existing ' +
+      'branch, the Base picker it reveals (defaulting to HEAD), and the ' +
+      'worktree afterwards, now checked out on the branch that was just ' +
+      'created.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -1145,6 +1148,11 @@ export const scenarios: Scenario[] = [
       await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
       await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
       await window.getByRole('combobox').first().click()
+      await window
+        .getByRole('button', { name: 'Create a new branch' })
+        .waitFor({ state: 'visible' })
+      await shot('empty')
+
       await window.getByPlaceholder('Search branches…').fill('feature/new-thing')
       await window.getByText('Create branch “feature/new-thing”').waitFor({
         state: 'visible'
