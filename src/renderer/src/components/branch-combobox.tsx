@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Check, ChevronsUpDown, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -27,11 +27,8 @@ export interface BaseRefOption {
  *
  * `allowCreate` adds a "Create branch “x”" row whenever the typed search
  * doesn't exactly match an existing option — the switch-branch dialog's
- * create-a-new-branch flow (#69 review). When there's nothing typed yet and
- * nothing to pick from, the empty state itself calls that out with a button
- * rather than relying on the user already knowing typing a name works (#69
- * review, round two). The base-ref picker on create-worktree leaves it
- * unset: every base there has to already exist.
+ * create-a-new-branch flow (#69 review). The base-ref picker on
+ * create-worktree leaves it unset: every base there has to already exist.
  */
 export function BranchCombobox({
   value,
@@ -48,7 +45,6 @@ export function BranchCombobox({
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
   const selected = options.find((option) => option.value === value)
 
   const trimmedSearch = search.trim()
@@ -96,38 +92,14 @@ export function BranchCombobox({
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <Command>
-          <CommandInput
-            ref={inputRef}
-            placeholder="Search branches…"
-            value={search}
-            onValueChange={setSearch}
-          />
+          <CommandInput placeholder="Search branches…" value={search} onValueChange={setSearch} />
           <CommandList>
             <CommandEmpty>
-              {loading ? (
-                'Loading…'
-              ) : allowCreate && trimmedSearch.length === 0 ? (
-                // Nothing typed yet and nothing to pick from — the bare "No
-                // matching branch." left the create flow undiscoverable
-                // (#69 review): a button gives it a visible affordance
-                // rather than relying on the user to already know that
-                // typing a name works.
-                <div className="flex flex-col items-center gap-2">
-                  <span>No matching branch. Type a name to create one.</span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => inputRef.current?.focus()}
-                  >
-                    <Plus />
-                    Create a new branch
-                  </Button>
-                </div>
-              ) : (
-                'No matching branch.'
-              )}
+              {loading
+                ? 'Loading…'
+                : allowCreate && trimmedSearch.length === 0
+                  ? 'No matching branch. Type a name to create one.'
+                  : 'No matching branch.'}
             </CommandEmpty>
             {showCreate && (
               <CommandGroup heading="Create">
