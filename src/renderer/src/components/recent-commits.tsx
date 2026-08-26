@@ -4,6 +4,7 @@ import type { CommitLogEntry } from '@shared/domain'
 import { formatCommitTimestamp } from '@shared/format'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
 import { useCommitLog } from '@/api/queries'
 
@@ -112,7 +113,7 @@ export function RecentCommits({
       )}
 
       {query.error && (
-        <p className="mt-1 text-xs text-destructive">{(query.error as Error).message}</p>
+        <CopyableError className="mt-1 text-xs" message={(query.error as Error).message} />
       )}
     </section>
   )

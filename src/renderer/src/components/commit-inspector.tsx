@@ -9,6 +9,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DiffPanel } from '@/components/diff-panel'
 import { FilePathCell } from '@/components/file-path-cell'
+import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
 import { useCommit, useCommitFiles } from '@/api/queries'
 
@@ -155,7 +156,7 @@ export function CommitInspector({
             </>
           )}
           {commitQuery.error && (
-            <p className="text-xs text-destructive">{(commitQuery.error as Error).message}</p>
+            <CopyableError className="text-xs" message={(commitQuery.error as Error).message} />
           )}
         </div>
         <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}>
@@ -189,7 +190,7 @@ export function CommitInspector({
         )}
 
         {filesQuery.error && (
-          <p className="p-4 text-xs text-destructive">{(filesQuery.error as Error).message}</p>
+          <CopyableError className="p-4 text-xs" message={(filesQuery.error as Error).message} />
         )}
       </ScrollArea>
     </div>

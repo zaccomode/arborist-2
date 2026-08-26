@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
-import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Worktree } from '@shared/domain'
 import { pushLabel } from '@shared/working-tree'
@@ -13,8 +12,10 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { Textarea } from '@/components/ui/textarea'
+import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
 import { queryKeys, useCommitDraft, useHasIdentity } from '@/api/queries'
+import { showErrorToast } from '@/lib/error-toast'
 
 const SAVE_DEBOUNCE_MS = 400
 
@@ -123,7 +124,7 @@ export function CommitBox({
       await invoke('workingTree:push', worktreePath, worktree.branch ?? '', !hasUpstream)
       invalidate()
     } catch (cause) {
-      toast.error('Push failed', { description: (cause as Error).message })
+      showErrorToast('Push failed', { description: (cause as Error).message })
     } finally {
       setBusy(null)
     }
@@ -137,7 +138,10 @@ export function CommitBox({
       : 'Commit'
 
   return (
-    <div className="mt-4 border-t pt-4">
+    // No border/spacing of its own (#66): the pinned footer in
+    // `WorkingTreeTab` that hosts this already draws the full-width
+    // separator and the padding around it.
+    <div>
       <Textarea
         ref={textareaRef}
         data-testid="commit-message"
@@ -156,7 +160,7 @@ export function CommitBox({
         </p>
       )}
 
-      {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+      {error && <CopyableError className="mt-2 text-xs" message={error} />}
 
       <div className="mt-2 flex gap-2">
         <ButtonGroup className="flex-1">

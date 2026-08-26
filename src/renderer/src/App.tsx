@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
 import type { RemoteBranch, Worktree } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
 import type { DiffRequest } from '@shared/diff'
@@ -32,6 +31,7 @@ import {
 } from '@/api/queries'
 import { invoke } from '@/api/client'
 import { samePath } from '@/lib/paths'
+import { showErrorToast } from '@/lib/error-toast'
 import {
   useSelection,
   useSelectedRemoteBranch,
@@ -188,7 +188,21 @@ function App(): React.JSX.Element | null {
     // still attached to on unmount could otherwise land after the selection
     // moved on but before the effect cleanup ran.
     if (!worktreePath || !repoPath || !worktree) return
-    return window.arborist.subscribe('worktree:changed', (payload) => {
+
+    const refreshCurrentWorktree = (): void => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workingTree(worktreePath) })
+      queryClient.invalidateQueries({ queryKey: ['file-diff'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.remoteBranches(repoPath) })
+      // The whole `['commits', repoPath, ...]` prefix, not one exact ref
+      // list: this resets every open commit-graph or Recent Commits query
+      // on this repository back to page 0 — see `useCommitLog`'s doc
+      // comment on why that reset (rather than patching one page in place)
+      // is what makes `--skip`-based paging safe at all.
+      queryClient.invalidateQueries({ queryKey: ['commits', repoPath] })
+    }
+
+    const unsubscribeChange = window.arborist.subscribe('worktree:changed', (payload) => {
       if (!samePath(payload.worktreePath, worktreePath)) return
       queryClient.invalidateQueries({ queryKey: queryKeys.workingTree(worktreePath) })
       if (payload.reason === 'index') {
@@ -199,19 +213,26 @@ function App(): React.JSX.Element | null {
       }
       if (payload.reason === 'head' || payload.reason === 'refs') {
         queryClient.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
-        // The whole `['commits', repoPath, ...]` prefix, not one exact ref
-        // list: this resets every open commit-graph or Recent Commits query
-        // on this repository back to page 0 — see `useCommitLog`'s doc
-        // comment on why that reset (rather than patching one page in
-        // place) is what makes `--skip`-based paging safe at all.
         queryClient.invalidateQueries({ queryKey: ['commits', repoPath] })
       }
     })
+
+    // #61: the watcher can miss a change made while the window was
+    // unfocused (nothing fires if it was paused, and events can be missed
+    // or coalesced regardless), so regaining focus re-reads everything for
+    // the current worktree rather than waiting on a filesystem event that
+    // may never come.
+    const unsubscribeFocus = window.arborist.subscribe('app:focus', refreshCurrentWorktree)
+
+    return () => {
+      unsubscribeChange()
+      unsubscribeFocus()
+    }
   }, [worktreePath, repoPath, worktree, queryClient])
 
   const handleFetch = (path: string): void => {
     fetchProject.mutate(path, {
-      onError: (error) => toast.error('Fetch failed', { description: error.message })
+      onError: (error) => showErrorToast('Fetch failed', { description: error.message })
     })
   }
   const fetchMutate = fetchProject.mutate

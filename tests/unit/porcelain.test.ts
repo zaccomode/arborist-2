@@ -5,6 +5,7 @@ import {
   LOG_RECORD_SEPARATOR,
   parseAheadBehind,
   parseBranchList,
+  parseBranchUpstreams,
   parseCommit,
   parseCommitLog,
   parseCommitNumstat,
@@ -160,6 +161,29 @@ describe('parseRemoteBranchList', () => {
     const output = 'origin\norigin/main\norigin/feature/x\n'
 
     expect(parseRemoteBranchList(output)).toEqual(['origin/main', 'origin/feature/x'])
+  })
+})
+
+describe('parseBranchUpstreams', () => {
+  it('maps a branch to its upstream short name', () => {
+    const output = 'main origin/main\nmy-custom-branch-name origin/feature-y\n'
+
+    expect(parseBranchUpstreams(output)).toEqual(
+      new Map([
+        ['main', 'origin/main'],
+        ['my-custom-branch-name', 'origin/feature-y']
+      ])
+    )
+  })
+
+  it('maps a branch with no upstream to null', () => {
+    expect(parseBranchUpstreams('scratch \n')).toEqual(new Map([['scratch', null]]))
+  })
+
+  it('ignores blank lines', () => {
+    expect(parseBranchUpstreams('\nmain origin/main\n\n')).toEqual(
+      new Map([['main', 'origin/main']])
+    )
   })
 })
 

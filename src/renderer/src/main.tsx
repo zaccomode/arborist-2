@@ -39,7 +39,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           </GitGate>
         </TooltipProvider>
       </QueryClientProvider>
-      <Toaster />
+      {/* No swipe-to-dismiss (#64): dragging across a toast to select its
+          text otherwise triggers Sonner's own swipe gesture instead. */}
+      <Toaster swipeDirections={[]} />
     </ThemeProvider>
   </React.StrictMode>
 )

@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { BranchCombobox, type BaseRefOption } from '@/components/branch-combobox'
+import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
 import { queryKeys, useLocalBranches } from '@/api/queries'
 import { useWorktreeInspector } from '@/state/selection'
@@ -186,9 +187,11 @@ export function SwitchBranchDialog({
             </div>
 
             {error && (
-              <p data-testid="switch-branch-error" className="mt-3 text-sm text-destructive">
-                {error}
-              </p>
+              <CopyableError
+                testId="switch-branch-error"
+                className="mt-3 text-sm"
+                message={error}
+              />
             )}
 
             <DialogFooter className="mt-6">
@@ -218,7 +221,7 @@ export function SwitchBranchDialog({
               <li key={path}>{path}</li>
             ))}
           </ul>
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <CopyableError className="text-sm" message={error} />}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <Button type="button" variant="outline" disabled={busy} onClick={commitFirst}>

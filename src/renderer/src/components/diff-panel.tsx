@@ -10,8 +10,10 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
+import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
 import { queryKeys, useFileDiff } from '@/api/queries'
+import { showErrorToast } from '@/lib/error-toast'
 
 function lineRowClass(kind: DiffLine['kind']): string {
   if (kind === 'add') return 'bg-emerald-500/10'
@@ -202,7 +204,7 @@ export function DiffPanel({
         toast.info('This file changed since the diff was shown — showing the latest version.')
         invalidate()
       } else {
-        toast.error(direction === 'stage' ? 'Could not stage hunk' : 'Could not unstage hunk', {
+        showErrorToast(direction === 'stage' ? 'Could not stage hunk' : 'Could not unstage hunk', {
           description: (cause as Error).message
         })
       }
@@ -223,7 +225,7 @@ export function DiffPanel({
       )
       invalidate()
     } catch (cause) {
-      toast.error(direction === 'stage' ? 'Could not stage file' : 'Could not unstage file', {
+      showErrorToast(direction === 'stage' ? 'Could not stage file' : 'Could not unstage file', {
         description: (cause as Error).message
       })
     } finally {
@@ -275,7 +277,7 @@ export function DiffPanel({
         )}
 
         {query.error && (
-          <p className="p-4 text-sm text-destructive">{(query.error as Error).message}</p>
+          <CopyableError className="p-4 text-sm" message={(query.error as Error).message} />
         )}
 
         {file?.binary && (

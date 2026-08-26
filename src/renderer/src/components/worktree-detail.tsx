@@ -13,6 +13,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Chip } from '@/components/chip'
 import { CommitGraph } from '@/components/commit-graph'
+import { CopyableError } from '@/components/copyable-error'
 import { NotesEditor } from '@/components/notes-editor'
 import { OpenInGrid } from '@/components/open-in-grid'
 import { SwitchBranchDialog } from '@/components/switch-branch-dialog'
@@ -143,7 +144,7 @@ export function WorktreeDetail({
         </div>
 
         {worktree.statusError && (
-          <p className="mt-2 text-xs text-destructive">{worktree.statusError}</p>
+          <CopyableError className="mt-2 text-xs" message={worktree.statusError} />
         )}
       </div>
 
@@ -170,7 +171,11 @@ export function WorktreeDetail({
           />
         </TabsContent>
 
-        <TabsContent value="working-tree" className="min-h-0 flex-1 overflow-y-auto p-6 pt-4">
+        {/* Unlike the other two tabs, this one manages its own scrolling: the
+            commit box pins to the bottom of the panel instead of scrolling
+            away with the file list (#66), so the padding and scroll region
+            live inside `WorkingTreeTab` rather than out here. */}
+        <TabsContent value="working-tree" className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <WorkingTreeTab
             repositoryId={project.id}
             repoPath={project.path}

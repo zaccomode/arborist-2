@@ -148,6 +148,24 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'add-project-error',
+    description:
+      'Adding a project that turns out not to be a git repository (#64): the ' +
+      'error carries a copy button, same as every other inline error banner ' +
+      'in the app.',
+    setup: async ({ workDir }) => {
+      const plainFolder = join(workDir, 'not-a-repo')
+      await mkdir(plainFolder, { recursive: true })
+      return { ARBORIST_PICK_FOLDER: plainFolder }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('add-project-error').waitFor({ state: 'visible' })
+      await shot('error')
+    }
+  },
+  {
     name: 'project-actions',
     description:
       'The switcher menu, which now carries the project list and nothing ' +
@@ -524,6 +542,46 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'remote-branches-tracking-rename',
+    description:
+      'A remote branch, before and after it is turned into a worktree whose ' +
+      'local branch is deliberately named something else entirely (#47): ' +
+      'the branch still disappears from Remote Branches, because the match ' +
+      'follows the tracking relationship rather than the name.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await fixture.commitFromElsewhere('feature-y', 'Pushed while nobody was fetching')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Fetch' }).click()
+      await window.getByRole('button', { name: /origin\/feature-y/ }).waitFor({ state: 'visible' })
+      await shot('before')
+
+      await window.getByRole('button', { name: /origin\/feature-y/ }).click()
+      await window.getByRole('button', { name: 'Create worktree from this branch' }).click()
+      // Overwrites the prefilled `feature-y` with a name that shares nothing
+      // with the remote branch's own — the folder name already differed by
+      // default (#47 is about the branch, not the folder), so this is the
+      // part that used to slip through.
+      await window.getByLabel('Branch').fill('renamed-locally')
+      await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
+      await shot('renaming')
+
+      await window.getByRole('button', { name: 'Create', exact: true }).click()
+      await window
+        .getByTestId('worktree-detail')
+        .filter({ hasText: 'renamed-locally' })
+        .waitFor({ state: 'visible' })
+      await window.getByText('No remote branches without worktrees.').waitFor({ state: 'visible' })
+      await shot('after')
+    }
+  },
+  {
     name: 'setup-automation',
     description:
       'The script editor with its parsed preview, and the console streaming ' +
@@ -585,7 +643,8 @@ export const scenarios: Scenario[] = [
     description:
       'Settings: the General tab with the detected git binary and the theme, ' +
       'the Presets tab with the built-in switches, the preset editor over it, ' +
-      'and the Developer tab.',
+      'the Developer tab, and the About tab (#65) in its default, ' +
+      'not-yet-checked state.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -621,6 +680,56 @@ export const scenarios: Scenario[] = [
       await window.getByRole('tab', { name: 'Developer' }).click()
       await window.getByLabel('Log every git command').waitFor({ state: 'visible' })
       await shot('developer')
+
+      await window.getByRole('tab', { name: 'About' }).click()
+      await window.getByTestId('update-status').filter({ hasText: 'Not checked yet' }).waitFor()
+      await shot('about')
+    }
+  },
+  {
+    name: 'settings-about-checked',
+    description:
+      'The About tab (#65) either side of the outcome a manual check can ' +
+      'land on: up to date, and a failed check — a network outage, most ' +
+      'likely — shown next to the button that triggers another one.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      // Fixed rather than a real check, which would either hit the network
+      // or hang on an unpacked build — this is what "up to date" looks like
+      // once one has actually run. Scoped to this scenario alone, rather than
+      // the main "settings" one, so it doesn't also put an unrelated toast
+      // over every other tab that scenario captures.
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath, ARBORIST_FAKE_UPDATE: 'up-to-date' }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'App settings…' }).click()
+      await window.getByRole('tab', { name: 'About' }).click()
+      await window.getByTestId('update-status').filter({ hasText: 'up to date' }).waitFor()
+      await shot('up-to-date')
+    }
+  },
+  {
+    name: 'settings-about-error',
+    description: 'The About tab (#65) when the last check failed.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath, ARBORIST_FAKE_UPDATE: 'error' }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'App settings…' }).click()
+      await window.getByRole('tab', { name: 'About' }).click()
+      await window.getByTestId('update-status').filter({ hasText: 'Could not check' }).waitFor()
+      await shot('error')
     }
   },
   {
@@ -1025,6 +1134,50 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('commit-button').click()
       await window.getByLabel('b.txt staging state').waitFor({ state: 'detached' })
       await shot('after-commit')
+    }
+  },
+  {
+    name: 'working-tree-pinned-commit-box',
+    description:
+      'The commit box pinned to the bottom of the Working Tree panel (#66), ' +
+      'full-width separator and all, regardless of how many changed files ' +
+      'sit above it: enough untracked files to force the list to scroll, ' +
+      'captured before and after scrolling it — the commit box stays put ' +
+      'either way.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      // More rows than the panel can show at once, so the file list actually
+      // has something to scroll — the point of this scenario.
+      for (let i = 0; i < 30; i++) {
+        await writeFile(
+          join(fixture.repoPath, `file-${String(i).padStart(2, '0')}.txt`),
+          `${i}\n`,
+          'utf8'
+        )
+      }
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+      await window.getByTestId('commit-button').waitFor({ state: 'visible' })
+      await shot('top')
+
+      // Scrolls the file list, not the window — hovering it first is what
+      // routes the wheel event to that inner scroll container rather than
+      // the page.
+      await window.getByTestId('working-tree-files').hover()
+      await window.mouse.wheel(0, 4000)
+      await window.getByRole('button', { name: 'file-29.txt', exact: true }).waitFor({
+        state: 'visible'
+      })
+      // Still pinned exactly where it was: nothing about scrolling the list
+      // above it should move the footer.
+      await window.getByTestId('commit-button').waitFor({ state: 'visible' })
+      await shot('scrolled')
     }
   },
   {

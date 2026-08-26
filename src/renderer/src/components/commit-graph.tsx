@@ -5,6 +5,7 @@ import { assignLanes, type GraphRow } from '@shared/commit-graph'
 import { commitGraphScopeLabel, commitGraphTips, formatCommitTimestamp } from '@shared/format'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { CopyableError } from '@/components/copyable-error'
 import { useCommitLog } from '@/api/queries'
 import { useWorktreeInspector } from '@/state/selection'
 
@@ -275,7 +276,7 @@ export function CommitGraph({
       )}
 
       {query.error && (
-        <p className="mt-1 text-xs text-destructive">{(query.error as Error).message}</p>
+        <CopyableError className="mt-1 text-xs" message={(query.error as Error).message} />
       )}
     </section>
   )

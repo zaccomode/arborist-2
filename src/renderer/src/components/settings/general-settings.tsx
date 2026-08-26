@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { Settings } from '@shared/persisted'
 import { Button } from '@/components/ui/button'
+import { CopyableError } from '@/components/copyable-error'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -127,7 +128,7 @@ export function GeneralSettings({
             </p>
           </div>
         )}
-        {worktreeRootError && <p className="text-xs text-destructive">{worktreeRootError}</p>}
+        {worktreeRootError && <CopyableError className="text-xs" message={worktreeRootError} />}
       </section>
 
       <section className="space-y-2">
@@ -157,7 +158,7 @@ export function GeneralSettings({
           </Button>
         </div>
         {git.data?.overrideError && (
-          <p className="text-xs text-destructive">{git.data.overrideError}</p>
+          <CopyableError className="text-xs" message={git.data.overrideError} />
         )}
       </section>
 

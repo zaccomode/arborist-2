@@ -23,8 +23,10 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
 import { queryKeys, useStashes } from '@/api/queries'
+import { showErrorToast } from '@/lib/error-toast'
 
 /**
  * The "pop left conflicts" toast text a conflicting pop or apply produces —
@@ -32,7 +34,7 @@ import { queryKeys, useStashes } from '@/api/queries'
  * to surface it honestly rather than pretending it didn't happen.
  */
 function conflictToast(): void {
-  toast.error('That left conflicts to resolve', {
+  showErrorToast('That left conflicts to resolve', {
     description: 'Resolve them in the Working Tree tab, or drop the stash to give up on it.'
   })
 }
@@ -65,7 +67,7 @@ function StashRow({
       }
       onChanged()
     } catch (cause) {
-      toast.error('That failed', { description: (cause as Error).message })
+      showErrorToast('That failed', { description: (cause as Error).message })
     } finally {
       setBusy(false)
     }
@@ -140,7 +142,7 @@ export function StashSection({
       setMessage('')
       setIncludeUntracked(false)
     } catch (cause) {
-      toast.error('Stash failed', { description: (cause as Error).message })
+      showErrorToast('Stash failed', { description: (cause as Error).message })
     } finally {
       setCreating(false)
     }
@@ -184,7 +186,7 @@ export function StashSection({
       )}
 
       {query.error && (
-        <p className="mt-1 text-xs text-destructive">{(query.error as Error).message}</p>
+        <CopyableError className="mt-1 text-xs" message={(query.error as Error).message} />
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>

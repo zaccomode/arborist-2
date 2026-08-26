@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
+import { CopyableError } from '@/components/copyable-error'
 import { queryKeys, useProjectSettings, useProjects, useSettings } from '@/api/queries'
 import { invoke } from '@/api/client'
 import { rootConflictsWithProject } from '@/lib/worktree-location'
@@ -96,7 +97,7 @@ export function ProjectWorktreeLocation({ projectId }: { projectId: string }): R
           </p>
         </div>
       )}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <CopyableError className="text-xs" message={error} />}
     </section>
   )
 }
