@@ -1,10 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import {
+  diffRequestIdentity,
   diffStats,
+  isHunklessChange,
+  isPatchHeaderLine,
   parseUnifiedDiff,
   syntheticNewFileDiff,
   truncateFileDiff,
+  wholeFilePathsFor,
+  withDiffSide,
   type DiffHunk,
+  type DiffRequest,
   type FileDiff
 } from '@shared/diff'
 
@@ -329,5 +335,170 @@ describe('truncateFileDiff', () => {
     expect(result.hunks).toHaveLength(2)
     expect(result.hunks[0].lines).toHaveLength(1000)
     expect(result.hunks[1].lines).toHaveLength(1000)
+  })
+})
+
+describe('isHunklessChange', () => {
+  it('is true for a binary file even if hunks were somehow present', () => {
+    expect(isHunklessChange({ ...emptyFileDiff([]), binary: true })).toBe(true)
+  })
+
+  it('is true for a mode-only change', () => {
+    expect(isHunklessChange({ ...emptyFileDiff([]), changeKind: 'mode-change' })).toBe(true)
+  })
+
+  it('is true for a pure rename with no content edit', () => {
+    expect(isHunklessChange({ ...emptyFileDiff([]), changeKind: 'renamed' })).toBe(true)
+  })
+
+  it('is false once a modified file has hunks', () => {
+    expect(isHunklessChange(emptyFileDiff([hunkOfLines(1)]))).toBe(false)
+  })
+
+  it('is false for a modified file with no hunks — nothing differs at all, not a hunk-less change', () => {
+    expect(isHunklessChange(emptyFileDiff([]))).toBe(false)
+  })
+})
+
+describe('isPatchHeaderLine', () => {
+  it.each([
+    'old mode 100644',
+    'new mode 100755',
+    'new file mode 100644',
+    'deleted file mode 100644',
+    'similarity index 82%',
+    'rename from old.txt',
+    'rename to new.txt',
+    '--- a/f.txt',
+    '+++ b/f.txt'
+  ])('recognises %s', (line) => {
+    expect(isPatchHeaderLine(line)).toBe(true)
+  })
+
+  it.each(['diff --git a/f.txt b/f.txt', 'index 111..222 100644', '@@ -1,2 +1,2 @@', ' context'])(
+    'rejects %s',
+    (line) => {
+      expect(isPatchHeaderLine(line)).toBe(false)
+    }
+  )
+})
+
+describe('wholeFilePathsFor', () => {
+  it('is just the path for an ordinary unstaged file', () => {
+    const request: DiffRequest = {
+      kind: 'unstaged',
+      worktreePath: '/repo',
+      path: 'f.txt'
+    }
+    expect(wholeFilePathsFor(request)).toEqual(['f.txt'])
+  })
+
+  it('is just the path for an untracked file', () => {
+    const request: DiffRequest = { kind: 'untracked', worktreePath: '/repo', path: 'new.txt' }
+    expect(wholeFilePathsFor(request)).toEqual(['new.txt'])
+  })
+
+  it('is both sides for a rename', () => {
+    const request: DiffRequest = {
+      kind: 'staged',
+      worktreePath: '/repo',
+      path: 'new.txt',
+      origPath: 'old.txt'
+    }
+    expect(wholeFilePathsFor(request)).toEqual(['old.txt', 'new.txt'])
+  })
+
+  it('is just the path when origPath equals path', () => {
+    const request: DiffRequest = {
+      kind: 'staged',
+      worktreePath: '/repo',
+      path: 'f.txt',
+      origPath: 'f.txt'
+    }
+    expect(wholeFilePathsFor(request)).toEqual(['f.txt'])
+  })
+})
+
+describe('diffRequestIdentity', () => {
+  it('is the same identity for the unstaged and staged sides of one file', () => {
+    const unstaged: DiffRequest = { kind: 'unstaged', worktreePath: '/repo', path: 'f.txt' }
+    const staged: DiffRequest = { kind: 'staged', worktreePath: '/repo', path: 'f.txt' }
+    expect(diffRequestIdentity(unstaged)).toBe(diffRequestIdentity(staged))
+  })
+
+  it('differs for two different paths', () => {
+    const a: DiffRequest = { kind: 'unstaged', worktreePath: '/repo', path: 'a.txt' }
+    const b: DiffRequest = { kind: 'unstaged', worktreePath: '/repo', path: 'b.txt' }
+    expect(diffRequestIdentity(a)).not.toBe(diffRequestIdentity(b))
+  })
+
+  it('differs for the same path in two different worktrees', () => {
+    const a: DiffRequest = { kind: 'unstaged', worktreePath: '/repo-a', path: 'f.txt' }
+    const b: DiffRequest = { kind: 'unstaged', worktreePath: '/repo-b', path: 'f.txt' }
+    expect(diffRequestIdentity(a)).not.toBe(diffRequestIdentity(b))
+  })
+
+  it('differs between an untracked file and a tracked file of the same path', () => {
+    const untracked: DiffRequest = { kind: 'untracked', worktreePath: '/repo', path: 'f.txt' }
+    const tracked: DiffRequest = { kind: 'unstaged', worktreePath: '/repo', path: 'f.txt' }
+    expect(diffRequestIdentity(untracked)).not.toBe(diffRequestIdentity(tracked))
+  })
+
+  it('differs between two commits, and between two paths within one commit', () => {
+    const commitA: DiffRequest = { kind: 'commit', repoPath: '/repo', hash: 'aaa', path: 'f.txt' }
+    const commitB: DiffRequest = { kind: 'commit', repoPath: '/repo', hash: 'bbb', path: 'f.txt' }
+    const otherPath: DiffRequest = { kind: 'commit', repoPath: '/repo', hash: 'aaa', path: 'g.txt' }
+    expect(diffRequestIdentity(commitA)).not.toBe(diffRequestIdentity(commitB))
+    expect(diffRequestIdentity(commitA)).not.toBe(diffRequestIdentity(otherPath))
+  })
+})
+
+describe('withDiffSide', () => {
+  it('returns the request unchanged when no manual side is picked', () => {
+    const request: DiffRequest = { kind: 'unstaged', worktreePath: '/repo', path: 'f.txt' }
+    expect(withDiffSide(request, null)).toBe(request)
+  })
+
+  it('overrides an unstaged request with the manually picked staged side', () => {
+    const request: DiffRequest = { kind: 'unstaged', worktreePath: '/repo', path: 'f.txt' }
+    expect(withDiffSide(request, 'staged')).toEqual({
+      kind: 'staged',
+      worktreePath: '/repo',
+      path: 'f.txt'
+    })
+  })
+
+  it('overrides a staged request with the manually picked unstaged side', () => {
+    const request: DiffRequest = { kind: 'staged', worktreePath: '/repo', path: 'f.txt' }
+    expect(withDiffSide(request, 'unstaged')).toEqual({
+      kind: 'unstaged',
+      worktreePath: '/repo',
+      path: 'f.txt'
+    })
+  })
+
+  it('preserves origPath when overriding the side', () => {
+    const request: DiffRequest = {
+      kind: 'unstaged',
+      worktreePath: '/repo',
+      path: 'new.txt',
+      origPath: 'old.txt'
+    }
+    expect(withDiffSide(request, 'staged')).toEqual({
+      kind: 'staged',
+      worktreePath: '/repo',
+      path: 'new.txt',
+      origPath: 'old.txt'
+    })
+  })
+
+  it('ignores a manual side for an untracked file, which has none to pick', () => {
+    const request: DiffRequest = { kind: 'untracked', worktreePath: '/repo', path: 'new.txt' }
+    expect(withDiffSide(request, 'staged')).toBe(request)
+  })
+
+  it('ignores a manual side for a historical commit, which has none to pick', () => {
+    const request: DiffRequest = { kind: 'commit', repoPath: '/repo', hash: 'aaa', path: 'f.txt' }
+    expect(withDiffSide(request, 'unstaged')).toBe(request)
   })
 })

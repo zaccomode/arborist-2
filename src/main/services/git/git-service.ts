@@ -12,6 +12,7 @@ import type {
   WorktreeStatus
 } from '../../../shared/domain'
 import {
+  isPatchHeaderLine,
   parseUnifiedDiff,
   syntheticNewFileDiff,
   truncateFileDiff,
@@ -22,6 +23,13 @@ import { worktreeBasePath, type ResolvedLocation } from '../../../shared/worktre
 import { sortChangedFiles } from '../../../shared/working-tree'
 import type { GitRunner } from './git-runner'
 import { FETCH_TIMEOUT_MS } from './git-executor'
+import {
+  hunkId as hunkIdOf,
+  lineByteRanges,
+  sliceLine,
+  sliceLines,
+  type ByteRange
+} from './diff-bytes'
 import {
   COMMIT_FORMAT,
   FIELD_SEPARATOR,
@@ -73,6 +81,31 @@ function isAuthFailure(stderr: string): boolean {
 /** `origin/feature-x` -> `feature-x`: the name a local branch of the same branch would carry. */
 function shortRemoteName(ref: string): string {
   return ref.slice(ref.indexOf('/') + 1)
+}
+
+/**
+ * Byte-range line indices of the header `applyHunk`'s single-hunk patch
+ * needs: the `diff --git` line itself (always line 0, checked directly
+ * rather than through `isPatchHeaderLine`, which only recognises the lines
+ * that follow it), plus whichever mode/rename/similarity/path lines sit
+ * between it and `firstHunkLine`.
+ */
+function patchHeaderLineIndices(
+  buffer: Buffer,
+  lineRanges: ByteRange[],
+  firstHunkLine: number
+): number[] {
+  const indices: number[] = []
+  for (let i = 0; i < firstHunkLine && i < lineRanges.length; i++) {
+    const range = lineRanges[i]
+    const text = buffer.subarray(range.start, range.end).toString('utf8')
+    if (i === 0) {
+      if (text.startsWith('diff --git ')) indices.push(i)
+      continue
+    }
+    if (isPatchHeaderLine(text)) indices.push(i)
+  }
+  return indices
 }
 
 /**
@@ -403,7 +436,7 @@ export class GitService {
         hunks: []
       }
     }
-    const truncated = truncateFileDiff(file)
+    const truncated = truncateFileDiff(this.#withHunkIds(file, buffer))
     return lossy ? { ...truncated, lossy: true } : truncated
   }
 
@@ -416,7 +449,101 @@ export class GitService {
     const buffer = await fs.readFile(join(worktreePath, path))
     const sniff = buffer.subarray(0, Math.min(buffer.length, 8000))
     const binary = sniff.includes(0)
-    return truncateFileDiff(syntheticNewFileDiff(path, binary ? null : buffer.toString('utf8')))
+    const file = syntheticNewFileDiff(path, binary ? null : buffer.toString('utf8'))
+    return truncateFileDiff(this.#withHunkIds(file, buffer))
+  }
+
+  /**
+   * Stamps each hunk with `DiffHunk.id` (see that field's doc comment):
+   * a sha1 over the raw bytes `lineRange` slices from `buffer`. `buffer` has
+   * to be the exact buffer `parseUnifiedDiff` derived `file` from — the
+   * indices only line up against that one.
+   */
+  #withHunkIds(file: FileDiff, buffer: Buffer): FileDiff {
+    if (file.hunks.length === 0) return file
+    const lineRanges = lineByteRanges(buffer)
+    return {
+      ...file,
+      hunks: file.hunks.map((hunk) => ({
+        ...hunk,
+        id: hunkIdOf(buffer, lineRanges, hunk.lineRange)
+      }))
+    }
+  }
+
+  /**
+   * Stages or unstages exactly one hunk, identified by `DiffHunk.id`.
+   * Stateless by design (#49): there is no server-side cache of a diff once
+   * shown, so this re-runs the same diff fresh, re-parses, and finds the
+   * hunk by id. A hunk id computed a moment ago and one computed from the
+   * file as it stands right now simply fail to match once the file has
+   * changed underneath — no separate staleness check needed.
+   *
+   * `direction: 'unstage'` re-diffs against the index (`--cached`) rather
+   * than the worktree, since a `diff --cached` hunk is the only kind
+   * `apply --cached --reverse` can cleanly undo.
+   */
+  async applyHunk(
+    worktreePath: string,
+    file: { path: string; origPath?: string | null },
+    hunkId: string,
+    direction: 'stage' | 'unstage'
+  ): Promise<void> {
+    const pathspecs =
+      file.origPath && file.origPath !== file.path ? [file.origPath, file.path] : [file.path]
+
+    const { stdoutBuffer } = await this.#git.runRaw(
+      [
+        '-c',
+        'diff.noprefix=false',
+        '-c',
+        'diff.mnemonicPrefix=false',
+        'diff',
+        ...(direction === 'unstage' ? ['--cached'] : []),
+        ...DIFF_FLAGS,
+        '--',
+        ...pathspecs
+      ],
+      { repoPath: worktreePath }
+    )
+    const buffer = stdoutBuffer ?? Buffer.alloc(0)
+    const lineRanges = lineByteRanges(buffer)
+    const [parsedFile] = parseUnifiedDiff(buffer.toString('utf8'))
+    const hunk = parsedFile?.hunks.find(
+      (candidate) => hunkIdOf(buffer, lineRanges, candidate.lineRange) === hunkId
+    )
+
+    if (!parsedFile || !hunk) {
+      throw new AppError('This file changed since the diff was shown.', 'diff-stale')
+    }
+
+    const headerBytes = Buffer.concat(
+      patchHeaderLineIndices(buffer, lineRanges, parsedFile.hunks[0].lineRange.start).map((i) =>
+        sliceLine(buffer, lineRanges, i)
+      )
+    )
+    const patch = Buffer.concat([
+      headerBytes,
+      sliceLines(buffer, lineRanges, hunk.lineRange.start, hunk.lineRange.end)
+    ])
+
+    const result = await this.#git.run(
+      [
+        'apply',
+        '--cached',
+        '--whitespace=nowarn',
+        ...(direction === 'unstage' ? ['--reverse'] : [])
+      ],
+      { repoPath: worktreePath, input: patch }
+    )
+    if (result.exitCode === 0) return
+    if (result.exitCode === 1) {
+      throw new AppError(
+        'This hunk no longer matches the file — it may have changed.',
+        'patch-did-not-apply'
+      )
+    }
+    throw new AppError(result.stderr.trim() || 'git apply failed', 'patch-invalid')
   }
 
   /**

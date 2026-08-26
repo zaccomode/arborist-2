@@ -30,6 +30,18 @@ export interface DiffHunk {
   lines: DiffLine[]
   /** Inclusive line-index range into the diff text this hunk came from, header included. */
   lineRange: { start: number; end: number }
+  /**
+   * 12 hex characters of a sha1 over the hunk's raw bytes (the `@@` header
+   * included), computed in main from the same buffer `lineRange` slices —
+   * `crypto` is forbidden here in `src/shared`. Never set by
+   * `parseUnifiedDiff` itself, the same way `FileDiff.lossy` never is: only
+   * main has the raw buffer to hash. The renderer sends this back on
+   * `worktree:applyHunk` to say which hunk to stage or unstage; main
+   * re-diffs fresh and looks it up by id rather than trusting a cached copy,
+   * so a stale id (the file changed since the diff was shown) simply fails
+   * to match anything instead of needing its own staleness check.
+   */
+  id?: string
 }
 
 export type FileChangeKind = 'modified' | 'added' | 'deleted' | 'renamed' | 'mode-change'
@@ -89,6 +101,43 @@ export function truncateFileDiff(file: FileDiff): FileDiff {
   return { ...file, hunks, truncated: true }
 }
 
+/**
+ * Whether a file's change has nothing a hunk can represent — a mode-only
+ * flip, a pure rename, or a binary file — so "stage this hunk" is
+ * meaningless and the panel has to offer whole-file staging instead. A
+ * `'modified'` file with no hunks is different: that means git found no
+ * difference at all (see `#parseDiffBuffer`'s empty-output case), and there
+ * is nothing to stage either way.
+ */
+export function isHunklessChange(file: FileDiff): boolean {
+  if (file.binary) return true
+  return file.hunks.length === 0 && file.changeKind !== 'modified'
+}
+
+/**
+ * Whether `line` is one of the lines `worktree:applyHunk`'s single-hunk
+ * patch needs from the header shared by every hunk in a file's diff —
+ * mirrors the prefixes `parseUnifiedDiff`'s own header scan below
+ * recognises, except `index <old>..<new>`, deliberately left out: verified
+ * that `git apply` doesn't need it, and it's actively misleading when only
+ * one hunk of the file is included. The `diff --git` line itself is always
+ * the header's first line, so callers add that separately rather than
+ * through this.
+ */
+export function isPatchHeaderLine(line: string): boolean {
+  return (
+    line.startsWith('old mode ') ||
+    line.startsWith('new mode ') ||
+    line.startsWith('new file mode ') ||
+    line.startsWith('deleted file mode ') ||
+    line.startsWith('similarity index ') ||
+    line.startsWith('rename from ') ||
+    line.startsWith('rename to ') ||
+    line.startsWith('--- ') ||
+    line.startsWith('+++ ')
+  )
+}
+
 /** Insertions and deletions across every hunk, for the panel's header. */
 export function diffStats(file: FileDiff): { insertions: number; deletions: number } {
   let insertions = 0
@@ -111,6 +160,54 @@ export type DiffRequest =
   | { kind: 'unstaged' | 'staged'; worktreePath: string; path: string; origPath?: string | null }
   | { kind: 'untracked'; worktreePath: string; path: string }
   | { kind: 'commit'; repoPath: string; hash: string; path: string; origPath?: string | null }
+
+/**
+ * The paths to pass `workingTree:stage`/`workingTree:unstage` for a
+ * hunk-less file's whole-file staging offer: both sides of a rename, or
+ * just the path. Mirrors `stagePathsFor` in `working-tree.ts`, which takes
+ * a `ChangedFile` rather than a `DiffRequest` — the diff panel has the
+ * latter, not the former, for a file opened from a commit or an inspector
+ * restored from persisted selection.
+ */
+export function wholeFilePathsFor(request: DiffRequest): string[] {
+  if (request.kind === 'untracked') return [request.path]
+  return request.origPath && request.origPath !== request.path
+    ? [request.origPath, request.path]
+    : [request.path]
+}
+
+/**
+ * Identifies the *file* a request is for, deliberately ignoring which side
+ * (`'unstaged'`/`'staged'`) of a tracked file it names. Used by the diff
+ * panel to tell "the user flipped sides on the same file" apart from "the
+ * user opened a different file" — the former should leave the panel's
+ * chosen side alone, the latter should reset it to the freshly-computed
+ * default (see `withDiffSide`).
+ */
+export function diffRequestIdentity(request: DiffRequest): string {
+  if (request.kind === 'commit') {
+    return `commit:${request.repoPath}:${request.hash}:${request.path}`
+  }
+  if (request.kind === 'untracked') return `untracked:${request.worktreePath}:${request.path}`
+  return `tracked:${request.worktreePath}:${request.path}`
+}
+
+/**
+ * The request the diff panel should actually query: `request` unmodified,
+ * unless the user has manually picked a side with the panel's Unstaged/
+ * Staged toggle *and* the file has a side to pick — an `'untracked'` file or
+ * a historical `'commit'` has only ever the one side `request` already
+ * names, so `manualSide` is ignored for those rather than fabricating a
+ * `DiffRequest` kind that doesn't apply.
+ */
+export function withDiffSide(
+  request: DiffRequest,
+  manualSide: 'unstaged' | 'staged' | null
+): DiffRequest {
+  if (!manualSide) return request
+  if (request.kind !== 'unstaged' && request.kind !== 'staged') return request
+  return { ...request, kind: manualSide }
+}
 
 function splitLines(text: string): string[] {
   if (text === '') return []

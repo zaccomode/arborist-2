@@ -69,6 +69,23 @@ export interface IpcInvokeContract {
   /** `git add -- <paths>`. Both sides of a rename have to be passed together. */
   'workingTree:stage': { args: [worktreePath: string, paths: string[]]; result: void }
   'workingTree:unstage': { args: [worktreePath: string, paths: string[]]; result: void }
+  /**
+   * Stages or unstages exactly one hunk from the diff panel, by
+   * `DiffHunk.id`. Stateless: main re-runs the same diff fresh and finds the
+   * hunk by id rather than trusting anything cached on this side — a stale
+   * id (the file changed since the diff was shown) throws `AppError` with
+   * code `diff-stale`, for the renderer to refetch and toast over. `file`
+   * carries both sides of a rename, the same as `diff:get`'s `DiffRequest`.
+   */
+  'worktree:applyHunk': {
+    args: [
+      worktreePath: string,
+      file: { path: string; origPath?: string | null },
+      hunkId: string,
+      direction: 'stage' | 'unstage'
+    ]
+    result: void
+  }
   /** Irreversible: `git restore` for tracked paths, `git clean -f` for untracked ones. */
   'workingTree:discard': {
     args: [worktreePath: string, paths: { tracked: string[]; untracked: string[] }]
@@ -209,6 +226,7 @@ const CHANNELS: Record<IpcChannel, true> = {
   'diff:get': true,
   'workingTree:stage': true,
   'workingTree:unstage': true,
+  'worktree:applyHunk': true,
   'workingTree:discard': true,
   'workingTree:commit': true,
   'workingTree:push': true,

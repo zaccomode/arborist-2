@@ -107,6 +107,9 @@ export function registerIpcHandlers({
   handle('workingTree:unstage', (worktreePath, paths) =>
     gitService.unstageFiles(worktreePath, paths)
   )
+  handle('worktree:applyHunk', (worktreePath, file, hunkId, direction) =>
+    gitService.applyHunk(worktreePath, file, hunkId, direction)
+  )
   handle('workingTree:discard', (worktreePath, paths) =>
     gitService.discardFiles(worktreePath, paths)
   )
