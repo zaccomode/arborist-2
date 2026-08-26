@@ -56,7 +56,9 @@ function automationTarget(project: Repository, worktree: Worktree): AutomationTa
       branch: worktree.branch,
       commitHash: worktree.status?.lastCommit?.hash ?? worktree.head,
       repoName: project.name,
-      repoPath: project.path
+      repoPath: project.path,
+      filePath: null,
+      fileLine: null
     }
   }
 }

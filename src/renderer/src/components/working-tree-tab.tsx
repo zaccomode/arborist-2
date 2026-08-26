@@ -32,10 +32,11 @@ import {
 } from '@/components/ui/context-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CommitBox } from '@/components/commit-box'
+import { ConflictSection } from '@/components/conflict-section'
 import { FilePathCell } from '@/components/file-path-cell'
 import { StashSection } from '@/components/stash-section'
 import { invoke } from '@/api/client'
-import { queryKeys, useWorkingTree } from '@/api/queries'
+import { queryKeys, useConflictState, useWorkingTree } from '@/api/queries'
 import { useWorktreeInspector } from '@/state/selection'
 
 /** Radix's `checked` prop, from the tri-state model `stagingState` computes. */
@@ -136,11 +137,13 @@ function FileRow({
 export function WorkingTreeTab({
   repositoryId,
   repoPath,
+  repoName,
   worktree,
   focusCommitToken
 }: {
   repositoryId: string
   repoPath: string
+  repoName: string
   worktree: Worktree
   /** Bumped by "Commit first" on the switch-branch dialog to focus the commit box. */
   focusCommitToken?: number
@@ -148,8 +151,13 @@ export function WorkingTreeTab({
   const worktreePath = worktree.path
   const queryClient = useQueryClient()
   const query = useWorkingTree(worktreePath)
+  const conflictQuery = useConflictState(worktreePath)
   const data = query.data
-  const files = data?.files ?? []
+  const allFiles = data?.files ?? []
+  // Conflicted rows move to the Conflicts section entirely — no checkbox, no
+  // diff panel — so Changed Files only ever shows the rest.
+  const conflictedFiles = allFiles.filter((file) => file.kind === 'unmerged')
+  const files = allFiles.filter((file) => file.kind !== 'unmerged')
   const allStaged = files.length > 0 && files.every((file) => stagingState(file) === 'checked')
   const anyStaged = files.some((file) => stagingState(file) !== 'unchecked')
   const [inspector, openInspector, closeInspector] = useWorktreeInspector(
@@ -170,6 +178,7 @@ export function WorkingTreeTab({
   const invalidate = (): void => {
     queryClient.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
     queryClient.invalidateQueries({ queryKey: queryKeys.workingTree(worktreePath) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.conflictState(worktreePath) })
   }
 
   const toggleFile = async (file: ChangedFile): Promise<void> => {
@@ -183,13 +192,13 @@ export function WorkingTreeTab({
   }
 
   const toggleAll = async (): Promise<void> => {
+    // `files` already excludes conflicted rows — they have no checkbox to
+    // begin with, so there is nothing here for "select all" to touch.
     if (allStaged) {
       const paths = files.filter((file) => file.index !== '.').flatMap(stagePathsFor)
       if (paths.length > 0) await invoke('workingTree:unstage', worktreePath, paths)
     } else {
-      const paths = files
-        .filter((file) => file.kind !== 'unmerged' && stagingState(file) !== 'checked')
-        .flatMap(stagePathsFor)
+      const paths = files.filter((file) => stagingState(file) !== 'checked').flatMap(stagePathsFor)
       if (paths.length > 0) await invoke('workingTree:stage', worktreePath, paths)
     }
     invalidate()
@@ -219,8 +228,27 @@ export function WorkingTreeTab({
         </div>
       )}
 
-      {!query.isPending && files.length === 0 && (
+      {!query.isPending && allFiles.length === 0 && (
         <p className="text-sm text-muted-foreground">No changes.</p>
+      )}
+
+      {/* Shown whenever there is a `u` record to deal with, or a git
+          operation is still in progress after the last one was resolved
+          (Continue hasn't run yet) — not gated on the operation alone, since
+          a conflicting stash pop leaves `u` records with no operation behind
+          them at all (see `ConflictSection`'s doc comment on `conflictState`). */}
+      {(conflictedFiles.length > 0 || conflictQuery.data?.operation) && (
+        <ConflictSection
+          repositoryId={repositoryId}
+          repoPath={repoPath}
+          repoName={repoName}
+          worktree={worktree}
+          files={conflictedFiles}
+          conflictState={
+            conflictQuery.data ?? { operation: null, sourceLabel: null, targetLabel: null }
+          }
+          onChanged={invalidate}
+        />
       )}
 
       {files.length > 0 && (

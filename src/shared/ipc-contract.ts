@@ -19,6 +19,7 @@ import type {
   Worktree
 } from './domain'
 import type { BranchSwitchPlan } from './branch-switch'
+import type { ConflictOperation, ConflictState } from './conflicts'
 import type { DiffRequest, FileDiff } from './diff'
 import type { Preset, ProjectSettings, Repository, SelectionState, Settings } from './persisted'
 import type { AutomationEvent } from './automation'
@@ -106,6 +107,29 @@ export interface IpcInvokeContract {
   /** Whether `user.email` is configured — a warning under the commit box, never a block. */
   'workingTree:hasIdentity': { args: [worktreePath: string]; result: boolean }
   /**
+   * Which operation (if any) left the worktree conflicted, and who's
+   * involved — see `ConflictState`. A path lookup and a stat per git state
+   * file, never stderr matching: `detectConflictOperation` in
+   * `src/main/services/git/conflict-state.ts`.
+   */
+  'conflicts:state': { args: [worktreePath: string]; result: ConflictState }
+  /**
+   * `git checkout --ours -- <path>` then `git add -- <path>`: resolves one
+   * `UU` conflict to "our" side and marks it resolved in one action. Never
+   * offered on `AA`/`DU`/`UD` — see `canKeepOurs`.
+   */
+  'conflicts:keepOurs': { args: [worktreePath: string, path: string]; result: void }
+  /** `git <operation> --abort`. */
+  'conflicts:abort': { args: [worktreePath: string, operation: ConflictOperation]; result: void }
+  /**
+   * `git <operation> --continue`, with the editor neutralised — see
+   * `continueArgsFor`'s doc comment for why that matters.
+   */
+  'conflicts:continue': {
+    args: [worktreePath: string, operation: ConflictOperation]
+    result: void
+  }
+  /**
    * What switching this worktree to `branch` would do — every failure mode
    * `git switch` can hit is pre-checkable, so the renderer asks this before
    * ever running the switch itself. See `BranchSwitchPlan`.
@@ -184,9 +208,18 @@ export interface IpcInvokeContract {
   'presets:save': { args: [preset: Preset]; result: void }
   'presets:delete': { args: [presetId: string]; result: void }
   'presets:reorder': { args: [orderedIds: string[]]; result: void }
-  /** Shell presets resolve to a run id to attach a console to; the rest launch. */
+  /**
+   * Shell presets resolve to a run id to attach a console to; the rest
+   * launch. `target` defaults to `'worktree'` — every caller before #53 —
+   * and `'file'` is what the Conflicts section's "Open in editor" uses,
+   * which is also what makes `context.filePath` meaningful.
+   */
   'presets:run': {
-    args: [presetId: string, context: SubstitutionValues & { projectId: string | null }]
+    args: [
+      presetId: string,
+      context: SubstitutionValues & { projectId: string | null },
+      target?: 'worktree' | 'file'
+    ]
     result: PresetRunResult
   }
   /**
@@ -288,6 +321,10 @@ const CHANNELS: Record<IpcChannel, true> = {
   'workingTree:commit': true,
   'workingTree:push': true,
   'workingTree:hasIdentity': true,
+  'conflicts:state': true,
+  'conflicts:keepOurs': true,
+  'conflicts:abort': true,
+  'conflicts:continue': true,
   'branches:switchPrecheck': true,
   'branches:switch': true,
   'stash:push': true,

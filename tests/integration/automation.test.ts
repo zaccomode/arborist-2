@@ -17,7 +17,9 @@ const values = {
   branch: 'feature/x',
   commitHash: 'abc1234',
   repoName: 'arborist',
-  repoPath: '/tmp/arborist'
+  repoPath: '/tmp/arborist',
+  filePath: null,
+  fileLine: null
 }
 
 /** Resolves once the run reports it has finished, however it finished. */

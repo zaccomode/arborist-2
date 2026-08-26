@@ -6,6 +6,7 @@ import type { Preset } from '../../shared/persisted'
 import {
   builtInPresetId,
   enabledAtAppLevel,
+  FILE_CAPABLE_BUILTINS,
   githubUrlFromRemote,
   resolvePresets,
   type BuiltInPreset,
@@ -60,6 +61,17 @@ export const BUILT_IN_PRESETS: readonly BuiltInPreset[] = [
 export interface PresetContext extends SubstitutionValues {
   projectId: string | null
 }
+
+/**
+ * `'worktree'` is every preset call before #53: the target is the worktree
+ * directory (`context.path`). `'file'` is the Conflicts section's "Open in
+ * editor" — the target is `context.filePath`, and built-ins with no sensible
+ * per-file behaviour are rejected rather than silently opening the worktree
+ * instead (`filterForTarget` is what keeps them off the UI's list in the
+ * first place; this is the defensive check for anything that calls `run`
+ * directly).
+ */
+export type PresetTarget = 'worktree' | 'file'
 
 async function pathExists(path: string): Promise<boolean> {
   try {
@@ -199,23 +211,45 @@ export class PresetService {
     })
   }
 
-  async run(presetId: string, context: PresetContext): Promise<PresetRunResult> {
+  async run(
+    presetId: string,
+    context: PresetContext,
+    target: PresetTarget = 'worktree'
+  ): Promise<PresetRunResult> {
+    if (target === 'file' && !context.filePath) {
+      throw new AppError('No file to open.', 'preset-launch-failed')
+    }
+
     const builtIn = BUILT_IN_PRESETS.find(
       (preset) => builtInPresetId(preset.builtinId) === presetId
     )
     if (builtIn) {
-      await this.#runBuiltIn(builtIn.builtinId, context)
+      if (target === 'file' && !FILE_CAPABLE_BUILTINS.has(builtIn.builtinId)) {
+        throw new AppError(`${builtIn.name} can't open a single file.`, 'preset-launch-failed')
+      }
+      await this.#runBuiltIn(builtIn.builtinId, context, target)
       return { kind: 'launched' }
     }
 
     const custom = this.#store.data.presets.find((preset) => preset.id === presetId)
     if (!custom) throw new AppError(`No preset with id ${presetId}.`, 'preset-not-found')
-    return this.#runCustom(custom, context)
+    return this.#runCustom(custom, context, target)
   }
 
-  async #runBuiltIn(builtinId: string, context: PresetContext): Promise<void> {
+  async #runBuiltIn(
+    builtinId: string,
+    context: PresetContext,
+    target: PresetTarget
+  ): Promise<void> {
     switch (builtinId) {
       case 'reveal': {
+        // `showItemInFolder` reveals one file — its own directory shown with
+        // the file selected — where `openPath` on the directory just opens
+        // the folder with nothing picked out.
+        if (target === 'file' && context.filePath) {
+          shell.showItemInFolder(context.filePath)
+          return
+        }
         const error = await shell.openPath(context.path)
         if (error) throw new AppError(error, 'preset-launch-failed')
         return
@@ -225,6 +259,12 @@ export class PresetService {
       case 'vscode': {
         const command = await this.#vsCodeCommand()
         if (!command) throw new AppError('VS Code was not found.', 'preset-launch-failed')
+        if (target === 'file' && context.filePath) {
+          const goto = context.fileLine
+            ? `${context.filePath}:${context.fileLine}`
+            : context.filePath
+          return launchDetached(command.command, [...command.args, '--goto', goto])
+        }
         return launchDetached(command.command, [...command.args, context.path])
       }
       case 'github': {
@@ -239,16 +279,25 @@ export class PresetService {
     }
   }
 
-  async #runCustom(preset: Preset, context: PresetContext): Promise<PresetRunResult> {
+  async #runCustom(
+    preset: Preset,
+    context: PresetContext,
+    target: PresetTarget
+  ): Promise<PresetRunResult> {
+    // Everything but a shell preset's cwd targets the file directly when
+    // asked to; a shell preset always runs with the worktree as its cwd and
+    // reaches the file, if it wants it, through the `{{filePath}}` token.
+    const targetPath = target === 'file' && context.filePath ? context.filePath : context.path
+
     switch (preset.command.type) {
       case 'app': {
         // Values reach the app as argv entries, so nothing parses them and
         // nothing needs escaping.
-        const target = substitute(preset.command.app, context, 'raw')
-        if (process.platform === 'darwin' && target.endsWith('.app')) {
-          await openApp(target, context.path)
+        const app = substitute(preset.command.app, context, 'raw')
+        if (process.platform === 'darwin' && app.endsWith('.app')) {
+          await openApp(app, targetPath)
         } else {
-          await launchDetached(target, [context.path])
+          await launchDetached(app, [targetPath])
         }
         return { kind: 'launched' }
       }

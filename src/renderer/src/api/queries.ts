@@ -14,6 +14,7 @@ import type {
   WorkingTreeChanges,
   Worktree
 } from '@shared/domain'
+import type { ConflictState } from '@shared/conflicts'
 import type { DiffRequest, FileDiff } from '@shared/diff'
 import type { PresetCatalogue, ResolvedPreset } from '@shared/presets'
 import type { ProjectSettings, Repository, Settings } from '@shared/persisted'
@@ -35,6 +36,7 @@ export const queryKeys = {
   commit: (repoPath: string, hash: string) => ['commit', repoPath, hash] as const,
   commitFiles: (repoPath: string, hash: string) => ['commit-files', repoPath, hash] as const,
   workingTree: (worktreePath: string) => ['working-tree', worktreePath] as const,
+  conflictState: (worktreePath: string) => ['conflict-state', worktreePath] as const,
   fileDiff: (request: DiffRequest | null) => ['file-diff', request] as const,
   commitDraft: (repositoryId: string, worktreePath: string) =>
     ['commit-draft', repositoryId, worktreePath] as const,
@@ -115,6 +117,22 @@ export function useWorkingTree(
   return useQuery({
     queryKey: queryKeys.workingTree(worktreePath ?? ''),
     queryFn: () => invoke('workingTree:get', worktreePath!),
+    enabled: worktreePath !== null
+  })
+}
+
+/**
+ * Which operation (if any) has the worktree mid-conflict, for the Conflicts
+ * section — fetched whenever the Working Tree tab is open, not only when
+ * `u` records are present, since the section stays up (offering Continue)
+ * after the last one is resolved but before the operation itself finishes.
+ */
+export function useConflictState(
+  worktreePath: string | null
+): ReturnType<typeof useQuery<ConflictState>> {
+  return useQuery({
+    queryKey: queryKeys.conflictState(worktreePath ?? ''),
+    queryFn: () => invoke('conflicts:state', worktreePath!),
     enabled: worktreePath !== null
   })
 }

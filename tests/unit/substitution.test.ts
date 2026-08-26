@@ -6,7 +6,9 @@ const values: SubstitutionValues = {
   branch: 'feature/ABC-123',
   commitHash: 'abc1234',
   repoName: 'arborist',
-  repoPath: '/Users/iso/code/arborist'
+  repoPath: '/Users/iso/code/arborist',
+  filePath: null,
+  fileLine: null
 }
 
 /** A value chosen to break every unescaped destination at once. */
@@ -35,6 +37,17 @@ describe('substitute', () => {
 
   it('substitutes a null value as empty', () => {
     expect(substitute('[{{commitHash}}]', { ...values, commitHash: null }, 'raw')).toBe('[]')
+  })
+
+  it('substitutes a null filePath/fileLine as empty, same as any other null token', () => {
+    expect(substitute('[{{filePath}}:{{fileLine}}]', values, 'raw')).toBe('[:]')
+  })
+
+  it('stringifies fileLine, the one numeric token', () => {
+    const withFile = { ...values, filePath: '/Users/iso/code/feature-x/uu.txt', fileLine: 12 }
+    expect(substitute('{{filePath}}:{{fileLine}}', withFile, 'raw')).toBe(
+      '/Users/iso/code/feature-x/uu.txt:12'
+    )
   })
 
   it('leaves an unknown token exactly as written', () => {

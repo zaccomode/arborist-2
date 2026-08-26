@@ -29,7 +29,9 @@ const SAMPLE = {
   branch: 'feature/ABC-123',
   commitHash: '46862b9',
   repoName: 'arborist',
-  repoPath: '/Users/iso/code/arborist'
+  repoPath: '/Users/iso/code/arborist',
+  filePath: null,
+  fileLine: null
 }
 
 function commandValue(command: PresetCommand): string {
@@ -194,6 +196,8 @@ export function PresetEditor({
             <span className="font-mono">
               {'{{path}} {{branch}} {{commitHash}} {{repoName}} {{repoPath}}'}
             </span>
+            . Opened from a conflict, also{' '}
+            <span className="font-mono">{'{{filePath}} {{fileLine}}'}</span> — empty otherwise.
           </p>
         </div>
 
