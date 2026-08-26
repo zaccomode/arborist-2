@@ -542,7 +542,7 @@ export const scenarios: Scenario[] = [
     }
   },
   {
-    name: 'remote-branch-follows-tracking',
+    name: 'rb-tracking-demo',
     description:
       'A remote branch, before and after it is turned into a worktree whose ' +
       'local branch is deliberately named something else entirely (#47): ' +
@@ -687,7 +687,7 @@ export const scenarios: Scenario[] = [
     }
   },
   {
-    name: 'settings-update-check-result',
+    name: 'update-check-tab',
     description:
       'The About tab (#65) either side of the outcome a manual check can ' +
       'land on: up to date, and a failed check — a network outage, most ' +
@@ -1137,7 +1137,7 @@ export const scenarios: Scenario[] = [
     }
   },
   {
-    name: 'working-tree-commit-footer',
+    name: 'commit-footer-pin',
     description:
       'The commit box pinned to the bottom of the Working Tree panel (#66), ' +
       'full-width separator and all, regardless of how many changed files ' +
