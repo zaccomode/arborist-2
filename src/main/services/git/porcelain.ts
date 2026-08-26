@@ -13,6 +13,7 @@ import type {
   ChangedFile,
   CommitLogEntry,
   CommitSummary,
+  StashEntry,
   StatusBranch,
   UnmergedCode,
   UpstreamTrack,
@@ -496,4 +497,20 @@ export function countsFromV2(changes: WorkingTreeChanges): WorkingTreeStatus {
   }
 
   return { dirty: staged + unstaged + untracked > 0, staged, unstaged, untracked }
+}
+
+/**
+ * Parses `git stash list --format='%gd%x00%s%x00%aI'` (verified against git
+ * 2.54): one line per stash, newest first, NUL-separating the ref, subject
+ * and author date so a stash message containing anything else still splits
+ * cleanly.
+ */
+export function parseStashList(output: string): StashEntry[] {
+  return splitLines(output)
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const [ref = '', message = '', date = ''] = line.split(FIELD_SEPARATOR)
+      return { ref, message, date }
+    })
+    .filter((entry) => entry.ref.length > 0)
 }

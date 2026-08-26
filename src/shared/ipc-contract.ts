@@ -12,10 +12,12 @@ import type {
   CommitLogEntry,
   GitDiscoveryResult,
   RemoteBranch,
+  StashEntry,
   StoreStatus,
   WorkingTreeChanges,
   Worktree
 } from './domain'
+import type { BranchSwitchPlan } from './branch-switch'
 import type { DiffRequest, FileDiff } from './diff'
 import type { Preset, ProjectSettings, Repository, SelectionState, Settings } from './persisted'
 import type { AutomationEvent } from './automation'
@@ -102,6 +104,58 @@ export interface IpcInvokeContract {
   }
   /** Whether `user.email` is configured — a warning under the commit box, never a block. */
   'workingTree:hasIdentity': { args: [worktreePath: string]; result: boolean }
+  /**
+   * What switching this worktree to `branch` would do — every failure mode
+   * `git switch` can hit is pre-checkable, so the renderer asks this before
+   * ever running the switch itself. See `BranchSwitchPlan`.
+   *
+   * `create`, non-null, is the switch-branch picker's "create a new branch"
+   * option: `branch` not existing yet is then expected rather than the
+   * `branch-missing` outcome, and `startPoint` (null for HEAD) is what it
+   * would be created from.
+   */
+  'branches:switchPrecheck': {
+    args: [
+      repoPath: string,
+      worktreePath: string,
+      branch: string,
+      create: { startPoint: string | null } | null
+    ]
+    result: BranchSwitchPlan
+  }
+  /**
+   * Runs the switch a cleared `branches:switchPrecheck` described. `create`
+   * must match whatever was passed to the precheck: runs `git switch -c
+   * <branch> [<startPoint>]` instead of a plain switch.
+   */
+  'branches:switch': {
+    args: [worktreePath: string, branch: string, create: { startPoint: string | null } | null]
+    result: void
+  }
+  /**
+   * `git stash push`. Returns whether anything was actually stashed — a
+   * clean tree (or, with `paths`, a clean selection) exits 0 with nothing
+   * stashed, so the result can't be read off success alone.
+   *
+   * `paths`, non-null, limits the stash to those paths — the Changed Files
+   * header's "Stash selected files" — leaving every other path's
+   * staged/unstaged state untouched.
+   */
+  'stash:push': {
+    args: [worktreePath: string, message: string, includeUntracked: boolean, paths: string[] | null]
+    result: boolean
+  }
+  /** For the Working Tree tab's Stash section. */
+  'stash:list': { args: [worktreePath: string]; result: StashEntry[] }
+  /**
+   * `git stash pop`. `conflict: true` means the pop left `UU` entries behind
+   * without dropping the stash — surfaced honestly rather than auto-resolved;
+   * full conflict UI is a later phase.
+   */
+  'stash:pop': { args: [worktreePath: string, ref: string]; result: { conflict: boolean } }
+  /** `git stash apply`: like `stash:pop`, but never drops the stash either way. */
+  'stash:apply': { args: [worktreePath: string, ref: string]; result: { conflict: boolean } }
+  'stash:drop': { args: [worktreePath: string, ref: string]; result: void }
   /** A worktree's draft commit message. */
   'commitDraft:get': { args: [repositoryId: string, worktreePath: string]; result: string }
   'commitDraft:set': {
@@ -250,6 +304,13 @@ const CHANNELS: Record<IpcChannel, true> = {
   'workingTree:commit': true,
   'workingTree:push': true,
   'workingTree:hasIdentity': true,
+  'branches:switchPrecheck': true,
+  'branches:switch': true,
+  'stash:push': true,
+  'stash:list': true,
+  'stash:pop': true,
+  'stash:apply': true,
+  'stash:drop': true,
   'commitDraft:get': true,
   'commitDraft:set': true,
   'worktrees:remove': true,

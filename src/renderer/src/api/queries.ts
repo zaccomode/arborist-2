@@ -9,6 +9,7 @@ import type {
   BranchInfo,
   CommitLogEntry,
   RemoteBranch,
+  StashEntry,
   WorkingTreeChanges,
   Worktree
 } from '@shared/domain'
@@ -36,7 +37,8 @@ export const queryKeys = {
     ['commit-draft', repositoryId, worktreePath] as const,
   hasIdentity: (worktreePath: string) => ['has-identity', worktreePath] as const,
   remoteBranches: (repoPath: string) => ['remote-branches', repoPath] as const,
-  localBranches: (repoPath: string) => ['local-branches', repoPath] as const
+  localBranches: (repoPath: string) => ['local-branches', repoPath] as const,
+  stashes: (worktreePath: string) => ['stashes', worktreePath] as const
 }
 
 export function useProjects(): ReturnType<typeof useQuery<Repository[]>> {
@@ -132,6 +134,15 @@ export function useCommitDraft(
     queryKey: queryKeys.commitDraft(repositoryId, worktreePath),
     queryFn: () => invoke('commitDraft:get', repositoryId, worktreePath),
     refetchOnWindowFocus: false
+  })
+}
+
+/** A worktree's stashes, newest first, for the Working Tree tab's Stash section. */
+export function useStashes(worktreePath: string | null): ReturnType<typeof useQuery<StashEntry[]>> {
+  return useQuery({
+    queryKey: queryKeys.stashes(worktreePath ?? ''),
+    queryFn: () => invoke('stash:list', worktreePath!),
+    enabled: worktreePath !== null
   })
 }
 

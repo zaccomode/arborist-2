@@ -114,6 +114,28 @@ export function pushLabel(ahead: number, hasUpstream: boolean): string {
 }
 
 /**
+ * What the Changed Files header's "Stash…" menu item would stash (#69
+ * review): the files already checked for staging, reusing that state as the
+ * selection rather than a parallel model — a file with only some of its
+ * hunks staged (`indeterminate`) still counts as selected, the same way it
+ * already counts toward `stagedFileCount`. An unmerged file is never
+ * selected, matching the checkbox being disabled for one.
+ *
+ * `paths: null` means "nothing is selected, stash everything" — the
+ * pre-existing one-click behaviour, kept as the fallback rather than
+ * disabling the action, so a tree nobody has staged anything in still
+ * stashes normally. `stash:push` reads `null` the same way: no pathspec, the
+ * whole tree.
+ */
+export function stashScope(files: ChangedFile[]): { files: ChangedFile[]; paths: string[] | null } {
+  const selected = files.filter(
+    (file) => file.kind !== 'unmerged' && stagingState(file) !== 'unchecked'
+  )
+  if (selected.length === 0) return { files: [], paths: null }
+  return { files: selected, paths: selected.flatMap(stagePathsFor) }
+}
+
+/**
  * Splits a repo-relative path into its file name and containing directory,
  * for a row that shows the name prominently and the directory dimmed
  * alongside it. `path` is always POSIX (see `ChangedFile`), so this never

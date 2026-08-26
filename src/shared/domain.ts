@@ -171,3 +171,12 @@ export interface WorkingTreeChanges {
 
 /** The worktree detail pane's three tabs, remembered per worktree. */
 export type WorktreeTab = 'overview' | 'working-tree' | 'commit-graph'
+
+/** One entry from `git stash list`, for the Working Tree tab's Stash section. */
+export interface StashEntry {
+  /** e.g. `stash@{0}` — what `git stash pop/apply/drop` take. */
+  ref: string
+  message: string
+  /** ISO 8601. */
+  date: string
+}

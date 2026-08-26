@@ -8,6 +8,7 @@ import {
   parseCommit,
   parseCommitLog,
   parseRemoteBranchList,
+  parseStashList,
   parseStatus,
   parseUpstreamTrack,
   parseWorktreeList
@@ -330,5 +331,31 @@ describe('parseCommitLog', () => {
 
   it('returns nothing for a repository with no commits', () => {
     expect(parseCommitLog('')).toEqual([])
+  })
+})
+
+describe('parseStashList', () => {
+  it('parses git stash list --format=%gd%x00%s%x00%aI', () => {
+    const output = [
+      `stash@{0}${FIELD_SEPARATOR}Arborist: switching to feature-x${FIELD_SEPARATOR}2026-08-20T14:00:00+00:00`,
+      `stash@{1}${FIELD_SEPARATOR}WIP on main: aaa1234 Initial commit${FIELD_SEPARATOR}2026-08-19T09:00:00+00:00`
+    ].join('\n')
+
+    expect(parseStashList(output)).toEqual([
+      {
+        ref: 'stash@{0}',
+        message: 'Arborist: switching to feature-x',
+        date: '2026-08-20T14:00:00+00:00'
+      },
+      {
+        ref: 'stash@{1}',
+        message: 'WIP on main: aaa1234 Initial commit',
+        date: '2026-08-19T09:00:00+00:00'
+      }
+    ])
+  })
+
+  it('returns nothing for an empty stash', () => {
+    expect(parseStashList('')).toEqual([])
   })
 })

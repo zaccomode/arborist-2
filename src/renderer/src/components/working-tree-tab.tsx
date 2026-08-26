@@ -32,6 +32,8 @@ import {
 } from '@/components/ui/context-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CommitBox } from '@/components/commit-box'
+import { NewStashMenu } from '@/components/new-stash-menu'
+import { StashSection } from '@/components/stash-section'
 import { invoke } from '@/api/client'
 import { queryKeys, useWorkingTree } from '@/api/queries'
 import { useWorktreeInspector } from '@/state/selection'
@@ -141,11 +143,14 @@ function FileRow({
 export function WorkingTreeTab({
   repositoryId,
   repoPath,
-  worktree
+  worktree,
+  focusCommitToken
 }: {
   repositoryId: string
   repoPath: string
   worktree: Worktree
+  /** Bumped by "Commit first" on the switch-branch dialog to focus the commit box. */
+  focusCommitToken?: number
 }): React.JSX.Element {
   const worktreePath = worktree.path
   const queryClient = useQueryClient()
@@ -234,6 +239,7 @@ export function WorkingTreeTab({
               aria-label="All changed files"
             />
             Changed Files
+            <NewStashMenu repoPath={repoPath} worktreePath={worktreePath} files={files} />
           </div>
           <ul data-testid="working-tree-files" className="divide-y">
             {files.map((file) => (
@@ -259,11 +265,14 @@ export function WorkingTreeTab({
         <p className="mt-2 text-xs text-destructive">{(query.error as Error).message}</p>
       )}
 
+      <StashSection repoPath={repoPath} worktreePath={worktreePath} />
+
       <CommitBox
         repositoryId={repositoryId}
         repoPath={repoPath}
         worktree={worktree}
         stagedCount={stagedFileCount(files)}
+        focusToken={focusCommitToken}
       />
 
       <AlertDialog open={discarding !== null} onOpenChange={(open) => !open && setDiscarding(null)}>
