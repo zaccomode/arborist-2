@@ -203,10 +203,7 @@ export function CommitInspector({
           )}
 
           {filesQuery.error && (
-            <CopyableError
-              className="p-4 text-xs"
-              message={(filesQuery.error as Error).message}
-            />
+            <CopyableError className="p-4 text-xs" message={(filesQuery.error as Error).message} />
           )}
         </div>
       </ScrollArea>
