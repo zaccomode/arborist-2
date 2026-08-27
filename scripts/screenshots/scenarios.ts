@@ -313,10 +313,14 @@ export const scenarios: Scenario[] = [
     name: 'commit-graph',
     description:
       'The Commit Graph tab (#52): lanes for a linear stretch and a ' +
-      "merge's visible fork and join, the commit inspector open on an " +
-      "ordinary commit and on a merge — with a file's patch open from " +
-      'inside the merge, and back again — and load more paged twice so ' +
-      'the lane fold staying continuous across pages is visible.',
+      "merge's visible fork and join, a long subject wrapping onto " +
+      'several lines rather than truncating (right where a lane is also ' +
+      'passing through, so the rail keeps tracking a taller row), the ' +
+      'commit inspector open on an ordinary commit — with a deeply ' +
+      "nested file's location truncating ahead of its name — and on a " +
+      "merge, with a file's patch open from inside the merge, and back " +
+      'again, and load more paged twice so the lane fold staying ' +
+      'continuous across pages is visible.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -339,10 +343,27 @@ export const scenarios: Scenario[] = [
 
       await fixture.git(['checkout', '-b', 'feature/graph-demo'])
       await fixture.commit('Start graph demo feature', { 'demo.ts': 'start\n' })
-      await fixture.commit('Finish graph demo feature', { 'demo.ts': 'start\nfinish\n' })
+      // Long enough to wrap onto several lines rather than truncate, and
+      // placed on the fork's own lane so the row it grows into still has
+      // main's lane passing through behind it the whole time — the case
+      // that actually exercises the rail's tail past a fixed `ROW_HEIGHT`.
+      await fixture.commit(
+        'Finish graph demo feature, with a subject long enough that it has ' +
+          'to wrap onto several lines instead of being truncated with an ' +
+          'ellipsis, so long messages stay readable in the commit graph',
+        { 'demo.ts': 'start\nfinish\n' }
+      )
 
       await fixture.git(['checkout', 'main'])
-      await fixture.commit('Tidy up docs', { 'README.md': '# fixture\ntidied\n' })
+      const deepDocPath =
+        'docs/guides/getting-started/installation/prerequisites/system-requirements.md'
+      await mkdir(
+        join(fixture.repoPath, 'docs/guides/getting-started/installation/prerequisites'),
+        {
+          recursive: true
+        }
+      )
+      await fixture.commit('Tidy up docs', { [deepDocPath]: '# Requirements\ntidied\n' })
       // A pinned date, unlike `fixture.commit()`'s own auto-incrementing one
       // — `git merge` isn't routed through that helper, and without this the
       // merge commit's hash (and its "now" timestamp) would be real
@@ -392,6 +413,56 @@ export const scenarios: Scenario[] = [
       await window.getByRole('button', { name: 'Load more' }).click()
       await window.getByRole('button', { name: 'Load more' }).waitFor({ state: 'detached' })
       await shot('paging-b')
+    }
+  },
+  {
+    name: 'commit-graph-crossing-lanes',
+    description:
+      'Two feature branches open at once and merged back one after the ' +
+      "other: the second merge's own edge has to cross the first merge's " +
+      'still-open lane on its way to a free column. The through lane ' +
+      'stays unbroken and the crossing edge visibly ducks behind it, ' +
+      'rather than the edge painting a gap into a lane it has nothing to ' +
+      'do with.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await fixture.commit('Base work', { 'a.txt': 'a\n' })
+
+      await fixture.git(['checkout', '-b', 'feature/one'])
+      await fixture.commit('Feature one, step 1', { 'f1.txt': '1\n' })
+      await fixture.commit('Feature one, step 2', { 'f1.txt': '1\n2\n' })
+
+      await fixture.git(['checkout', 'main'])
+      await fixture.commit('More main work', { 'b.txt': 'b\n' })
+
+      await fixture.git(['checkout', '-b', 'feature/two'])
+      await fixture.commit('Feature two, step 1', { 'f2.txt': '1\n' })
+
+      await fixture.git(['checkout', 'main'])
+      // Pinned dates for the same reason as the `commit-graph` scenario's
+      // own merge: `git merge` bypasses `fixture.commit()`'s auto-incrementing
+      // clock, so without this the merge commits' hashes (and timestamps)
+      // would be real wall-clock time.
+      await fixture.git(
+        ['merge', '--no-ff', 'feature/one', '-m', 'Merge feature/one into main'],
+        undefined,
+        { GIT_AUTHOR_DATE: '2026-01-05T09:10:00Z', GIT_COMMITTER_DATE: '2026-01-05T09:10:00Z' }
+      )
+      await fixture.commit('Post merge one', { 'c.txt': 'c\n' })
+      await fixture.git(
+        ['merge', '--no-ff', 'feature/two', '-m', 'Merge feature/two into main'],
+        undefined,
+        { GIT_AUTHOR_DATE: '2026-01-05T09:12:00Z', GIT_COMMITTER_DATE: '2026-01-05T09:12:00Z' }
+      )
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Commit Graph' }).click()
+      await window.getByTestId('commit-graph-rows').waitFor({ state: 'visible' })
+      await shot('graph')
     }
   },
   {
@@ -1008,9 +1079,13 @@ export const scenarios: Scenario[] = [
     description:
       'Hunk-level staging (#49): a two-hunk unstaged diff, staging just ' +
       'the top hunk — the file row goes indeterminate and that hunk drops ' +
-      'out of the unstaged view — then switching to the staged side and ' +
-      'unstaging it again, back to the same two-hunk unstaged view it ' +
-      'started from.',
+      'out of the unstaged view, and the panel offers Unstaged/Staged tabs ' +
+      'now that the file has content on both sides. Switching to Staged ' +
+      'in place shows the hunk that moved, without closing and reopening ' +
+      'the panel (#67 — previously the only way back to the unstaged side, ' +
+      'once anything was staged, was gone for good); switching back and ' +
+      'unstaging it there returns to the same two-hunk unstaged view it ' +
+      'started from, tabs gone again since only one side has content.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -1044,18 +1119,26 @@ export const scenarios: Scenario[] = [
       // once the refetch lands — the clearest signal the panel, not just the
       // row checkbox, has caught up.
       await window.getByText('inserted near the top').waitFor({ state: 'detached' })
+      // The file now has content on both sides, so the panel offers its own
+      // way to see the other one — no more relying on re-clicking the row,
+      // which can only ever reopen the side `diffSideFor` prefers.
+      await window.getByRole('tab', { name: 'Staged', exact: true }).waitFor({ state: 'visible' })
       await shot('one-staged')
 
-      await window.getByRole('button', { name: 'f.txt', exact: true }).click()
+      // Flip to the staged side in place — no closing and reopening the panel.
+      await window.getByRole('tab', { name: 'Staged', exact: true }).click()
       await window.getByRole('button', { name: 'Unstage hunk' }).waitFor({ state: 'visible' })
       await window.getByText('inserted near the top').waitFor({ state: 'visible' })
+      await shot('switched-to-staged')
 
       await window.getByRole('button', { name: 'Unstage hunk' }).click()
       await window
         .locator('[aria-label="f.txt staging state"][data-state="unchecked"]')
         .waitFor({ state: 'visible' })
-
-      await window.getByRole('button', { name: 'f.txt', exact: true }).click()
+      // Back to one side only, so the tabs go away again, and unstaging the
+      // last staged hunk from within the Staged tab lands back on the
+      // (now-current) unstaged view rather than an empty "No changes".
+      await window.getByRole('tab', { name: 'Staged', exact: true }).waitFor({ state: 'detached' })
       await window.getByRole('button', { name: 'Stage hunk' }).nth(1).waitFor({ state: 'visible' })
       await window.getByText('inserted near the top').waitFor({ state: 'visible' })
       await shot('after')
@@ -1370,6 +1453,54 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'switch-branch-create',
+    description:
+      'Creating a new branch from the switch-branch picker (#69 review): ' +
+      "the empty state's hint text before anything is typed — this fixture " +
+      'has no other local branches to pick, so that empty state is what ' +
+      'greets the picker — the "Create branch" row that then appears once ' +
+      'a typed name matches no existing branch, the Base picker it reveals ' +
+      '(defaulting to HEAD), and the worktree afterwards, now checked out ' +
+      'on the branch that was just created.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'Worktree actions' }).click()
+      await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
+      await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
+      await window.getByRole('combobox').first().click()
+      await window
+        .getByText('No matching branch. Type a name to create one.')
+        .waitFor({ state: 'visible' })
+      await shot('empty')
+
+      await window.getByPlaceholder('Search branches…').fill('feature/new-thing')
+      await window.getByText('Create branch “feature/new-thing”').waitFor({
+        state: 'visible'
+      })
+      await shot('create-option')
+
+      await window.getByText('Create branch “feature/new-thing”').click()
+      await window.getByText('New branch — created from HEAD (main).').waitFor({
+        state: 'visible'
+      })
+      await shot('form')
+
+      await window.getByRole('button', { name: 'Create and switch' }).click()
+      await window
+        .getByText('Created feature/new-thing and switched to it.')
+        .waitFor({ state: 'visible' })
+      await shot('after')
+    }
+  },
+  {
     name: 'stash-list',
     description:
       "The Working Tree tab's Stash section (#51): empty, one entry after " +
@@ -1391,7 +1522,10 @@ export const scenarios: Scenario[] = [
       await window.getByText('No stashes.').waitFor({ state: 'visible' })
       await shot('empty')
 
-      await window.getByRole('button', { name: 'Stash changes…' }).click()
+      // Nothing is checked for staging, so the menu falls back to "Stash all
+      // changes…" — the pre-existing one-click behaviour this replaces.
+      await window.getByRole('button', { name: 'Changed files actions' }).click()
+      await window.getByRole('menuitem', { name: 'Stash all changes…' }).click()
       await window.getByLabel('Message').fill('Keep this for later')
       await window.getByRole('button', { name: 'Stash', exact: true }).click()
       await window.getByTestId('stash-list').waitFor({ state: 'visible' })
@@ -1463,6 +1597,42 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('conflict-section').waitFor({ state: 'detached' })
       await window.getByText('No changes.').waitFor({ state: 'visible' })
       await shot('aborted')
+    }
+  },
+  {
+    name: 'stash-selected-files',
+    description:
+      'The Changed Files header\'s "Stash…" menu (#69 review), scoped to ' +
+      'whatever is checked: the menu offering to stash just the one staged ' +
+      'file, and the working tree after — the staged file gone, the ' +
+      'unstaged one untouched, exactly what `git stash push -- <pathspec>` ' +
+      'promises.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await writeFile(join(fixture.repoPath, 'staged.txt'), 'staged content\n', 'utf8')
+      await writeFile(join(fixture.repoPath, 'README.md'), '# fixture\nunstaged edit\n', 'utf8')
+      await fixture.git(['add', 'staged.txt'])
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+      await window
+        .locator('[aria-label="staged.txt staging state"][data-state="checked"]')
+        .waitFor({ state: 'visible' })
+      await shot('before')
+
+      await window.getByRole('button', { name: 'Changed files actions' }).click()
+      await window.getByRole('menuitem', { name: 'Stash 1 selected file…' }).click()
+      await shot('dialog')
+
+      await window.getByRole('button', { name: 'Stash', exact: true }).click()
+      await window.getByTestId('stash-list').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'README.md', exact: true }).waitFor()
+      await shot('after')
     }
   },
   {

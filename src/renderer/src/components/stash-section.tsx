@@ -5,23 +5,12 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { StashEntry } from '@shared/domain'
 import { formatRelativeDate } from '@shared/format'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
@@ -104,10 +93,12 @@ function StashRow({
 
 /**
  * The Working Tree tab's Stash section (#51), below Changed Files: the list
- * `git stash list` produces, each entry poppable, applicable, or droppable,
- * plus a way to push a new one. Switching branches onto conflicting changes
- * also stashes (see `SwitchBranchDialog`), which is what makes this
- * necessary in the same phase — the pop it offers there is never automatic.
+ * `git stash list` produces, each entry poppable, applicable, or droppable.
+ * Pushing a new one lives on the Changed Files header instead (#69 review;
+ * see `NewStashMenu`), scoped to whatever's checked there — this section is
+ * the list alone. Switching branches onto conflicting changes also stashes
+ * (see `SwitchBranchDialog`), which is what makes this necessary in the same
+ * phase — the pop it offers there is never automatic.
  */
 export function StashSection({
   repoPath,
@@ -120,47 +111,15 @@ export function StashSection({
   const query = useStashes(worktreePath)
   const entries = query.data ?? []
 
-  const [open, setOpen] = useState(false)
-  const [message, setMessage] = useState('')
-  const [includeUntracked, setIncludeUntracked] = useState(false)
-  const [creating, setCreating] = useState(false)
-
   const invalidate = (): void => {
     queryClient.invalidateQueries({ queryKey: queryKeys.stashes(worktreePath) })
     queryClient.invalidateQueries({ queryKey: queryKeys.workingTree(worktreePath) })
     queryClient.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
   }
 
-  const submitStash = async (event: React.FormEvent): Promise<void> => {
-    event.preventDefault()
-    setCreating(true)
-    try {
-      const stashed = await invoke('stash:push', worktreePath, message, includeUntracked)
-      toast(stashed ? 'Changes stashed.' : 'Nothing to stash — the working tree is clean.')
-      invalidate()
-      setOpen(false)
-      setMessage('')
-      setIncludeUntracked(false)
-    } catch (cause) {
-      showErrorToast('Stash failed', { description: (cause as Error).message })
-    } finally {
-      setCreating(false)
-    }
-  }
-
   return (
     <section className="mt-6" data-testid="stash-section">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium text-muted-foreground">Stash</p>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 px-2 text-xs font-normal text-muted-foreground"
-          onClick={() => setOpen(true)}
-        >
-          Stash changes…
-        </Button>
-      </div>
+      <p className="text-xs font-medium text-muted-foreground">Stash</p>
 
       {query.isPending && (
         <div className="mt-2 space-y-2">
@@ -188,50 +147,6 @@ export function StashSection({
       {query.error && (
         <CopyableError className="mt-1 text-xs" message={(query.error as Error).message} />
       )}
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent data-testid="new-stash-dialog">
-          <form onSubmit={(event) => void submitStash(event)}>
-            <DialogHeader>
-              <DialogTitle>Stash changes</DialogTitle>
-              <DialogDescription>
-                Sets your uncommitted changes aside, to bring back later.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="mt-4 space-y-2">
-              <Label htmlFor="stash-message">Message</Label>
-              <Input
-                id="stash-message"
-                autoFocus
-                value={message}
-                placeholder="Optional"
-                onChange={(event) => setMessage(event.target.value)}
-              />
-            </div>
-
-            <div className="mt-3 flex items-center gap-2">
-              <Checkbox
-                id="stash-untracked"
-                checked={includeUntracked}
-                onCheckedChange={(checked) => setIncludeUntracked(checked === true)}
-              />
-              <Label htmlFor="stash-untracked" className="text-sm font-normal">
-                Include untracked files
-              </Label>
-            </div>
-
-            <DialogFooter className="mt-6">
-              <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={creating}>
-                Stash
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </section>
   )
 }

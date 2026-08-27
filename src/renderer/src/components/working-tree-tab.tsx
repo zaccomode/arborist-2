@@ -35,6 +35,7 @@ import { CommitBox } from '@/components/commit-box'
 import { ConflictSection } from '@/components/conflict-section'
 import { CopyableError } from '@/components/copyable-error'
 import { FilePathCell } from '@/components/file-path-cell'
+import { NewStashMenu } from '@/components/new-stash-menu'
 import { StashSection } from '@/components/stash-section'
 import { invoke } from '@/api/client'
 import { queryKeys, useConflictState, useWorkingTree } from '@/api/queries'
@@ -96,7 +97,7 @@ function FileRow({
             // badge's text rather than just the path.
             aria-label={inspectable ? file.path : undefined}
             title={inspectable ? undefined : 'Resolve this conflict in your editor'}
-            className={`flex items-center gap-2 px-3 py-1.5 text-sm ${
+            className={`flex min-w-0 items-center gap-2 px-3 py-1.5 text-sm ${
               inspectable ? 'cursor-pointer hover:bg-accent' : ''
             } ${selected ? 'bg-accent' : ''}`}
           >
@@ -267,6 +268,7 @@ export function WorkingTreeTab({
                 aria-label="All changed files"
               />
               Changed Files
+              <NewStashMenu repoPath={repoPath} worktreePath={worktreePath} files={files} />
             </div>
             <ul data-testid="working-tree-files" className="divide-y">
               {files.map((file) => (

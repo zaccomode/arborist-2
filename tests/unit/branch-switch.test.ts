@@ -120,4 +120,47 @@ describe('decideBranchSwitch', () => {
     })
     expect(plan).toEqual({ outcome: 'conflicting', paths: ['b.txt'] })
   })
+
+  describe('creating a new branch (#69 review)', () => {
+    it('is clear rather than branch-missing when the branch does not exist yet', () => {
+      const plan = decideBranchSwitch({ ...base, branchExists: false, creating: true })
+      expect(plan).toEqual({ outcome: 'clear', carriesChanges: false })
+    })
+
+    it('still refuses when the tree has unmerged paths, same as an ordinary switch', () => {
+      const plan = decideBranchSwitch({
+        ...base,
+        branchExists: false,
+        creating: true,
+        hasUnmerged: true
+      })
+      expect(plan).toEqual({ outcome: 'unmerged' })
+    })
+
+    it('still checks inUseAt if the caller passes one — decideBranchSwitch trusts its inputs; `GitService.planBranchSwitch` is what never populates inUseAt for a branch that does not exist yet', () => {
+      const plan = decideBranchSwitch({
+        ...base,
+        branchExists: false,
+        creating: true,
+        inUseAt: '/elsewhere'
+      })
+      expect(plan).toEqual({ outcome: 'in-use', path: '/elsewhere' })
+    })
+
+    it('reports conflicts against a start point other than HEAD, exactly like switching to an existing divergent branch', () => {
+      const plan = decideBranchSwitch({
+        ...base,
+        branchExists: false,
+        creating: true,
+        changedPaths: ['a.txt'],
+        diffPaths: ['a.txt']
+      })
+      expect(plan).toEqual({ outcome: 'conflicting', paths: ['a.txt'] })
+    })
+
+    it('switches normally, ignoring `creating`, once the branch turns out to already exist', () => {
+      const plan = decideBranchSwitch({ ...base, branchExists: true, creating: true })
+      expect(plan).toEqual({ outcome: 'clear', carriesChanges: false })
+    })
+  })
 })

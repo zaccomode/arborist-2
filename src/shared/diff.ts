@@ -176,6 +176,39 @@ export function wholeFilePathsFor(request: DiffRequest): string[] {
     : [request.path]
 }
 
+/**
+ * Identifies the *file* a request is for, deliberately ignoring which side
+ * (`'unstaged'`/`'staged'`) of a tracked file it names. Used by the diff
+ * panel to tell "the user flipped sides on the same file" apart from "the
+ * user opened a different file" — the former should leave the panel's
+ * chosen side alone, the latter should reset it to the freshly-computed
+ * default (see `withDiffSide`).
+ */
+export function diffRequestIdentity(request: DiffRequest): string {
+  if (request.kind === 'commit') {
+    return `commit:${request.repoPath}:${request.hash}:${request.path}`
+  }
+  if (request.kind === 'untracked') return `untracked:${request.worktreePath}:${request.path}`
+  return `tracked:${request.worktreePath}:${request.path}`
+}
+
+/**
+ * The request the diff panel should actually query: `request` unmodified,
+ * unless the user has manually picked a side with the panel's Unstaged/
+ * Staged toggle *and* the file has a side to pick — an `'untracked'` file or
+ * a historical `'commit'` has only ever the one side `request` already
+ * names, so `manualSide` is ignored for those rather than fabricating a
+ * `DiffRequest` kind that doesn't apply.
+ */
+export function withDiffSide(
+  request: DiffRequest,
+  manualSide: 'unstaged' | 'staged' | null
+): DiffRequest {
+  if (!manualSide) return request
+  if (request.kind !== 'unstaged' && request.kind !== 'staged') return request
+  return { ...request, kind: manualSide }
+}
+
 function splitLines(text: string): string[] {
   if (text === '') return []
   const lines = text.split('\n')

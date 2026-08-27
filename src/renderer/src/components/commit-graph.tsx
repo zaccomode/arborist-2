@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { GitMerge } from 'lucide-react'
 import type { CommitLogEntry, Worktree } from '@shared/domain'
-import { assignLanes, type GraphRow } from '@shared/commit-graph'
+import { assignLanes, tailLanes, type GraphRow } from '@shared/commit-graph'
 import { commitGraphScopeLabel, commitGraphTips, formatCommitTimestamp } from '@shared/format'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -40,10 +40,12 @@ function laneX(lane: number): number {
 
 /**
  * One row's rail: a dot at `row.lane`, a vertical for every lane merely
- * passing through, and a curve for every edge. Each row draws its own
- * fixed-height SVG rather than one continuous one spanning the whole list —
- * simpler to keep aligned with rows whose text can wrap, and cheap since
- * only what's on screen mounts.
+ * passing through, and a curve for every edge. The head below is a fixed
+ * `ROW_HEIGHT` tall and pixel-exact — every coordinate in it assumes
+ * exactly that height. A row's actual height can run taller than that when
+ * its subject wraps to more than one line, so this returns the head plus an
+ * optional flexible *tail* that just continues whichever lines reach the
+ * head's bottom edge, down to wherever the row's real bottom ends up.
  */
 function CommitGraphRail({ row }: { row: GraphRow<CommitLogEntry> }): React.JSX.Element {
   const width = row.laneCount * LANE_WIDTH
@@ -56,101 +58,146 @@ function CommitGraphRail({ row }: { row: GraphRow<CommitLogEntry> }): React.JSX.
   // rather than solid, instead of a line to a row that doesn't exist.
   const stubEnd = cy + (ROW_HEIGHT - cy) * 0.5
 
+  // See `tailLanes` in shared/commit-graph.ts: which lanes reach the head's
+  // bottom edge and so have to carry on below it, into the flexible tail
+  // below, when the row is drawn taller than `ROW_HEIGHT` by a wrapped
+  // subject.
+  const tail = tailLanes(row)
+
   return (
-    <svg width={width} height={ROW_HEIGHT} className="shrink-0 text-border" aria-hidden>
-      {row.throughLanes.map((lane) => (
-        <line
-          key={`through-${lane}`}
-          x1={laneX(lane)}
-          x2={laneX(lane)}
-          y1={0}
-          y2={ROW_HEIGHT}
-          strokeWidth={2}
-          stroke="currentColor"
-          className={laneStroke(lane)}
-        />
-      ))}
+    <div className="flex shrink-0 flex-col" style={{ width }}>
+      <svg width={width} height={ROW_HEIGHT} className="shrink-0 text-border" aria-hidden>
+        {!row.newLane && (
+          <line
+            x1={cx}
+            x2={cx}
+            y1={0}
+            y2={cy}
+            strokeWidth={2}
+            stroke="currentColor"
+            className={laneStroke(row.lane)}
+          />
+        )}
 
-      {!row.newLane && (
-        <line
-          x1={cx}
-          x2={cx}
-          y1={0}
-          y2={cy}
-          strokeWidth={2}
-          stroke="currentColor"
-          className={laneStroke(row.lane)}
-        />
-      )}
+        {hasFirstParent && !firstParentDangling && (
+          <line
+            x1={cx}
+            x2={cx}
+            y1={cy}
+            y2={ROW_HEIGHT}
+            strokeWidth={2}
+            stroke="currentColor"
+            className={laneStroke(row.lane)}
+          />
+        )}
+        {firstParentDangling && (
+          <line
+            x1={cx}
+            x2={cx}
+            y1={cy}
+            y2={stubEnd}
+            strokeWidth={2}
+            strokeOpacity={0.35}
+            stroke="currentColor"
+            className={laneStroke(row.lane)}
+          />
+        )}
 
-      {hasFirstParent && !firstParentDangling && (
-        <line
-          x1={cx}
-          x2={cx}
-          y1={cy}
-          y2={ROW_HEIGHT}
-          strokeWidth={2}
-          stroke="currentColor"
-          className={laneStroke(row.lane)}
-        />
-      )}
-      {firstParentDangling && (
-        <line
-          x1={cx}
-          x2={cx}
-          y1={cy}
-          y2={stubEnd}
-          strokeWidth={2}
-          strokeOpacity={0.35}
-          stroke="currentColor"
-          className={laneStroke(row.lane)}
-        />
-      )}
-
-      {row.edges.map((edge, index) => {
-        const ex = laneX(edge.lane)
-        if (edge.kind === 'merge') {
-          // Another lane's line curves in from directly above to join this dot.
+        {row.edges.map((edge, index) => {
+          const ex = laneX(edge.lane)
+          if (edge.kind === 'merge') {
+            // Another lane's line curves in from directly above to join this dot.
+            return (
+              <path
+                key={`edge-${index}`}
+                d={`M ${ex} 0 C ${ex} ${cy / 2}, ${cx} ${cy / 2}, ${cx} ${cy}`}
+                fill="none"
+                strokeWidth={2}
+                stroke="currentColor"
+                className={laneStroke(edge.lane)}
+              />
+            )
+          }
+          const endY = edge.dangling ? stubEnd : ROW_HEIGHT
+          const midY = (cy + endY) / 2
           return (
             <path
               key={`edge-${index}`}
-              d={`M ${ex} 0 C ${ex} ${cy / 2}, ${cx} ${cy / 2}, ${cx} ${cy}`}
+              d={`M ${cx} ${cy} C ${cx} ${midY}, ${ex} ${midY}, ${ex} ${endY}`}
               fill="none"
               strokeWidth={2}
+              strokeOpacity={edge.dangling ? 0.35 : 1}
               stroke="currentColor"
               className={laneStroke(edge.lane)}
             />
           )
-        }
-        const endY = edge.dangling ? stubEnd : ROW_HEIGHT
-        const midY = (cy + endY) / 2
-        return (
-          <path
-            key={`edge-${index}`}
-            d={`M ${cx} ${cy} C ${cx} ${midY}, ${ex} ${midY}, ${ex} ${endY}`}
-            fill="none"
-            strokeWidth={2}
-            strokeOpacity={edge.dangling ? 0.35 : 1}
-            stroke="currentColor"
-            className={laneStroke(edge.lane)}
-          />
-        )
-      })}
+        })}
 
-      {isMerge ? (
-        <circle
-          cx={cx}
-          cy={cy}
-          r={4}
-          fill="var(--color-background)"
-          strokeWidth={2}
-          stroke="currentColor"
-          className={laneStroke(row.lane)}
-        />
-      ) : (
-        <circle cx={cx} cy={cy} r={4} fill="currentColor" className={laneFill(row.lane)} />
+        {/*
+         * After the edges, not before: a lane merely passing through has no
+         * real relationship to this row, so where it happens to cross a curve
+         * that *does* belong here (a fork or join sharing screen space, purely
+         * by lane arithmetic, with an unrelated lane in between), the through
+         * line stays the unbroken one and the curve is what visibly ducks
+         * behind it — rather than the curve painting a gap into a lane it has
+         * nothing to do with.
+         */}
+        {row.throughLanes.map((lane) => (
+          <line
+            key={`through-${lane}`}
+            x1={laneX(lane)}
+            x2={laneX(lane)}
+            y1={0}
+            y2={ROW_HEIGHT}
+            strokeWidth={2}
+            stroke="currentColor"
+            className={laneStroke(lane)}
+          />
+        ))}
+
+        {isMerge ? (
+          <circle
+            cx={cx}
+            cy={cy}
+            r={4}
+            fill="var(--color-background)"
+            strokeWidth={2}
+            stroke="currentColor"
+            className={laneStroke(row.lane)}
+          />
+        ) : (
+          <circle cx={cx} cy={cy} r={4} fill="currentColor" className={laneFill(row.lane)} />
+        )}
+      </svg>
+
+      {tail.length > 0 && (
+        // Percentage coordinates rather than a measured pixel height: the
+        // row's real height depends on how the subject next to it wraps,
+        // which this component doesn't know and doesn't need to — a
+        // straight vertical is exactly as straight stretched as it is at
+        // any fixed height, so there's nothing here a measurement would buy.
+        <svg
+          width={width}
+          height={0}
+          className="block min-h-0 flex-1 text-border"
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          {tail.map((lane) => (
+            <line
+              key={`tail-${lane}`}
+              x1={laneX(lane)}
+              x2={laneX(lane)}
+              y1="0"
+              y2="100%"
+              strokeWidth={2}
+              stroke="currentColor"
+              className={laneStroke(lane)}
+            />
+          ))}
+        </svg>
       )}
-    </svg>
+    </div>
   )
 }
 
@@ -168,13 +215,11 @@ function CommitGraphRow({
 
   return (
     <li className="flex border-b last:border-b-0">
-      <div style={{ width: row.laneCount * LANE_WIDTH, height: ROW_HEIGHT }} className="shrink-0">
-        <CommitGraphRail row={row} />
-      </div>
+      <CommitGraphRail row={row} />
       <button
         type="button"
         onClick={onSelect}
-        style={{ height: ROW_HEIGHT }}
+        style={{ minHeight: ROW_HEIGHT }}
         aria-label={`${commit.subject}, ${commit.shortHash}`}
         aria-pressed={selected}
         className={`min-w-0 flex-1 px-2 py-2 text-left text-sm hover:bg-accent ${
@@ -188,7 +233,7 @@ function CommitGraphRow({
             {formatCommitTimestamp(commit.date)}
           </span>
         </p>
-        <p className="truncate">{commit.subject}</p>
+        <p className="break-words">{commit.subject}</p>
         <p className="truncate text-xs text-muted-foreground">
           <span className="font-mono">{commit.shortHash}</span>
           {' • '}
