@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { toast } from 'sonner'
 import type { Worktree } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
 import { PresetIcon } from '@/components/preset-icon'
@@ -7,6 +6,7 @@ import { PresetConsole, type PresetRun } from '@/components/preset-console'
 import { Button } from '@/components/ui/button'
 import { usePresets } from '@/api/queries'
 import { invoke } from '@/api/client'
+import { showErrorToast } from '@/lib/error-toast'
 
 /**
  * The macro buttons from the concept design: icon over label, wrapping to
@@ -35,13 +35,15 @@ export function OpenInGrid({
         commitHash: worktree.status?.lastCommit?.hash ?? worktree.head,
         repoName: project.name,
         repoPath: project.path,
+        filePath: null,
+        fileLine: null,
         projectId: project.id
       })
       // A shell preset runs somewhere the user can watch it; everything else
       // has handed off to another application and has nothing more to show.
       if (result.kind === 'console') setConsoleRun(result)
     } catch (error) {
-      toast.error('Could not open', { description: (error as Error).message })
+      showErrorToast('Could not open', { description: (error as Error).message })
     }
   }
 

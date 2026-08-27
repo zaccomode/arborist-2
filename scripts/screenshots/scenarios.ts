@@ -1,4 +1,4 @@
-import { writeFile } from 'fs/promises'
+import { chmod, mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 import type { Page } from 'playwright'
 // Node's native type stripping resolves ESM imports literally, so this needs
@@ -77,6 +77,47 @@ async function fillAndSettle(
   )
 }
 
+/**
+ * Seeds `arborist-data.json` with a repository already registered, so the
+ * scenario opens straight to it rather than going through the folder
+ * picker — which frees `ARBORIST_PICK_FOLDER` for a scenario that also
+ * needs to script picking a *different* folder, such as a central worktree
+ * directory.
+ */
+async function seedProject(
+  userDataDir: string,
+  repoPath: string,
+  extra: Record<string, unknown> = {}
+): Promise<void> {
+  await writeFile(
+    join(userDataDir, 'arborist-data.json'),
+    JSON.stringify({
+      schemaVersion: 4,
+      repositories: [
+        { id: 'p1', path: repoPath, name: 'Arborist', addedAt: '2026-01-05T09:00:00.000Z' }
+      ],
+      ...extra
+    }),
+    'utf8'
+  )
+}
+
+/**
+ * Set by `working-tree-external-change`'s `setup` and read by its `drive` —
+ * the one scenario that writes to the fixture's working tree *after* the app
+ * has already launched, which needs the repository path in both places and
+ * `setup`/`drive` share no other channel.
+ */
+let externalChangeRepoPath = ''
+
+/**
+ * Set by `stash-list`'s `setup`, read by its `drive` — which needs to commit
+ * a genuinely conflicting change directly through git (not through the app,
+ * which has no editor of its own) between the stash and the pop that
+ * conflicts with it.
+ */
+let stashListFixture: GitFixture | null = null
+
 export const scenarios: Scenario[] = [
   {
     name: 'shell',
@@ -104,6 +145,24 @@ export const scenarios: Scenario[] = [
       // was ever selected for this project before.
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       await shot('added')
+    }
+  },
+  {
+    name: 'add-project-error',
+    description:
+      'Adding a project that turns out not to be a git repository (#64): the ' +
+      'error carries a copy button, same as every other inline error banner ' +
+      'in the app.',
+    setup: async ({ workDir }) => {
+      const plainFolder = join(workDir, 'not-a-repo')
+      await mkdir(plainFolder, { recursive: true })
+      return { ARBORIST_PICK_FOLDER: plainFolder }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('add-project-error').waitFor({ state: 'visible' })
+      await shot('error')
     }
   },
   {
@@ -178,9 +237,10 @@ export const scenarios: Scenario[] = [
   {
     name: 'worktree-detail',
     description:
-      'The detail pane for a worktree that is ahead and behind, and for one ' +
-      'whose folder has gone missing — the two ends of what the chips and ' +
-      'the banner have to say.',
+      'The worktree detail pane across its three tabs: Overview (with the ' +
+      'branch/commit/path information block and notes), Working Tree over ' +
+      'a dirty worktree so a row exists, Working Tree over a clean one for ' +
+      'its empty state, and Commit Graph.',
     setup: async ({ workDir }) => {
       const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
@@ -191,45 +251,218 @@ export const scenarios: Scenario[] = [
 
       await window.getByRole('button', { name: /feature\/ahead-behind/ }).click()
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
-      await shot('tracking')
-
       await fillAndSettle(window, 'notes-editor', 'Waiting on review before merging.')
-      await shot('notes')
+      await shot('overview')
 
-      await window.getByRole('button', { name: /feature\/prunable/ }).click()
-      await window.getByTestId('prunable-banner').waitFor({ state: 'visible' })
-      await shot('prunable')
+      await window.getByRole('button', { name: /feature\/dirty/ }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+      await shot('working-tree')
+
+      await window.getByRole('button', { name: /main/ }).first().click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByText('No changes.').waitFor({ state: 'visible' })
+      await shot('working-tree-clean')
+
+      await window.getByRole('tab', { name: 'Commit Graph' }).click()
+      await window.getByTestId('commit-graph-rows').waitFor({ state: 'visible' })
+      await shot('commit-graph')
     }
   },
   {
     name: 'recent-commits',
     description:
-      'The Recent Commits panel: cards with the shortstat line, and load ' +
-      'more revealing the page behind it.',
+      "The flat Recent Commits list — RemoteBranchDetail's own, for a " +
+      'remote branch with no local checkout, which stays a plain list ' +
+      "rather than a lane graph since there's only the one ref to show: " +
+      'cards with the shortstat line, and load more revealing the page ' +
+      'behind it.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
       for (let i = 0; i < 25; i++) {
-        await fixture.commit(`Change ${i}`, { [`file-${i}.txt`]: `${i}\n` })
+        await fixture.commitFromElsewhere('feature-remote', `Change ${i}`)
       }
       // Long enough to wrap onto a second line rather than fit on one, so
       // the capture shows the subject wrapping rather than truncating.
-      await fixture.commit(
-        'Rework the badge matrix fixture so every worktree state the sidebar can show — ahead/behind, dirty, locked, missing, deleted upstream, detached — has its own row and its own fixture helper',
-        { 'badge-matrix.txt': 'rework' }
+      await fixture.commitFromElsewhere(
+        'feature-remote',
+        'Rework the badge matrix fixture so every worktree state the sidebar can show — ahead/behind, dirty, locked, missing, deleted upstream, detached — has its own row and its own fixture helper'
       )
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByRole('button', { name: /main/ }).first().click()
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Fetch' }).click()
+      await window.getByRole('button', { name: /origin\/feature-remote/ }).waitFor({
+        state: 'visible'
+      })
+      await window.getByRole('button', { name: /origin\/feature-remote/ }).click()
+      await window.getByTestId('remote-branch-detail').waitFor({ state: 'visible' })
       await window.getByTestId('recent-commits').waitFor({ state: 'visible' })
       await shot('list')
 
       await window.getByRole('button', { name: 'Load more' }).click()
       await window.getByRole('button', { name: 'Load more' }).waitFor({ state: 'detached' })
       await shot('loaded-more')
+    }
+  },
+  {
+    name: 'commit-graph',
+    description:
+      'The Commit Graph tab (#52): lanes for a linear stretch and a ' +
+      "merge's visible fork and join, a long subject wrapping onto " +
+      'several lines rather than truncating (right where a lane is also ' +
+      'passing through, so the rail keeps tracking a taller row), the ' +
+      'commit inspector open on an ordinary commit — with a deeply ' +
+      "nested file's location truncating ahead of its name — and on a " +
+      "merge, with a file's patch open from inside the merge, and back " +
+      'again, and load more paged twice so the lane fold staying ' +
+      'continuous across pages is visible.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+
+      // Plain, single-parent padding, oldest first — pages two and three
+      // are a clean straight line, which is what makes "the fold keeps
+      // going correctly across a page boundary" checkable by eye.
+      for (let i = 0; i < 40; i++) {
+        await fixture.commit(`Housekeeping ${i}`, { 'internals.txt': `pass ${i}\n` })
+      }
+
+      // A linear stretch right above the fork, so both are on the very
+      // first page without loading anything more.
+      await fixture.commit('Add feature flag scaffold', {
+        'flags.ts': 'export const flags = {}\n'
+      })
+      await fixture.commit('Wire up telemetry', { 'telemetry.ts': 'track()\n' })
+      await fixture.commit('Bump dependencies', { 'package.json': '{}\n' })
+      await fixture.commit('Fix lint warnings', { 'lint.ts': '// clean\n' })
+
+      await fixture.git(['checkout', '-b', 'feature/graph-demo'])
+      await fixture.commit('Start graph demo feature', { 'demo.ts': 'start\n' })
+      // Long enough to wrap onto several lines rather than truncate, and
+      // placed on the fork's own lane so the row it grows into still has
+      // main's lane passing through behind it the whole time — the case
+      // that actually exercises the rail's tail past a fixed `ROW_HEIGHT`.
+      await fixture.commit(
+        'Finish graph demo feature, with a subject long enough that it has ' +
+          'to wrap onto several lines instead of being truncated with an ' +
+          'ellipsis, so long messages stay readable in the commit graph',
+        { 'demo.ts': 'start\nfinish\n' }
+      )
+
+      await fixture.git(['checkout', 'main'])
+      const deepDocPath =
+        'docs/guides/getting-started/installation/prerequisites/system-requirements.md'
+      await mkdir(
+        join(fixture.repoPath, 'docs/guides/getting-started/installation/prerequisites'),
+        {
+          recursive: true
+        }
+      )
+      await fixture.commit('Tidy up docs', { [deepDocPath]: '# Requirements\ntidied\n' })
+      // A pinned date, unlike `fixture.commit()`'s own auto-incrementing one
+      // — `git merge` isn't routed through that helper, and without this the
+      // merge commit's hash (and its "now" timestamp) would be real
+      // wall-clock time, breaking the byte-for-byte reproducibility every
+      // other capture in this file relies on.
+      await fixture.git(
+        ['merge', '--no-ff', 'feature/graph-demo', '-m', 'Merge feature/graph-demo into main'],
+        undefined,
+        { GIT_AUTHOR_DATE: '2026-01-05T09:48:00Z', GIT_COMMITTER_DATE: '2026-01-05T09:48:00Z' }
+      )
+
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Commit Graph' }).click()
+      await window.getByTestId('commit-graph-rows').waitFor({ state: 'visible' })
+      await shot('graph')
+
+      await window.getByRole('button', { name: /Tidy up docs/ }).click()
+      await window.getByTestId('commit-inspector').waitFor({ state: 'visible' })
+      await window.getByTestId('commit-files').waitFor({ state: 'visible' })
+      await shot('inspector-plain')
+
+      await window.getByRole('button', { name: /Merge feature\/graph-demo into main/ }).click()
+      await window.getByTestId('commit-files').waitFor({ state: 'visible' })
+      await shot('inspector-merge')
+
+      await window.getByRole('button', { name: 'demo.ts', exact: true }).click()
+      await window.getByTestId('diff-panel').waitFor({ state: 'visible' })
+      await window.getByText('+finish').waitFor({ state: 'visible' })
+      await shot('inspector-file')
+
+      await window.getByRole('button', { name: 'Back to commit' }).click()
+      await window.getByTestId('commit-files').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'Close' }).click()
+      await window.getByTestId('commit-inspector').waitFor({ state: 'detached' })
+
+      await window.getByRole('button', { name: 'Load more' }).click()
+      await window.waitForFunction(
+        () => document.querySelectorAll('[data-testid="commit-graph-rows"] > li').length >= 40
+      )
+      await shot('paging-a')
+
+      await window.getByRole('button', { name: 'Load more' }).click()
+      await window.getByRole('button', { name: 'Load more' }).waitFor({ state: 'detached' })
+      await shot('paging-b')
+    }
+  },
+  {
+    name: 'commit-graph-crossing-lanes',
+    description:
+      'Two feature branches open at once and merged back one after the ' +
+      "other: the second merge's own edge has to cross the first merge's " +
+      'still-open lane on its way to a free column. The through lane ' +
+      'stays unbroken and the crossing edge visibly ducks behind it, ' +
+      'rather than the edge painting a gap into a lane it has nothing to ' +
+      'do with.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await fixture.commit('Base work', { 'a.txt': 'a\n' })
+
+      await fixture.git(['checkout', '-b', 'feature/one'])
+      await fixture.commit('Feature one, step 1', { 'f1.txt': '1\n' })
+      await fixture.commit('Feature one, step 2', { 'f1.txt': '1\n2\n' })
+
+      await fixture.git(['checkout', 'main'])
+      await fixture.commit('More main work', { 'b.txt': 'b\n' })
+
+      await fixture.git(['checkout', '-b', 'feature/two'])
+      await fixture.commit('Feature two, step 1', { 'f2.txt': '1\n' })
+
+      await fixture.git(['checkout', 'main'])
+      // Pinned dates for the same reason as the `commit-graph` scenario's
+      // own merge: `git merge` bypasses `fixture.commit()`'s auto-incrementing
+      // clock, so without this the merge commits' hashes (and timestamps)
+      // would be real wall-clock time.
+      await fixture.git(
+        ['merge', '--no-ff', 'feature/one', '-m', 'Merge feature/one into main'],
+        undefined,
+        { GIT_AUTHOR_DATE: '2026-01-05T09:10:00Z', GIT_COMMITTER_DATE: '2026-01-05T09:10:00Z' }
+      )
+      await fixture.commit('Post merge one', { 'c.txt': 'c\n' })
+      await fixture.git(
+        ['merge', '--no-ff', 'feature/two', '-m', 'Merge feature/two into main'],
+        undefined,
+        { GIT_AUTHOR_DATE: '2026-01-05T09:12:00Z', GIT_COMMITTER_DATE: '2026-01-05T09:12:00Z' }
+      )
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Commit Graph' }).click()
+      await window.getByTestId('commit-graph-rows').waitFor({ state: 'visible' })
+      await shot('graph')
     }
   },
   {
@@ -380,6 +613,46 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'rb-tracking-demo',
+    description:
+      'A remote branch, before and after it is turned into a worktree whose ' +
+      'local branch is deliberately named something else entirely (#47): ' +
+      'the branch still disappears from Remote Branches, because the match ' +
+      'follows the tracking relationship rather than the name.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await fixture.commitFromElsewhere('feature-y', 'Pushed while nobody was fetching')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Fetch' }).click()
+      await window.getByRole('button', { name: /origin\/feature-y/ }).waitFor({ state: 'visible' })
+      await shot('before')
+
+      await window.getByRole('button', { name: /origin\/feature-y/ }).click()
+      await window.getByRole('button', { name: 'Create worktree from this branch' }).click()
+      // Overwrites the prefilled `feature-y` with a name that shares nothing
+      // with the remote branch's own — the folder name already differed by
+      // default (#47 is about the branch, not the folder), so this is the
+      // part that used to slip through.
+      await window.getByLabel('Branch').fill('renamed-locally')
+      await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
+      await shot('renaming')
+
+      await window.getByRole('button', { name: 'Create', exact: true }).click()
+      await window
+        .getByTestId('worktree-detail')
+        .filter({ hasText: 'renamed-locally' })
+        .waitFor({ state: 'visible' })
+      await window.getByText('No remote branches without worktrees.').waitFor({ state: 'visible' })
+      await shot('after')
+    }
+  },
+  {
     name: 'setup-automation',
     description:
       'The script editor with its parsed preview, and the console streaming ' +
@@ -441,7 +714,8 @@ export const scenarios: Scenario[] = [
     description:
       'Settings: the General tab with the detected git binary and the theme, ' +
       'the Presets tab with the built-in switches, the preset editor over it, ' +
-      'and the Developer tab.',
+      'the Developer tab, and the About tab (#65) in its default, ' +
+      'not-yet-checked state.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -477,6 +751,116 @@ export const scenarios: Scenario[] = [
       await window.getByRole('tab', { name: 'Developer' }).click()
       await window.getByLabel('Log every git command').waitFor({ state: 'visible' })
       await shot('developer')
+
+      await window.getByRole('tab', { name: 'About' }).click()
+      await window.getByTestId('update-status').filter({ hasText: 'Not checked yet' }).waitFor()
+      await shot('about')
+    }
+  },
+  {
+    name: 'update-check-tab',
+    description:
+      'The About tab (#65) either side of the outcome a manual check can ' +
+      'land on: up to date, and a failed check — a network outage, most ' +
+      'likely — shown next to the button that triggers another one.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      // Fixed rather than a real check, which would either hit the network
+      // or hang on an unpacked build — this is what "up to date" looks like
+      // once one has actually run. Scoped to this scenario alone, rather than
+      // the main "settings" one, so it doesn't also put an unrelated toast
+      // over every other tab that scenario captures.
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath, ARBORIST_FAKE_UPDATE: 'up-to-date' }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'App settings…' }).click()
+      await window.getByRole('tab', { name: 'About' }).click()
+      await window.getByTestId('update-status').filter({ hasText: 'up to date' }).waitFor()
+      await shot('up-to-date')
+    }
+  },
+  {
+    name: 'settings-about-error',
+    description: 'The About tab (#65) when the last check failed.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath, ARBORIST_FAKE_UPDATE: 'error' }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'App settings…' }).click()
+      await window.getByRole('tab', { name: 'About' }).click()
+      await window.getByTestId('update-status').filter({ hasText: 'Could not check' }).waitFor()
+      await shot('error')
+    }
+  },
+  {
+    name: 'settings-worktree-location',
+    description:
+      'App-level worktree location: beside the repository, the default, ' +
+      'then switched to a central directory before and after a folder is ' +
+      'picked for it.',
+    setup: async ({ workDir, userDataDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      const centralRoot = join(workDir, 'central-worktrees')
+      await mkdir(centralRoot, { recursive: true })
+      await seedProject(userDataDir, fixture.repoPath)
+      return { ARBORIST_PICK_FOLDER: centralRoot }
+    },
+    drive: async (window, shot) => {
+      await window.getByRole('button', { name: /main/ }).first().waitFor()
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'App settings…' }).click()
+      await window.getByLabel('Worktree location').waitFor({ state: 'visible' })
+      await shot('beside')
+
+      await window.getByLabel('Worktree location').click()
+      await window.getByRole('option', { name: 'In a central directory' }).click()
+      await window.getByTestId('worktree-root-path').waitFor({ state: 'visible' })
+      await shot('central-empty')
+
+      await window.getByRole('button', { name: 'Choose…' }).click()
+      await window
+        .getByTestId('worktree-root-path')
+        .filter({ hasText: 'central-worktrees' })
+        .waitFor()
+      await shot('central-chosen')
+    }
+  },
+  {
+    name: 'create-worktree-central',
+    description:
+      'The create dialog’s suggested path for a project in central mode — ' +
+      'visibly different from the sibling-of-the-repository default.',
+    setup: async ({ workDir, userDataDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      const centralRoot = join(workDir, 'central-worktrees')
+      await mkdir(centralRoot, { recursive: true })
+      await seedProject(userDataDir, fixture.repoPath, {
+        projectSettings: { p1: { worktreeLocation: 'central', worktreeRoot: centralRoot } }
+      })
+    },
+    drive: async (window, shot) => {
+      await window.getByRole('button', { name: /main/ }).first().waitFor()
+      await window.getByRole('button', { name: 'New worktree', exact: true }).click()
+      await window.getByLabel('Branch').fill('feature/central')
+      await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
+      await window.waitForFunction(() => {
+        const input = document.getElementById('worktree-path') as HTMLInputElement | null
+        return input?.value.includes('central-worktrees') ?? false
+      })
+      await shot('dialog')
     }
   },
   {
@@ -484,8 +868,10 @@ export const scenarios: Scenario[] = [
     description:
       'Project settings, opened from the button under the worktree list, now ' +
       'tabbed like app settings: the automation script with its parsed ' +
-      'preview, the per-project preset overrides alongside a preset added ' +
-      "just for this project, the project's own note, and the danger zone.",
+      'preview, the worktree-location override showing what inherit ' +
+      'resolves to, the per-project preset overrides alongside a preset ' +
+      "added just for this project, the project's own note, and the danger " +
+      'zone.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -499,6 +885,10 @@ export const scenarios: Scenario[] = [
       await fillAndSettle(window, 'automation-script', 'npm install\nnpm run build')
       await window.getByTestId('automation-preview').waitFor({ state: 'visible' })
       await shot('automation')
+
+      await window.getByRole('tab', { name: 'Worktrees' }).click()
+      await window.getByTestId('project-worktree-location').waitFor({ state: 'visible' })
+      await shot('worktree-location')
 
       await window.getByRole('tab', { name: 'Presets' }).click()
       await window.getByTestId('project-presets').waitFor({ state: 'visible' })
@@ -611,6 +1001,663 @@ export const scenarios: Scenario[] = [
     setup: async () => ({ ARBORIST_FAKE_UPDATE: 'up-to-date' }),
     drive: async (window) => {
       await window.getByText("You're up to date").waitFor({ state: 'visible' })
+    }
+  },
+  {
+    name: 'diff-panel',
+    description:
+      'The third panel across the states its own file kinds force: a ' +
+      'modest text diff, a binary file (now edited, not just new, so the ' +
+      'hunk-less whole-file staging offer from #49 shows), a mode-only ' +
+      'change with no hunks (offering the same), a file too large to show ' +
+      'in full, and the panel closed again.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      // Written before the commit below, not after: an *edited* tracked
+      // binary file is what exercises the hunk-less whole-file offer
+      // (`isHunklessChange`) — a brand-new untracked one is a different,
+      // already-covered case with no staging control in this panel at all.
+      await writeFile(
+        join(fixture.repoPath, 'image.png'),
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x03])
+      )
+      // `commit()` stages everything dirty at call time, not just the paths
+      // it's given — so the script and image are committed cleanly first,
+      // and every uncommitted change below is made only after that commit
+      // exists.
+      await fixture.commit('Add a script and an image', { 'script.sh': '#!/bin/sh\necho hi\n' })
+      await chmod(join(fixture.repoPath, 'script.sh'), 0o755)
+      await writeFile(
+        join(fixture.repoPath, 'README.md'),
+        '# fixture\nedited for the diff panel\n',
+        'utf8'
+      )
+      await writeFile(
+        join(fixture.repoPath, 'image.png'),
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02, 0x03, 0xff, 0xff])
+      )
+      const big = Array.from({ length: 2500 }, (_, i) => `line ${i}`).join('\n') + '\n'
+      await writeFile(join(fixture.repoPath, 'big.txt'), big, 'utf8')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'README.md', exact: true }).click()
+      await window.getByTestId('diff-panel').waitFor({ state: 'visible' })
+      await window.getByText('edited for the diff panel').waitFor({ state: 'visible' })
+      await shot('modest-diff')
+
+      await window.getByRole('button', { name: 'image.png', exact: true }).click()
+      await window.getByText('Binary file, not shown.').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'Stage file' }).waitFor({ state: 'visible' })
+      await shot('binary')
+
+      await window.getByRole('button', { name: 'script.sh', exact: true }).click()
+      await window.getByText('File mode changed, no content changes.').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'Stage file' }).waitFor({ state: 'visible' })
+      await shot('mode-only')
+
+      await window.getByRole('button', { name: 'big.txt', exact: true }).click()
+      await window
+        .getByText('This diff is too large to show in full and has been truncated.')
+        .waitFor({ state: 'visible' })
+      await shot('truncated')
+
+      await window.getByRole('button', { name: 'Close' }).click()
+      await window.getByTestId('diff-panel').waitFor({ state: 'detached' })
+      await shot('closed')
+    }
+  },
+  {
+    name: 'diff-panel-hunks',
+    description:
+      'Hunk-level staging (#49): a two-hunk unstaged diff, staging just ' +
+      'the top hunk — the file row goes indeterminate and that hunk drops ' +
+      'out of the unstaged view, and the panel offers Unstaged/Staged tabs ' +
+      'now that the file has content on both sides. Switching to Staged ' +
+      'in place shows the hunk that moved, without closing and reopening ' +
+      'the panel (#67 — previously the only way back to the unstaged side, ' +
+      'once anything was staged, was gone for good); switching back and ' +
+      'unstaging it there returns to the same two-hunk unstaged view it ' +
+      'started from, tabs gone again since only one side has content.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      const lines = Array.from({ length: 40 }, (_, i) => `line ${i}`)
+      await fixture.commit('Add f.txt', { 'f.txt': lines.join('\n') + '\n' })
+      // Two edits far enough apart that they stay separate hunks under the
+      // app's `-U3` context, the same shape #49 says needs no recomputed
+      // header once only one of the two is staged.
+      lines.splice(1, 0, 'inserted near the top')
+      lines[31] = 'edited near line 30'
+      await writeFile(join(fixture.repoPath, 'f.txt'), lines.join('\n') + '\n', 'utf8')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'f.txt', exact: true }).click()
+      await window.getByTestId('diff-panel').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'Stage hunk' }).nth(1).waitFor({ state: 'visible' })
+      await shot('unstaged')
+
+      await window.getByRole('button', { name: 'Stage hunk' }).first().click()
+      await window
+        .locator('[aria-label="f.txt staging state"][data-state="indeterminate"]')
+        .waitFor({ state: 'visible' })
+      // The staged hunk's own text is gone from this (still-unstaged) view
+      // once the refetch lands — the clearest signal the panel, not just the
+      // row checkbox, has caught up.
+      await window.getByText('inserted near the top').waitFor({ state: 'detached' })
+      // The file now has content on both sides, so the panel offers its own
+      // way to see the other one — no more relying on re-clicking the row,
+      // which can only ever reopen the side `diffSideFor` prefers.
+      await window.getByRole('tab', { name: 'Staged', exact: true }).waitFor({ state: 'visible' })
+      await shot('one-staged')
+
+      // Flip to the staged side in place — no closing and reopening the panel.
+      await window.getByRole('tab', { name: 'Staged', exact: true }).click()
+      await window.getByRole('button', { name: 'Unstage hunk' }).waitFor({ state: 'visible' })
+      await window.getByText('inserted near the top').waitFor({ state: 'visible' })
+      await shot('switched-to-staged')
+
+      await window.getByRole('button', { name: 'Unstage hunk' }).click()
+      await window
+        .locator('[aria-label="f.txt staging state"][data-state="unchecked"]')
+        .waitFor({ state: 'visible' })
+      // Back to one side only, so the tabs go away again, and unstaging the
+      // last staged hunk from within the Staged tab lands back on the
+      // (now-current) unstaged view rather than an empty "No changes".
+      await window.getByRole('tab', { name: 'Staged', exact: true }).waitFor({ state: 'detached' })
+      await window.getByRole('button', { name: 'Stage hunk' }).nth(1).waitFor({ state: 'visible' })
+      await window.getByText('inserted near the top').waitFor({ state: 'visible' })
+      await shot('after')
+    }
+  },
+  {
+    name: 'shell-panels',
+    description:
+      'The shell at a narrower window width: two panels with the middle ' +
+      'one scaling with the window, then a third opened — the middle panel ' +
+      'switches to an absolute width, protected by its 360px minSize so a ' +
+      '520px inspector cannot squeeze it away.',
+    setup: async ({ workDir, userDataDir }) => {
+      const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
+      await writeFile(
+        join(userDataDir, 'window-state.json'),
+        JSON.stringify({ width: 900, height: 720, maximized: false }),
+        'utf8'
+      )
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('button', { name: /feature\/dirty/ }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+      await shot('two-panels')
+
+      await window.getByRole('button', { name: 'README.md', exact: true }).click()
+      await window.getByTestId('diff-panel').waitFor({ state: 'visible' })
+      await shot('three-panels')
+    }
+  },
+  {
+    name: 'working-tree-staging',
+    description:
+      'The staging model end to end: an indeterminate row (staged and ' +
+      'unstaged at once) alongside untouched rows, checking one of those ' +
+      'to stage it, a commit message typed in, and the list either side ' +
+      'of committing.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await fixture.commit('Add a.txt and b.txt', { 'a.txt': 'a\n', 'b.txt': 'b\n' })
+      // a.txt: staged, then edited again — index and worktree both differ,
+      // the one shape the checkbox alone can't produce (that's #49's hunk
+      // staging), so it has to come from outside this session.
+      await writeFile(join(fixture.repoPath, 'a.txt'), 'a\nstaged\n', 'utf8')
+      await fixture.git(['add', 'a.txt'])
+      await writeFile(join(fixture.repoPath, 'a.txt'), 'a\nstaged\nand edited again\n', 'utf8')
+      // b.txt: an ordinary unstaged edit.
+      await writeFile(join(fixture.repoPath, 'b.txt'), 'b\nedited\n', 'utf8')
+      // c.txt: untracked.
+      await writeFile(join(fixture.repoPath, 'c.txt'), 'new\n', 'utf8')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window
+        .locator('[aria-label="a.txt staging state"][data-state="indeterminate"]')
+        .waitFor({ state: 'visible' })
+      await shot('nothing-checked')
+
+      await window.getByLabel('b.txt staging state').click()
+      await window
+        .locator('[aria-label="b.txt staging state"][data-state="checked"]')
+        .waitFor({ state: 'visible' })
+      await shot('some-checked')
+
+      await window.getByTestId('commit-message').fill('Update a.txt and b.txt')
+      await shot('message-typed')
+
+      await window.getByTestId('commit-button').click()
+      await window.getByLabel('b.txt staging state').waitFor({ state: 'detached' })
+      await shot('after-commit')
+    }
+  },
+  {
+    name: 'commit-footer-pin',
+    description:
+      'The commit box pinned to the bottom of the Working Tree panel (#66), ' +
+      'full-width separator and all, regardless of how many changed files ' +
+      'sit above it: enough untracked files to force the list to scroll, ' +
+      'captured before and after scrolling it — the commit box stays put ' +
+      'either way.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      // More rows than the panel can show at once, so the file list actually
+      // has something to scroll — the point of this scenario.
+      for (let i = 0; i < 30; i++) {
+        await writeFile(
+          join(fixture.repoPath, `file-${String(i).padStart(2, '0')}.txt`),
+          `${i}\n`,
+          'utf8'
+        )
+      }
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+      await window.getByTestId('commit-button').waitFor({ state: 'visible' })
+      await shot('top')
+
+      // Scrolls the file list, not the window — hovering it first is what
+      // routes the wheel event to that inner scroll container rather than
+      // the page.
+      await window.getByTestId('working-tree-files').hover()
+      await window.mouse.wheel(0, 4000)
+      await window.getByRole('button', { name: 'file-29.txt', exact: true }).waitFor({
+        state: 'visible'
+      })
+      // Still pinned exactly where it was: nothing about scrolling the list
+      // above it should move the footer.
+      await window.getByTestId('commit-button').waitFor({ state: 'visible' })
+      await shot('scrolled')
+    }
+  },
+  {
+    name: 'working-tree-discard',
+    description:
+      'Discarding a file, behind a confirmation since it is irreversible — ' +
+      'the same two-step shape as deleting a worktree.',
+    setup: async ({ workDir }) => {
+      const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('button', { name: /feature\/dirty/ }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+
+      await window
+        .getByRole('button', { name: 'README.md', exact: true })
+        .click({ button: 'right' })
+      await window.getByRole('menuitem', { name: 'Discard…' }).waitFor({ state: 'visible' })
+      await shot('context-menu')
+
+      await window.getByRole('menuitem', { name: 'Discard…' }).click()
+      await window.getByTestId('discard-file-dialog').waitFor({ state: 'visible' })
+      await shot('confirm')
+    }
+  },
+  {
+    name: 'commit-no-identity',
+    description:
+      'The hint under the commit box when git has no configured identity ' +
+      'for this worktree — a warning rather than a block, since git still ' +
+      'guesses one from the machine and commits successfully with it.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await fixture.git(['config', '--unset', 'user.email'])
+      await writeFile(join(fixture.repoPath, 'README.md'), '# fixture\nedited\n', 'utf8')
+      // Isolates the identity check from this container's own global git
+      // config, the same way a genuinely unconfigured machine would look.
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath, HOME: workDir }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByText(/No git identity configured/).waitFor({ state: 'visible' })
+      await shot('hint')
+    }
+  },
+  {
+    name: 'push-button',
+    description:
+      'The push button in both states it appears: counting commits ahead ' +
+      'once there is an upstream to compare against, and offering to ' +
+      'publish the branch when there is not one yet.',
+    setup: async ({ workDir }) => {
+      const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+
+      await window.getByRole('button', { name: /feature\/ahead-behind/ }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByRole('button', { name: 'Push 2 commits' }).waitFor({ state: 'visible' })
+      await shot('ahead')
+
+      await window.getByRole('button', { name: 'Commit options' }).click()
+      await window.getByRole('menuitemcheckbox', { name: 'Amend previous commit' }).waitFor()
+      await shot('commit-options')
+      await window.keyboard.press('Escape')
+
+      await window.getByRole('button', { name: /feature\/no-upstream/ }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByRole('button', { name: 'Publish branch' }).waitFor({ state: 'visible' })
+      await shot('no-upstream')
+    }
+  },
+  {
+    name: 'working-tree-external-change',
+    description:
+      'The one capture with the watcher (#50) switched on: a file edited on ' +
+      'disk by something other than Arborist — an editor, a build, a commit ' +
+      'from the terminal — and the Working Tree tab picking it up on its ' +
+      'own, with no manual refresh. Every other scenario keeps the watcher ' +
+      'off, per the determinism note on ARBORIST_DISABLE_WATCHER.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      externalChangeRepoPath = fixture.repoPath
+      // Overrides the runner's own default of '1', which every other
+      // scenario relies on for a deterministic capture.
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath, ARBORIST_DISABLE_WATCHER: '0' }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByText('No changes.').waitFor({ state: 'visible' })
+      await shot('before')
+
+      // Written straight to disk, the way an editor or a build would —
+      // never through `invoke('workingTree:…')`, which is the case already
+      // covered without a watcher at all.
+      await writeFile(
+        join(externalChangeRepoPath, 'README.md'),
+        '# fixture\nedited outside Arborist\n',
+        'utf8'
+      )
+      await window
+        .getByRole('button', { name: 'README.md', exact: true })
+        .waitFor({ state: 'visible' })
+      await shot('after')
+    }
+  },
+  {
+    name: 'switch-branch',
+    description:
+      "Switching a worktree's branch (#51): the picker open, the " +
+      'conflicting-dirt AlertDialog offering to stash or commit first, the ' +
+      'inline refusal when the target is already checked out in another ' +
+      "worktree, and a clean switch whose uncommitted change — the branch's " +
+      'own dirty edit didn’t conflict with — carries straight over, toast ' +
+      'and all.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+
+      // feature-elsewhere: checked out in a second worktree, so switching
+      // onto it from main hits the branch-in-use refusal.
+      await fixture.addWorktree('elsewhere', { branch: 'feature-elsewhere' })
+
+      // feature-clean: nothing here overlaps the uncommitted edit below, so
+      // a switch onto it carries that edit straight over.
+      await fixture.git(['checkout', '-b', 'feature-clean'])
+      await fixture.commit('Add clean.txt', { 'clean.txt': 'clean\n' })
+      await fixture.git(['checkout', 'main'])
+
+      // feature-conflict: edits README.md, the same file the uncommitted
+      // change below touches — the one a switch can't carry over.
+      await fixture.git(['checkout', '-b', 'feature-conflict'])
+      await fixture.commit('Edit README on feature-conflict', {
+        'README.md': '# fixture\nfeature-conflict edit\n'
+      })
+      await fixture.git(['checkout', 'main'])
+      await writeFile(join(fixture.repoPath, 'README.md'), '# fixture\nuncommitted edit\n', 'utf8')
+
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'Worktree actions' }).click()
+      await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
+      await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
+      await window.getByRole('combobox').click()
+      await window.getByRole('option', { name: 'feature-conflict' }).waitFor({ state: 'visible' })
+      await shot('picker')
+
+      await window.getByRole('option', { name: 'feature-conflict' }).click()
+      await window.getByRole('button', { name: 'Switch', exact: true }).click()
+      await window.getByTestId('switch-branch-conflict-dialog').waitFor({ state: 'visible' })
+      await shot('conflict')
+
+      await window.getByRole('button', { name: 'Cancel' }).click()
+      await window.getByTestId('switch-branch-conflict-dialog').waitFor({ state: 'detached' })
+
+      await window.getByRole('button', { name: 'Worktree actions' }).click()
+      await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
+      await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
+      await window.getByRole('combobox').click()
+      await window.getByRole('option', { name: 'feature-elsewhere' }).click()
+      await window.getByRole('button', { name: 'Switch', exact: true }).click()
+      await window.getByTestId('switch-branch-error').waitFor({ state: 'visible' })
+      await shot('in-use')
+
+      await window.getByRole('combobox').click()
+      await window.getByRole('option', { name: 'feature-clean' }).click()
+      await window.getByRole('button', { name: 'Switch', exact: true }).click()
+      await window
+        .getByText('Your uncommitted changes came with you.')
+        .waitFor({ state: 'visible' })
+      await shot('clean-switch')
+    }
+  },
+  {
+    name: 'switch-branch-create',
+    description:
+      'Creating a new branch from the switch-branch picker (#69 review): ' +
+      "the empty state's hint text before anything is typed — this fixture " +
+      'has no other local branches to pick, so that empty state is what ' +
+      'greets the picker — the "Create branch" row that then appears once ' +
+      'a typed name matches no existing branch, the Base picker it reveals ' +
+      '(defaulting to HEAD), and the worktree afterwards, now checked out ' +
+      'on the branch that was just created.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'Worktree actions' }).click()
+      await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
+      await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
+      await window.getByRole('combobox').first().click()
+      await window
+        .getByText('No matching branch. Type a name to create one.')
+        .waitFor({ state: 'visible' })
+      await shot('empty')
+
+      await window.getByPlaceholder('Search branches…').fill('feature/new-thing')
+      await window.getByText('Create branch “feature/new-thing”').waitFor({
+        state: 'visible'
+      })
+      await shot('create-option')
+
+      await window.getByText('Create branch “feature/new-thing”').click()
+      await window.getByText('New branch — created from HEAD (main).').waitFor({
+        state: 'visible'
+      })
+      await shot('form')
+
+      await window.getByRole('button', { name: 'Create and switch' }).click()
+      await window
+        .getByText('Created feature/new-thing and switched to it.')
+        .waitFor({ state: 'visible' })
+      await shot('after')
+    }
+  },
+  {
+    name: 'stash-list',
+    description:
+      "The Working Tree tab's Stash section (#51): empty, one entry after " +
+      'stashing an uncommitted edit through the UI, and the aftermath of a ' +
+      'pop that left conflicts — the stash stays in the list rather than ' +
+      'being silently dropped, and the conflicted file surfaces honestly.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await writeFile(join(fixture.repoPath, 'README.md'), '# fixture\noriginal edit\n', 'utf8')
+      stashListFixture = fixture
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('stash-section').waitFor({ state: 'visible' })
+      await window.getByText('No stashes.').waitFor({ state: 'visible' })
+      await shot('empty')
+
+      // Nothing is checked for staging, so the menu falls back to "Stash all
+      // changes…" — the pre-existing one-click behaviour this replaces.
+      await window.getByRole('button', { name: 'Changed files actions' }).click()
+      await window.getByRole('menuitem', { name: 'Stash all changes…' }).click()
+      await window.getByLabel('Message').fill('Keep this for later')
+      await window.getByRole('button', { name: 'Stash', exact: true }).click()
+      await window.getByTestId('stash-list').waitFor({ state: 'visible' })
+      await window.getByText('No changes.').waitFor({ state: 'visible' })
+      await shot('one-entry')
+
+      // A conflicting *commit* made directly through git, after the stash —
+      // there's no in-app editor, so this bypasses Arborist the same way the
+      // watcher scenario's direct write does. It has to be a commit rather
+      // than another dirty edit: verified against git 2.54, popping onto a
+      // dirty file refuses outright ("local changes would be overwritten by
+      // merge") rather than ever reaching a content merge, so a real UU
+      // conflict only appears once HEAD has moved past the stash's base.
+      await stashListFixture!.commit('Commit a conflicting edit while the stash is pending', {
+        'README.md': '# fixture\ncommitted edit that conflicts with the stash\n'
+      })
+
+      await window.getByRole('button', { name: 'Keep this for later actions' }).click()
+      await window.getByRole('menuitem', { name: 'Pop' }).click()
+      await window.getByText('That left conflicts to resolve').waitFor({ state: 'visible' })
+      await window.getByText('UU', { exact: true }).waitFor({ state: 'visible' })
+      await shot('pop-conflict')
+    }
+  },
+  {
+    name: 'conflict-merge',
+    description:
+      'The Conflicts section (#53): the banner and both conflict rows mid-merge ' +
+      '(a UU and an AA, from the same fixture #43 added), the list after ' +
+      '"Mark resolved" clears one of them, and the section gone after Abort.',
+    setup: async ({ workDir }) => {
+      // The same steps `makeConflictFixture()` runs, but rooted at `workDir`
+      // rather than a random tmpdir — a fixture path can end up on screen,
+      // and `makeConflictFixture()`'s own tmpdir would change every run.
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await fixture.commit('Add uu.txt', { 'uu.txt': 'base\n' })
+
+      const worktreePath = await fixture.addWorktree('conflict', { branch: 'feature/conflict' })
+      await fixture.commit('Feature edits uu.txt', { 'uu.txt': 'feature\n' }, worktreePath)
+      await fixture.commit('Feature adds aa.txt', { 'aa.txt': 'feature\n' }, worktreePath)
+
+      await fixture.commit('Main edits uu.txt', { 'uu.txt': 'main\n' })
+      await fixture.commit('Main adds aa.txt', { 'aa.txt': 'main\n' })
+
+      await fixture.git(['merge', 'main'], worktreePath).catch(() => {
+        // A merge conflict exits non-zero; that is the point of this fixture.
+      })
+
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('button', { name: /feature\/conflict/ }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('conflict-section').waitFor({ state: 'visible' })
+      await window.getByTestId('conflict-files').getByText('AA', { exact: true }).waitFor()
+      await shot('mid-merge')
+
+      await window.getByRole('button', { name: 'aa.txt conflict actions' }).click()
+      await window.getByRole('menuitem', { name: 'Mark resolved' }).click()
+      await window.getByTestId('conflict-files').getByText('AA', { exact: true }).waitFor({
+        state: 'detached'
+      })
+      await shot('one-resolved')
+
+      await window.getByRole('button', { name: 'Abort' }).click()
+      await window.getByTestId('conflict-section').waitFor({ state: 'detached' })
+      await window.getByText('No changes.').waitFor({ state: 'visible' })
+      await shot('aborted')
+    }
+  },
+  {
+    name: 'stash-selected-files',
+    description:
+      'The Changed Files header\'s "Stash…" menu (#69 review), scoped to ' +
+      'whatever is checked: the menu offering to stash just the one staged ' +
+      'file, and the working tree after — the staged file gone, the ' +
+      'unstaged one untouched, exactly what `git stash push -- <pathspec>` ' +
+      'promises.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await writeFile(join(fixture.repoPath, 'staged.txt'), 'staged content\n', 'utf8')
+      await writeFile(join(fixture.repoPath, 'README.md'), '# fixture\nunstaged edit\n', 'utf8')
+      await fixture.git(['add', 'staged.txt'])
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+      await window
+        .locator('[aria-label="staged.txt staging state"][data-state="checked"]')
+        .waitFor({ state: 'visible' })
+      await shot('before')
+
+      await window.getByRole('button', { name: 'Changed files actions' }).click()
+      await window.getByRole('menuitem', { name: 'Stash 1 selected file…' }).click()
+      await shot('dialog')
+
+      await window.getByRole('button', { name: 'Stash', exact: true }).click()
+      await window.getByTestId('stash-list').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'README.md', exact: true }).waitFor()
+      await shot('after')
+    }
+  },
+  {
+    name: 'conflict-editor-default',
+    description:
+      'Project settings’ Presets tab: the per-project conflict-editor ' +
+      'override (#53), showing what "Inherit" resolves to on a stock install, ' +
+      'and the picker open over the other file-capable presets it offers.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'Project settings' }).click()
+      await window.getByRole('tab', { name: 'Presets' }).click()
+      await window.getByTestId('project-conflict-editor').waitFor({ state: 'visible' })
+      await shot('current')
+
+      await window.getByLabel('Conflict editor').click()
+      await window.getByRole('listbox').waitFor({ state: 'visible' })
+      await shot('picker')
     }
   }
 ]

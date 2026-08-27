@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import type { UpdateStatus } from '@shared/updates'
 import { invoke } from '@/api/client'
 import { Button } from '@/components/ui/button'
+import { showErrorToast } from '@/lib/error-toast'
 
 /** Fixed ids, so a transition replaces the toast rather than stacking on it. */
 const TOAST_ID = 'update'
@@ -48,7 +49,7 @@ function show(status: UpdateStatus): void {
       // Same reasoning: a background check failing usually means the network
       // is down, which is not Arborist's news to break.
       if (status.manual) {
-        toast.error('Could not check for updates', {
+        showErrorToast('Could not check for updates', {
           id: TOAST_ID,
           description: status.message
         })

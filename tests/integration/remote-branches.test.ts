@@ -1,8 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { basename } from 'path'
+import type { ResolvedLocation } from '../../src/shared/worktree-location'
 import { GitLocator } from '../../src/main/services/git/git-discovery'
 import { GitRunner } from '../../src/main/services/git/git-runner'
 import { GitService } from '../../src/main/services/git/git-service'
 import { makeFixtureRepo, type GitFixture } from './fixtures/git-fixture'
+
+const BESIDE: ResolvedLocation = { mode: 'beside', root: null }
 
 const service = new GitService(new GitRunner(new GitLocator()))
 
@@ -42,11 +46,32 @@ describe('listRemoteBranches, against a bare-remote fixture', () => {
     expect(await service.listRemoteBranches(fixture.repoPath)).toEqual([])
   }, 30_000)
 
+  it('hides a remote branch once a local worktree tracks it under a different branch name (#47)', async () => {
+    await fixture.commitFromElsewhere('feature-y', 'Pushed from elsewhere')
+    await service.fetchAll(fixture.repoPath)
+    expect(await service.listRemoteBranches(fixture.repoPath)).toHaveLength(1)
+
+    // Folder name AND branch name both differ from the remote's short name —
+    // only the upstream tracking relationship ties this worktree back to it.
+    await fixture.addWorktree('a-completely-different-folder', {
+      branch: 'my-custom-branch-name',
+      startPoint: 'origin/feature-y'
+    })
+    await fixture.git(['branch', '--set-upstream-to=origin/feature-y', 'my-custom-branch-name'])
+
+    expect(await service.listRemoteBranches(fixture.repoPath)).toEqual([])
+  }, 30_000)
+
   it('creating a worktree from a remote branch removes it from the list and gives it a working upstream', async () => {
     await fixture.commitFromElsewhere('feature-z', 'Pushed from elsewhere')
     await service.fetchAll(fixture.repoPath)
 
-    const path = await service.suggestWorktreePath(fixture.repoPath, 'feature-z')
+    const path = await service.suggestWorktreePath(
+      fixture.repoPath,
+      'feature-z',
+      BESIDE,
+      basename(fixture.repoPath)
+    )
     await service.createWorktree(fixture.repoPath, {
       branch: 'feature-z',
       path,

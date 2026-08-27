@@ -2,6 +2,10 @@ import { AppError } from '../../../shared/errors'
 import { GitLocator } from './git-discovery'
 import { execGitAt, type ExecGitOptions, type GitExecResult } from './git-executor'
 
+export interface GitRawResult extends GitExecResult {
+  stdoutBuffer: Buffer
+}
+
 /**
  * Every git call in the app goes through here, so the binary is discovered
  * once and a missing git produces one typed error rather than a different
@@ -32,5 +36,11 @@ export class GitRunner {
       )
     }
     return result
+  }
+
+  /** Like `run`, but always in buffer mode, so `stdoutBuffer` is guaranteed present. */
+  async runRaw(args: readonly string[], options: ExecGitOptions = {}): Promise<GitRawResult> {
+    const result = await this.run(args, { ...options, encoding: 'buffer' })
+    return result as GitRawResult
   }
 }

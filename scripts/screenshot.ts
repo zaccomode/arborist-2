@@ -56,6 +56,30 @@ async function launch(
   return electron.launch({ args, env: { ...(process.env as Record<string, string>), ...env } })
 }
 
+/**
+ * Two animation frames: enough for a DOM mutation just made — a class swap,
+ * or the DOM update React queues from a click's `onCheckedChange` — to reach
+ * layout and for any CSS transition it starts to actually be registered by
+ * `getAnimations()`.
+ *
+ * Skipping this is what made the "wait for every CSSTransition to finish"
+ * check below non-deterministic (#57): `Array.prototype.every` on an empty
+ * array is vacuously true, so if `getAnimations()` is queried before a
+ * just-triggered transition has started, the check reads "nothing running"
+ * and resolves immediately — a frame or two before the transition (most
+ * often a shadcn `Switch` thumb's `transition-transform`, which nothing
+ * else here waits on specifically) actually begins, letting the screenshot
+ * land mid-transition on an unpredictable run.
+ */
+async function settle(window: Page): Promise<void> {
+  await window.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      })
+  )
+}
+
 /** Captures the window as it stands, once per theme, as `<stem>-<theme>.png`. */
 async function captureThemes(
   window: Page,
@@ -80,6 +104,13 @@ async function captureThemes(
       (wantsDark) => document.documentElement.classList.contains('dark') === wantsDark,
       theme === 'dark'
     )
+
+    // Give any transition just triggered — by the theme swap above, or by
+    // whatever the scenario's `drive` step did right before calling `shot`
+    // — a couple of frames to actually start and be registered by
+    // `getAnimations()` before checking whether one is running. See
+    // `settle`'s own comment for why this is what #57 was missing.
+    await settle(window)
 
     // Swapping the theme starts a colour transition on everything carrying
     // `transition-[color]` — a textarea's own text among them, which lands
@@ -109,7 +140,15 @@ async function capture(scenario: Scenario, outDir: string): Promise<void> {
   const workDir = join(tmpdir(), 'arborist-shot-work', scenario.name)
   await rm(workDir, { recursive: true, force: true })
   await mkdir(workDir, { recursive: true })
-  const env = (await scenario.setup?.({ userDataDir, workDir })) ?? {}
+  // Off by default: a watcher makes a capture race a filesystem event, which
+  // reads as a flaky styling bug rather than the timing issue it is. The one
+  // scenario that means to show the watcher working opts back in by
+  // returning `ARBORIST_DISABLE_WATCHER: '0'` from its own `setup`, which
+  // overrides this default below.
+  const env = {
+    ARBORIST_DISABLE_WATCHER: '1',
+    ...(await scenario.setup?.({ userDataDir, workDir }))
+  }
   const app = await launch(userDataDir, env)
 
   try {

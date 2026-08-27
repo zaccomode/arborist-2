@@ -2,12 +2,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { promises as fs } from 'fs'
 import { basename, dirname, join } from 'path'
 import { parseBranchInput, sanitizeForFolder } from '../../src/shared/branch-name'
+import type { ResolvedLocation } from '../../src/shared/worktree-location'
 import { GitLocator } from '../../src/main/services/git/git-discovery'
 import { GitRunner } from '../../src/main/services/git/git-runner'
 import { GitService } from '../../src/main/services/git/git-service'
 import { makeFixtureRepo, type GitFixture } from './fixtures/git-fixture'
 
 const service = new GitService(new GitRunner(new GitLocator()))
+const BESIDE: ResolvedLocation = { mode: 'beside', root: null }
 
 let fixture: GitFixture
 
@@ -22,7 +24,12 @@ afterEach(async () => {
 describe('creating a worktree', () => {
   it('creates the branch and folder a pasted checkout command implies', async () => {
     const branch = parseBranchInput('git checkout -b feature/ABC-123')
-    const path = await service.suggestWorktreePath(fixture.repoPath, branch)
+    const path = await service.suggestWorktreePath(
+      fixture.repoPath,
+      branch,
+      BESIDE,
+      basename(fixture.repoPath)
+    )
 
     expect(basename(path)).toBe('feature-ABC-123')
     expect(dirname(path)).toBe(dirname(fixture.repoPath))
@@ -38,7 +45,12 @@ describe('creating a worktree', () => {
     await fixture.git(['branch', 'feature/existing'])
     expect(await service.branchExists(fixture.repoPath, 'feature/existing')).toBe(true)
 
-    const path = await service.suggestWorktreePath(fixture.repoPath, 'feature/existing')
+    const path = await service.suggestWorktreePath(
+      fixture.repoPath,
+      'feature/existing',
+      BESIDE,
+      basename(fixture.repoPath)
+    )
     await service.createWorktree(fixture.repoPath, { branch: 'feature/existing', path })
 
     const worktrees = await service.listWorktrees(fixture.repoPath)
@@ -49,7 +61,12 @@ describe('creating a worktree', () => {
     const first = (await fixture.git(['rev-parse', 'HEAD'])).trim()
     await fixture.commit('Second commit', { 'second.txt': 'second' })
 
-    const path = await service.suggestWorktreePath(fixture.repoPath, 'feature/from-base')
+    const path = await service.suggestWorktreePath(
+      fixture.repoPath,
+      'feature/from-base',
+      BESIDE,
+      basename(fixture.repoPath)
+    )
     await service.createWorktree(fixture.repoPath, {
       branch: 'feature/from-base',
       path,
@@ -63,7 +80,14 @@ describe('creating a worktree', () => {
     const taken = join(dirname(fixture.repoPath), sanitizeForFolder('feature/x'))
     await fs.mkdir(taken, { recursive: true })
 
-    expect(await service.suggestWorktreePath(fixture.repoPath, 'feature/x')).toBe(`${taken}-2`)
+    expect(
+      await service.suggestWorktreePath(
+        fixture.repoPath,
+        'feature/x',
+        BESIDE,
+        basename(fixture.repoPath)
+      )
+    ).toBe(`${taken}-2`)
   })
 
   it('refuses a path that already exists, without asking git', async () => {

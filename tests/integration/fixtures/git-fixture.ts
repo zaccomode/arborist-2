@@ -68,8 +68,8 @@ export class GitFixture {
     this.remotePath = join(root, 'remote.git')
   }
 
-  git(args: string[], cwd: string = this.repoPath): Promise<string> {
-    return runGit(args, cwd)
+  git(args: string[], cwd: string = this.repoPath, env: NodeJS.ProcessEnv = {}): Promise<string> {
+    return runGit(args, cwd, env)
   }
 
   /** Writes files (paths relative to `cwd`) and commits them. Returns the sha. */
@@ -252,4 +252,75 @@ export async function makeBadgeMatrixIn(
       detached
     }
   }
+}
+
+export interface ConflictFixture {
+  fixture: GitFixture
+  worktreePath: string
+}
+
+/**
+ * A worktree mid-merge with a `UU` (both modified) and an `AA` (both added)
+ * conflict, for `parseStatusV2`'s `u` records.
+ */
+export async function makeConflictFixture(): Promise<ConflictFixture> {
+  const root = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'arborist-fixture-')))
+  const fixture = new GitFixture(root)
+  await fixture.init()
+  const git = fixture.git.bind(fixture)
+
+  await fixture.commit('Add uu.txt', { 'uu.txt': 'base\n' })
+
+  const worktreePath = await fixture.addWorktree('conflict', { branch: 'feature/conflict' })
+  await fixture.commit('Feature edits uu.txt', { 'uu.txt': 'feature\n' }, worktreePath)
+  await fixture.commit('Feature adds aa.txt', { 'aa.txt': 'feature\n' }, worktreePath)
+
+  await fixture.commit('Main edits uu.txt', { 'uu.txt': 'main\n' })
+  await fixture.commit('Main adds aa.txt', { 'aa.txt': 'main\n' })
+
+  await git(['merge', 'main'], worktreePath).catch(() => {
+    // A merge conflict exits non-zero; that is the point of this fixture.
+  })
+
+  return { fixture, worktreePath }
+}
+
+export interface StatusV2Fixture {
+  fixture: GitFixture
+  repoPath: string
+}
+
+/**
+ * A repository exercising three shapes `parseStatusV2` must get right: a
+ * staged rename where both the old and new path carry a space, an unstaged
+ * edit to a file with CRLF line endings, and an unstaged edit to a file that
+ * isn't valid UTF-8 — the fixture the byte-accuracy invariant (a diff
+ * round-tripped through a JS string is not a valid patch) is checked
+ * against.
+ */
+export async function makeStatusV2Fixture(): Promise<StatusV2Fixture> {
+  const root = await fs.realpath(await fs.mkdtemp(join(tmpdir(), 'arborist-fixture-')))
+  const fixture = new GitFixture(root)
+  await fixture.init()
+  const repoPath = fixture.repoPath
+
+  await fs.writeFile(join(repoPath, 'old file.txt'), 'content\n', 'utf8')
+  await fs.writeFile(join(repoPath, 'crlf.txt'), 'line one\r\nline two\r\n', 'utf8')
+  // 0xE9 alone is "é" in latin-1, but is not a valid UTF-8 byte sequence.
+  await fs.writeFile(join(repoPath, 'latin1.txt'), Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]))
+  await fixture.git(['add', '--', 'old file.txt', 'crlf.txt', 'latin1.txt'])
+  const when = new Date(BASE_COMMIT_TIME).toISOString()
+  await runGit(['commit', '-m', 'Add fixture files'], repoPath, {
+    GIT_AUTHOR_DATE: when,
+    GIT_COMMITTER_DATE: when
+  })
+
+  await fixture.git(['mv', 'old file.txt', 'new file.txt'])
+  await fs.writeFile(join(repoPath, 'crlf.txt'), 'line one\r\nline two edited\r\n', 'utf8')
+  await fs.writeFile(
+    join(repoPath, 'latin1.txt'),
+    Buffer.from([0x63, 0x61, 0x66, 0xe9, 0xe9, 0x0a])
+  )
+
+  return { fixture, repoPath }
 }

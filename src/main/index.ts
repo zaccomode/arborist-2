@@ -22,6 +22,7 @@ import { GitService } from './services/git/git-service'
 import { PresetService } from './services/presets'
 import { AutomationRunner } from './services/automation'
 import { UpdateService } from './services/updates'
+import { WorktreeWatcher } from './services/watch/worktree-watcher'
 
 const DEFAULT_WINDOW: WindowState = { width: 1100, height: 720, maximized: false }
 
@@ -60,12 +61,23 @@ function scriptedUpdateStatus(): UpdateStatus | undefined {
     case 'up-to-date':
       // Fixed, because a real timestamp would change the pixels every run.
       return { phase: 'up-to-date', checkedAt: '2026-08-21T09:00:00Z', manual: true }
+    case 'error':
+      return { phase: 'error', message: 'net::ERR_INTERNET_DISCONNECTED', manual: true }
     default:
       return undefined
   }
 }
 
 let store: Store | null = null
+let watcher: WorktreeWatcher | null = null
+
+function broadcast<C extends IpcEventChannel>(channel: C, payload: IpcEventContract[C]): void {
+  // One window, so every push goes to it; a second window would need the
+  // sender threaded through the handler instead.
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send(channel, payload)
+  }
+}
 
 function createWindow(remembered: WindowState, windowStatePath: string): void {
   // Re-checked at creation rather than at load, so a window opened by
@@ -120,6 +132,12 @@ function createWindow(remembered: WindowState, windowStatePath: string): void {
     mainWindow.show()
   })
 
+  // #61: the watcher only sees changes made while it was actively watching,
+  // and can miss or coalesce events regardless — regaining OS focus (e.g.
+  // tabbing back in after running a command in a terminal) is the moment a
+  // stale view is most likely, so it doubles as a cue to re-read git state.
+  mainWindow.on('focus', () => broadcast('app:focus', undefined))
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
@@ -156,14 +174,6 @@ app.whenReady().then(async () => {
   setGitDebug(store.data.settings.debugGit)
   nativeTheme.themeSource = store.data.settings.theme
 
-  const broadcast = <C extends IpcEventChannel>(channel: C, payload: IpcEventContract[C]): void => {
-    // One window, so every push goes to it; a second window would need the
-    // sender threaded through the handler instead.
-    for (const window of BrowserWindow.getAllWindows()) {
-      window.webContents.send(channel, payload)
-    }
-  }
-
   const updates = new UpdateService({
     updater: autoUpdater,
     emit: (status) => broadcast('updates:changed', status),
@@ -184,11 +194,19 @@ app.whenReady().then(async () => {
     () => store!.data.settings
   )
 
+  const worktreeWatcher = new WorktreeWatcher(gitRunner, (worktreePath, reason) =>
+    broadcast('worktree:changed', { worktreePath, reason })
+  )
+  watcher = worktreeWatcher
+
   registerIpcHandlers({
     gitRunner,
     store,
     projects: new ProjectService(store, gitRunner),
-    gitService: new GitService(gitRunner),
+    // Every mutating operation opens a suppression window on the watcher
+    // before it runs, so Arborist's own write is never read back in as an
+    // external change — see `SuppressWatcher`'s doc comment in git-service.ts.
+    gitService: new GitService(gitRunner, (worktreePath) => worktreeWatcher.suppress(worktreePath)),
     presets: new PresetService(store, gitRunner, (script, cwd, values) =>
       // A shell preset is a one-command script with the worktree as its
       // working directory, so it rides the automation runner rather than
@@ -196,7 +214,8 @@ app.whenReady().then(async () => {
       automation.start({ script, worktreePath: cwd, values })
     ),
     automation,
-    updates
+    updates,
+    watcher: worktreeWatcher
   })
 
   const windowStatePath = join(userData, 'window-state.json')
@@ -218,6 +237,7 @@ app.on('before-quit', (event) => {
   if (flushing || !store) return
   event.preventDefault()
   flushing = true
+  void watcher?.stop()
   store
     .flush()
     .catch((error: unknown) => console.error('Failed to save on quit:', error))
@@ -225,6 +245,7 @@ app.on('before-quit', (event) => {
 })
 
 app.on('window-all-closed', () => {
+  void watcher?.stop()
   if (process.platform !== 'darwin') {
     app.quit()
   }

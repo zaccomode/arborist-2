@@ -9,13 +9,19 @@
 
 import type {
   BranchInfo,
+  CommitFileStat,
   CommitLogEntry,
   GitDiscoveryResult,
   RemoteBranch,
+  StashEntry,
   StoreStatus,
+  WorkingTreeChanges,
   Worktree
 } from './domain'
-import type { Preset, Repository, SelectionState, Settings } from './persisted'
+import type { BranchSwitchPlan } from './branch-switch'
+import type { ConflictOperation, ConflictState } from './conflicts'
+import type { DiffRequest, FileDiff } from './diff'
+import type { Preset, ProjectSettings, Repository, SelectionState, Settings } from './persisted'
 import type { AutomationEvent } from './automation'
 import type { PresetCatalogue, PresetRunResult, ResolvedPreset } from './presets'
 import type { SubstitutionValues } from './substitution'
@@ -36,8 +42,16 @@ export interface IpcInvokeContract {
   'branches:list': { args: [repoPath: string]; result: BranchInfo[] }
   /** Remote branches with no local worktree of their own, tip commit included. */
   'branches:remote': { args: [repoPath: string]; result: RemoteBranch[] }
-  /** The default sibling folder for a new worktree, already de-duplicated. */
-  'worktrees:suggestPath': { args: [repoPath: string, branch: string]; result: string }
+  /**
+   * The default folder for a new worktree, already de-duplicated. Main
+   * resolves the worktree location from the store and `projectId` — beside
+   * the repository or under the configured central directory — so the
+   * renderer never carries its own copy of settings.
+   */
+  'worktrees:suggestPath': {
+    args: [repoPath: string, branch: string, projectId: string]
+    result: string
+  }
   'worktrees:create': {
     args: [
       repoPath: string,
@@ -52,6 +66,127 @@ export interface IpcInvokeContract {
     result: string
   }
   'worktrees:isDirty': { args: [worktreePath: string]; result: boolean }
+  /** `git status --porcelain=v2` for one worktree, for the Working Tree tab. */
+  'workingTree:get': { args: [worktreePath: string]; result: WorkingTreeChanges }
+  /** One file's diff, for the third-panel diff viewer. */
+  'diff:get': { args: [request: DiffRequest]; result: FileDiff }
+  /** `git add -- <paths>`. Both sides of a rename have to be passed together. */
+  'workingTree:stage': { args: [worktreePath: string, paths: string[]]; result: void }
+  'workingTree:unstage': { args: [worktreePath: string, paths: string[]]; result: void }
+  /**
+   * Stages or unstages exactly one hunk from the diff panel, by
+   * `DiffHunk.id`. Stateless: main re-runs the same diff fresh and finds the
+   * hunk by id rather than trusting anything cached on this side — a stale
+   * id (the file changed since the diff was shown) throws `AppError` with
+   * code `diff-stale`, for the renderer to refetch and toast over. `file`
+   * carries both sides of a rename, the same as `diff:get`'s `DiffRequest`.
+   */
+  'worktree:applyHunk': {
+    args: [
+      worktreePath: string,
+      file: { path: string; origPath?: string | null },
+      hunkId: string,
+      direction: 'stage' | 'unstage'
+    ]
+    result: void
+  }
+  /** Irreversible: `git restore` for tracked paths, `git clean -f` for untracked ones. */
+  'workingTree:discard': {
+    args: [worktreePath: string, paths: { tracked: string[]; untracked: string[] }]
+    result: void
+  }
+  'workingTree:commit': {
+    args: [worktreePath: string, message: string, amend: boolean]
+    result: void
+  }
+  /** `setUpstream` runs `push --set-upstream origin <branch>` instead of a plain `push`. */
+  'workingTree:push': {
+    args: [worktreePath: string, branch: string, setUpstream: boolean]
+    result: void
+  }
+  /** Whether `user.email` is configured — a warning under the commit box, never a block. */
+  'workingTree:hasIdentity': { args: [worktreePath: string]; result: boolean }
+  /**
+   * Which operation (if any) left the worktree conflicted, and who's
+   * involved — see `ConflictState`. A path lookup and a stat per git state
+   * file, never stderr matching: `detectConflictOperation` in
+   * `src/main/services/git/conflict-state.ts`.
+   */
+  'conflicts:state': { args: [worktreePath: string]; result: ConflictState }
+  /**
+   * `git checkout --ours -- <path>` then `git add -- <path>`: resolves one
+   * `UU` conflict to "our" side and marks it resolved in one action. Never
+   * offered on `AA`/`DU`/`UD` — see `canKeepOurs`.
+   */
+  'conflicts:keepOurs': { args: [worktreePath: string, path: string]; result: void }
+  /** `git <operation> --abort`. */
+  'conflicts:abort': { args: [worktreePath: string, operation: ConflictOperation]; result: void }
+  /**
+   * `git <operation> --continue`, with the editor neutralised — see
+   * `continueArgsFor`'s doc comment for why that matters.
+   */
+  'conflicts:continue': {
+    args: [worktreePath: string, operation: ConflictOperation]
+    result: void
+  }
+  /**
+   * What switching this worktree to `branch` would do — every failure mode
+   * `git switch` can hit is pre-checkable, so the renderer asks this before
+   * ever running the switch itself. See `BranchSwitchPlan`.
+   *
+   * `create`, non-null, is the switch-branch picker's "create a new branch"
+   * option: `branch` not existing yet is then expected rather than the
+   * `branch-missing` outcome, and `startPoint` (null for HEAD) is what it
+   * would be created from.
+   */
+  'branches:switchPrecheck': {
+    args: [
+      repoPath: string,
+      worktreePath: string,
+      branch: string,
+      create: { startPoint: string | null } | null
+    ]
+    result: BranchSwitchPlan
+  }
+  /**
+   * Runs the switch a cleared `branches:switchPrecheck` described. `create`
+   * must match whatever was passed to the precheck: runs `git switch -c
+   * <branch> [<startPoint>]` instead of a plain switch.
+   */
+  'branches:switch': {
+    args: [worktreePath: string, branch: string, create: { startPoint: string | null } | null]
+    result: void
+  }
+  /**
+   * `git stash push`. Returns whether anything was actually stashed — a
+   * clean tree (or, with `paths`, a clean selection) exits 0 with nothing
+   * stashed, so the result can't be read off success alone.
+   *
+   * `paths`, non-null, limits the stash to those paths — the Changed Files
+   * header's "Stash selected files" — leaving every other path's
+   * staged/unstaged state untouched.
+   */
+  'stash:push': {
+    args: [worktreePath: string, message: string, includeUntracked: boolean, paths: string[] | null]
+    result: boolean
+  }
+  /** For the Working Tree tab's Stash section. */
+  'stash:list': { args: [worktreePath: string]; result: StashEntry[] }
+  /**
+   * `git stash pop`. `conflict: true` means the pop left `UU` entries behind
+   * without dropping the stash — surfaced honestly rather than auto-resolved;
+   * full conflict UI is a later phase.
+   */
+  'stash:pop': { args: [worktreePath: string, ref: string]; result: { conflict: boolean } }
+  /** `git stash apply`: like `stash:pop`, but never drops the stash either way. */
+  'stash:apply': { args: [worktreePath: string, ref: string]; result: { conflict: boolean } }
+  'stash:drop': { args: [worktreePath: string, ref: string]; result: void }
+  /** A worktree's draft commit message. */
+  'commitDraft:get': { args: [repositoryId: string, worktreePath: string]; result: string }
+  'commitDraft:set': {
+    args: [repositoryId: string, worktreePath: string, text: string]
+    result: void
+  }
   'worktrees:remove': {
     args: [repoPath: string, worktreePath: string, force: boolean]
     result: void
@@ -94,9 +229,18 @@ export interface IpcInvokeContract {
   'presets:save': { args: [preset: Preset]; result: void }
   'presets:delete': { args: [presetId: string]; result: void }
   'presets:reorder': { args: [orderedIds: string[]]; result: void }
-  /** Shell presets resolve to a run id to attach a console to; the rest launch. */
+  /**
+   * Shell presets resolve to a run id to attach a console to; the rest
+   * launch. `target` defaults to `'worktree'` — every caller before #53 —
+   * and `'file'` is what the Conflicts section's "Open in editor" uses,
+   * which is also what makes `context.filePath` meaningful.
+   */
   'presets:run': {
-    args: [presetId: string, context: SubstitutionValues & { projectId: string | null }]
+    args: [
+      presetId: string,
+      context: SubstitutionValues & { projectId: string | null },
+      target?: 'worktree' | 'file'
+    ]
     result: PresetRunResult
   }
   /**
@@ -105,21 +249,31 @@ export interface IpcInvokeContract {
    */
   'repos:fetch': { args: [repoPath: string]; result: void }
   /**
-   * Recent commits on `ref`, newest first. `repoPath` need only be somewhere
-   * inside the repository — for a remote branch with no local checkout it is
-   * the project's own path, since remote-tracking refs are visible from any
-   * worktree that shares the repository.
+   * Recent commits on `refs`, newest first. `repoPath` need only be
+   * somewhere inside the repository — for a remote branch with no local
+   * checkout it is the project's own path, since remote-tracking refs are
+   * visible from any worktree that shares the repository. `refs` is one tip
+   * for the Recent Commits panel (a branch, HEAD, or a remote ref), or that
+   * tip plus its upstream for the commit graph — see `commitGraphTips`.
    */
   'commits:recent': {
-    args: [repoPath: string, ref: string, limit: number, skip: number]
+    args: [repoPath: string, refs: string[], limit: number, skip: number]
     result: CommitLogEntry[]
   }
+  /** A commit's changed files, for the commit inspector's file list. */
+  'commits:files': { args: [repoPath: string, hash: string]; result: CommitFileStat[] }
   'git:discover': { args: []; result: GitDiscoveryResult }
   /** Sets (or clears, with null) the manual git path and re-runs discovery. */
   'git:setPath': { args: [path: string | null]; result: GitDiscoveryResult }
   'store:status': { args: []; result: StoreStatus }
   'settings:get': { args: []; result: Settings }
   'settings:update': { args: [changes: Partial<Settings>]; result: Settings }
+  /** A project's settings overrides. Absent fields mean inherit the app-level value. */
+  'projectSettings:get': { args: [projectId: string]; result: ProjectSettings }
+  'projectSettings:set': {
+    args: [projectId: string, changes: Partial<ProjectSettings>]
+    result: ProjectSettings
+  }
   /** The project/worktree/remote-branch last selected, remembered across sessions. */
   'selection:get': { args: []; result: SelectionState }
   'selection:update': { args: [changes: Partial<SelectionState>]; result: SelectionState }
@@ -131,7 +285,26 @@ export interface IpcInvokeContract {
   'updates:check': { args: []; result: UpdateStatus }
   /** Restarts into a staged update. The only thing in the app that quits it. */
   'updates:install': { args: []; result: void }
+  /**
+   * Tells main which worktree's filesystem and git metadata to watch — the
+   * selected worktree only, never every worktree or every project. `null`
+   * stops watching. Driven by a `useEffect` on the selected worktree; main
+   * owns one watcher at a time and replaces it on each call. See
+   * `worktree:changed` for what a watched change produces.
+   */
+  'watch:select': { args: [worktreePath: string | null]; result: void }
 }
+
+/**
+ * Why `worktree:changed` fired, so the renderer can invalidate precisely
+ * rather than refetching everything on every push: `worktree` (a file inside
+ * the working tree changed) means status alone is stale; `index` (the
+ * resolved-per-worktree index file, see `worktree-watcher.ts`) means status
+ * and diffs; `head`/`refs` (HEAD, refs/heads, or packed-refs, all under the
+ * resolved git-common-dir) mean status, commits and the worktree list, since
+ * those move the branch pointer itself.
+ */
+export type WorktreeChangeReason = 'worktree' | 'index' | 'head' | 'refs'
 
 export type IpcChannel = keyof IpcInvokeContract
 
@@ -160,6 +333,28 @@ const CHANNELS: Record<IpcChannel, true> = {
   'worktrees:suggestPath': true,
   'worktrees:create': true,
   'worktrees:isDirty': true,
+  'workingTree:get': true,
+  'diff:get': true,
+  'workingTree:stage': true,
+  'workingTree:unstage': true,
+  'worktree:applyHunk': true,
+  'workingTree:discard': true,
+  'workingTree:commit': true,
+  'workingTree:push': true,
+  'workingTree:hasIdentity': true,
+  'conflicts:state': true,
+  'conflicts:keepOurs': true,
+  'conflicts:abort': true,
+  'conflicts:continue': true,
+  'branches:switchPrecheck': true,
+  'branches:switch': true,
+  'stash:push': true,
+  'stash:list': true,
+  'stash:pop': true,
+  'stash:apply': true,
+  'stash:drop': true,
+  'commitDraft:get': true,
+  'commitDraft:set': true,
   'worktrees:remove': true,
   'worktrees:prune': true,
   'notes:get': true,
@@ -175,6 +370,7 @@ const CHANNELS: Record<IpcChannel, true> = {
   'presets:run': true,
   'repos:fetch': true,
   'commits:recent': true,
+  'commits:files': true,
   'automation:script': true,
   'automation:setScript': true,
   'automation:start': true,
@@ -184,12 +380,15 @@ const CHANNELS: Record<IpcChannel, true> = {
   'store:status': true,
   'settings:get': true,
   'settings:update': true,
+  'projectSettings:get': true,
+  'projectSettings:set': true,
   'selection:get': true,
   'selection:update': true,
   'updates:support': true,
   'updates:status': true,
   'updates:check': true,
-  'updates:install': true
+  'updates:install': true,
+  'watch:select': true
 }
 
 export const IPC_CHANNELS: readonly IpcChannel[] = Object.keys(CHANNELS) as IpcChannel[]
@@ -204,8 +403,23 @@ export interface IpcEventContract {
   'app:refresh': void
   'app:newWorktree': void
   'app:openSettings': void
+  /**
+   * The window just regained OS focus (#61) — e.g. the user tabbed back in
+   * after running a command in a terminal. The watcher covers a change made
+   * while focused, but nothing fires while unfocused if it was paused, and
+   * events can be missed or coalesced regardless, so this is the backstop:
+   * the renderer treats it as a cue to re-read the selected worktree's git
+   * state, the same way an external change notification would.
+   */
+  'app:focus': void
   /** Every updater transition, so the toast follows a download it did not start. */
   'updates:changed': UpdateStatus
+  /**
+   * A change detected under the watched worktree — see `watch:select` and
+   * `WorktreeChangeReason`. Only ever describes the one worktree main is
+   * currently watching.
+   */
+  'worktree:changed': { worktreePath: string; reason: WorktreeChangeReason }
 }
 
 export type IpcEventChannel = keyof IpcEventContract
@@ -216,7 +430,9 @@ const EVENT_CHANNELS: Record<IpcEventChannel, true> = {
   'app:refresh': true,
   'app:newWorktree': true,
   'app:openSettings': true,
-  'updates:changed': true
+  'app:focus': true,
+  'updates:changed': true,
+  'worktree:changed': true
 }
 
 export const IPC_EVENT_CHANNELS: readonly IpcEventChannel[] = Object.keys(

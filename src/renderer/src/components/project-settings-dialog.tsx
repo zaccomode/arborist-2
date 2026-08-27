@@ -25,9 +25,12 @@ import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { invoke } from '@/api/client'
+import { CopyableError } from '@/components/copyable-error'
 import { NotesEditor } from '@/components/notes-editor'
+import { ProjectConflictEditor } from '@/components/settings/project-conflict-editor'
 import { ProjectPresetOverrides } from '@/components/settings/project-preset-overrides'
 import { ProjectPresets } from '@/components/settings/project-presets'
+import { ProjectWorktreeLocation } from '@/components/settings/project-worktree-location'
 
 /** What the preview substitutes into, so tokens can be seen doing something. */
 function sampleValues(project: Repository): Parameters<typeof substitute>[1] {
@@ -36,7 +39,9 @@ function sampleValues(project: Repository): Parameters<typeof substitute>[1] {
     branch: 'feature/ABC-123',
     commitHash: '46862b9',
     repoName: project.name,
-    repoPath: project.path
+    repoPath: project.path,
+    filePath: null,
+    fileLine: null
   }
 }
 
@@ -106,6 +111,7 @@ export function ProjectSettingsDialog({
             className="-mx-6 w-[calc(100%+3rem)] shrink-0 rounded-none border-b px-6"
           >
             <TabsTrigger value="automation">Automation</TabsTrigger>
+            <TabsTrigger value="worktrees">Worktrees</TabsTrigger>
             <TabsTrigger value="presets">Presets</TabsTrigger>
             <TabsTrigger value="notes">Notes</TabsTrigger>
             <TabsTrigger value="danger">Danger zone</TabsTrigger>
@@ -162,7 +168,12 @@ export function ProjectSettingsDialog({
             )}
           </TabsContent>
 
+          <TabsContent value="worktrees" className="min-h-0 flex-1 overflow-y-auto pt-4">
+            <ProjectWorktreeLocation projectId={project.id} />
+          </TabsContent>
+
           <TabsContent value="presets" className="min-h-0 flex-1 space-y-6 overflow-y-auto pt-4">
+            <ProjectConflictEditor projectId={project.id} />
             <ProjectPresetOverrides projectId={project.id} />
             <ProjectPresets projectId={project.id} />
           </TabsContent>
@@ -197,7 +208,7 @@ export function ProjectSettingsDialog({
           </TabsContent>
         </Tabs>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <CopyableError className="text-sm" message={error} />}
 
         <DialogFooter className="shrink-0">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>

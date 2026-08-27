@@ -150,6 +150,56 @@ function orderOf(id: string, rank: number, config: PresetConfig): number {
 }
 
 /**
+ * Built-ins with a sensible per-file behaviour (see `PresetService#run`'s
+ * file-target branch, in `src/main/services/presets.ts`). `terminal` and
+ * `github` have no sensible file form — "open a terminal at this file" and
+ * "show this file's page on GitHub with no line number" are both worse than
+ * not offering the button at all — so `filterForTarget` leaves them out
+ * rather than faking one. Any future built-in (an Xcode or Warp preset, say)
+ * is file-incapable by default for the same reason, until it earns a place
+ * here.
+ */
+export const FILE_CAPABLE_BUILTINS: ReadonlySet<string> = new Set(['reveal', 'vscode'])
+
+/**
+ * The subset of `presets` that make sense for `target`. A custom preset is
+ * always file-capable — `substitute` already has a `{{filePath}}` token for
+ * `url`/`shell` presets, and an `app` preset takes the file as argv instead
+ * of the directory — so only built-ins get filtered, and only for `'file'`.
+ */
+export function filterForTarget(
+  presets: readonly ResolvedPreset[],
+  target: 'worktree' | 'file'
+): ResolvedPreset[] {
+  if (target === 'worktree') return [...presets]
+  return presets.filter(
+    (preset) => preset.builtinId === null || FILE_CAPABLE_BUILTINS.has(preset.builtinId)
+  )
+}
+
+/**
+ * Which preset "Open in editor" runs when `conflictEditorPresetId` is unset:
+ * the first file-capable preset that behaves like an editor. `reveal` is
+ * file-capable (see `FILE_CAPABLE_BUILTINS` — it can show one file in
+ * Finder/Explorer) but isn't an editor, so the automatic pick skips it; a
+ * stock install's built-in order is Finder/Explorer then VS Code, so without
+ * this the default would silently reveal a file instead of opening one. An
+ * explicit `presetId` — set in project or app settings, or chosen from the
+ * dropdown beside the button — can still select `reveal`.
+ */
+export function resolveConflictEditorPreset(
+  presetId: string | null,
+  filePresets: readonly ResolvedPreset[]
+): ResolvedPreset | null {
+  if (presetId) {
+    const explicit = filePresets.find((preset) => preset.id === presetId)
+    if (explicit) return explicit
+  }
+  const editorLike = filePresets.find((preset) => preset.builtinId !== 'reveal')
+  return editorLike ?? filePresets[0] ?? null
+}
+
+/**
  * Turns an origin remote into the repository's GitHub URL, normalising the
  * ssh forms. Returns null for anything that isn't GitHub, which is what turns
  * pressing the button into "this project has no GitHub remote" rather than a

@@ -1,0 +1,10 @@
+# No .gitattributes existed before, so a Windows checkout's default
+# core.autocrlf converts every text file to CRLF on the way out of git —
+# which then floods `eslint --cache .`'s prettier/prettier rule with a
+# "Delete `␍`" warning per line across dozens of files it never cached
+# before, on windows-latest CI specifically. That's at minimum a lot of
+# needless noise, and turned up alongside two reproducible hangs in the
+# Lint step on this same runner, so line endings are pinned here rather
+# than left to whatever the checkout machine's global git config happens
+# to default to.
+* text=auto eol=lf

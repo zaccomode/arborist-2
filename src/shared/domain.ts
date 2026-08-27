@@ -81,6 +81,13 @@ export interface CommitLogEntry extends CommitSummary {
   filesChanged: number
   insertions: number
   deletions: number
+  /**
+   * `%P`, space-split: empty for a root commit, one hash for an ordinary
+   * commit, two or more for a merge. First-parent first, as git prints them
+   * — `assignLanes` in `src/shared/commit-graph.ts` relies on that order to
+   * know which parent inherits this commit's lane.
+   */
+  parents: string[]
 }
 
 /** What a branch's upstream is doing, as git's `%(upstream:track)` reports it. */
@@ -118,4 +125,80 @@ export interface RemoteBranch {
   /** `name` with its remote prefix stripped, e.g. `feature-x`. */
   shortName: string
   lastCommit: CommitSummary | null
+}
+
+/**
+ * `git status --porcelain=v2`'s per-side state code. `.` means unchanged on
+ * that side.
+ */
+export type ChangeCode = '.' | 'M' | 'T' | 'A' | 'D' | 'R' | 'C'
+
+/** The two-letter code on an unmerged (`u`) record — one side per stage. */
+export type UnmergedCode = 'DD' | 'AU' | 'UD' | 'UA' | 'DU' | 'AA' | 'UU'
+
+export type ChangedFileKind = 'tracked' | 'untracked' | 'ignored' | 'unmerged'
+
+/**
+ * One file from `git status --porcelain=v2`.
+ *
+ * `path` is repo-relative with POSIX separators, exactly as git printed it —
+ * that is the identity used everywhere: the DTO, the query key, the IPC
+ * argument, and the Zustand selection. `normaliseGitPath` from
+ * `src/shared/paths.ts` applies only when a path is joined onto a worktree
+ * path to build an absolute one for display or the shell; mixing the two
+ * recreates, one level down, the problem `samePath` already exists to clean
+ * up one level higher.
+ */
+export interface ChangedFile {
+  path: string
+  kind: ChangedFileKind
+  index: ChangeCode
+  worktree: ChangeCode
+  origPath: string | null
+  score: number | null
+  conflict: UnmergedCode | null
+  submodule: { commitChanged: boolean; modifiedTracked: boolean; untracked: boolean } | null
+}
+
+export interface StatusBranch {
+  /** Null at the initial commit, before HEAD exists (`(initial)`). */
+  oid: string | null
+  /** Null when HEAD is detached (`(detached)`). */
+  head: string | null
+  detached: boolean
+  upstream: string | null
+  ahead: number
+  behind: number
+}
+
+export interface WorkingTreeChanges {
+  branch: StatusBranch
+  files: ChangedFile[]
+}
+
+/** The worktree detail pane's three tabs, remembered per worktree. */
+export type WorktreeTab = 'overview' | 'working-tree' | 'commit-graph'
+
+/**
+ * One file from `git show --format= --numstat -z --diff-merges=first-parent
+ * -M <hash>`, for the commit inspector's file list. `insertions`/`deletions`
+ * are null for a binary file, where git prints `-` in place of a count
+ * rather than `0`.
+ */
+export interface CommitFileStat {
+  path: string
+  /** Set for a rename or copy — `-M` is passed so the numstat can detect one. */
+  origPath: string | null
+  insertions: number | null
+  deletions: number | null
+  binary: boolean
+}
+
+/** One entry from `git stash list`, for the Working Tree tab's Stash section. */
+export interface StashEntry {
+  /** e.g. `stash@{0}` — what `git stash pop/apply/drop` take. */
+  ref: string
+  message: string
+  /** ISO 8601. */
+  date: string
 }

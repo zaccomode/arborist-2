@@ -1,3 +1,4 @@
+import { basename } from 'path'
 import { BrowserWindow, clipboard, dialog, ipcMain, nativeTheme } from 'electron'
 import type { IpcArgs, IpcChannel, IpcReturn } from '../../shared/ipc-contract'
 import { serializeError } from '../../shared/errors'
@@ -10,7 +11,9 @@ import type { GitService } from '../services/git/git-service'
 import type { PresetService } from '../services/presets'
 import type { AutomationRunner } from '../services/automation'
 import type { UpdateService } from '../services/updates'
-import { worktreeNoteKey } from '../../shared/persisted'
+import type { WorktreeWatcher } from '../services/watch/worktree-watcher'
+import { commitDraftKey, worktreeNoteKey } from '../../shared/persisted'
+import { resolveWorktreeLocation } from '../../shared/worktree-location'
 import { applicationPickerOptions } from '../services/system/pickers'
 
 type Handler<C extends IpcChannel> = (...args: IpcArgs<C>) => Promise<IpcReturn<C>> | IpcReturn<C>
@@ -37,6 +40,7 @@ export interface IpcDeps {
   presets: PresetService
   automation: AutomationRunner
   updates: UpdateService
+  watcher: WorktreeWatcher
 }
 
 export function registerIpcHandlers({
@@ -46,7 +50,8 @@ export function registerIpcHandlers({
   gitService,
   presets,
   automation,
-  updates
+  updates,
+  watcher
 }: IpcDeps): void {
   handle('system:pickFolder', async () => {
     // A native dialog cannot be driven by Playwright, so e2e tests and
@@ -87,12 +92,58 @@ export function registerIpcHandlers({
   handle('branches:exists', (repoPath, branch) => gitService.branchExists(repoPath, branch))
   handle('branches:list', (repoPath) => gitService.listLocalBranches(repoPath))
   handle('branches:remote', (repoPath) => gitService.listRemoteBranches(repoPath))
-  handle('worktrees:suggestPath', (repoPath, branch) =>
-    gitService.suggestWorktreePath(repoPath, branch)
-  )
+  handle('worktrees:suggestPath', (repoPath, branch, projectId) => {
+    const location = resolveWorktreeLocation(
+      store.data.settings,
+      store.data.projectSettings[projectId]
+    )
+    const repoName =
+      store.data.repositories.find((repo) => repo.id === projectId)?.name ?? basename(repoPath)
+    return gitService.suggestWorktreePath(repoPath, branch, location, repoName)
+  })
   handle('worktrees:create', (repoPath, options) => gitService.createWorktree(repoPath, options))
 
   handle('worktrees:isDirty', (worktreePath) => gitService.isDirty(worktreePath))
+  handle('workingTree:get', (worktreePath) => gitService.workingTreeChanges(worktreePath))
+  handle('diff:get', (request) => gitService.fileDiff(request))
+  handle('workingTree:stage', (worktreePath, paths) => gitService.stageFiles(worktreePath, paths))
+  handle('workingTree:unstage', (worktreePath, paths) =>
+    gitService.unstageFiles(worktreePath, paths)
+  )
+  handle('worktree:applyHunk', (worktreePath, file, hunkId, direction) =>
+    gitService.applyHunk(worktreePath, file, hunkId, direction)
+  )
+  handle('workingTree:discard', (worktreePath, paths) =>
+    gitService.discardFiles(worktreePath, paths)
+  )
+  handle('workingTree:commit', (worktreePath, message, amend) =>
+    gitService.commit(worktreePath, message, amend)
+  )
+  handle('workingTree:push', (worktreePath, branch, setUpstream) =>
+    gitService.push(worktreePath, branch, setUpstream)
+  )
+  handle('workingTree:hasIdentity', (worktreePath) => gitService.hasIdentity(worktreePath))
+  handle('conflicts:state', (worktreePath) => gitService.conflictState(worktreePath))
+  handle('conflicts:keepOurs', (worktreePath, path) => gitService.keepOurs(worktreePath, path))
+  handle('conflicts:abort', (worktreePath, operation) =>
+    gitService.abortConflict(worktreePath, operation)
+  )
+  handle('conflicts:continue', (worktreePath, operation) =>
+    gitService.continueConflict(worktreePath, operation)
+  )
+  handle('branches:switchPrecheck', (repoPath, worktreePath, branch, create) =>
+    gitService.planBranchSwitch(repoPath, worktreePath, branch, create)
+  )
+  handle('branches:switch', (worktreePath, branch, create) =>
+    gitService.switchBranch(worktreePath, branch, create)
+  )
+  handle('stash:push', (worktreePath, message, includeUntracked, paths) =>
+    gitService.stashPush(worktreePath, message, includeUntracked, paths)
+  )
+  handle('stash:list', (worktreePath) => gitService.listStashes(worktreePath))
+  handle('stash:pop', (worktreePath, ref) => gitService.stashPop(worktreePath, ref))
+  handle('stash:apply', (worktreePath, ref) => gitService.stashApply(worktreePath, ref))
+  handle('stash:drop', (worktreePath, ref) => gitService.stashDrop(worktreePath, ref))
   handle('worktrees:remove', (repoPath, worktreePath, force) =>
     gitService.removeWorktree(repoPath, worktreePath, force)
   )
@@ -114,6 +165,19 @@ export function registerIpcHandlers({
       // a record behind for every worktree anyone ever clicked into.
       if (trimmed) collection[key] = trimmed
       else delete collection[key]
+    })
+  })
+
+  handle('commitDraft:get', (repositoryId, worktreePath) => {
+    return store.data.commitDrafts[commitDraftKey(repositoryId, worktreePath)] ?? ''
+  })
+
+  handle('commitDraft:set', async (repositoryId, worktreePath, text) => {
+    const trimmed = text.trim()
+    await store.update((data) => {
+      const key = commitDraftKey(repositoryId, worktreePath)
+      if (trimmed) data.commitDrafts[key] = trimmed
+      else delete data.commitDrafts[key]
     })
   })
 
@@ -166,12 +230,13 @@ export function registerIpcHandlers({
   handle('presets:save', (preset) => presets.save(preset))
   handle('presets:delete', (presetId) => presets.remove(presetId))
   handle('presets:reorder', (orderedIds) => presets.reorder(orderedIds))
-  handle('presets:run', (presetId, context) => presets.run(presetId, context))
+  handle('presets:run', (presetId, context, target) => presets.run(presetId, context, target))
 
   handle('repos:fetch', (repoPath) => gitService.fetchAll(repoPath))
-  handle('commits:recent', (repoPath, ref, limit, skip) =>
-    gitService.commitLog(repoPath, ref, limit, skip)
+  handle('commits:recent', (repoPath, refs, limit, skip) =>
+    gitService.commitLog(repoPath, refs, limit, skip)
   )
+  handle('commits:files', (repoPath, hash) => gitService.commitFiles(repoPath, hash))
 
   handle('git:discover', () => gitRunner.locator.discover())
 
@@ -199,6 +264,15 @@ export function registerIpcHandlers({
     return settings
   })
 
+  handle('projectSettings:get', (projectId) => store.data.projectSettings[projectId] ?? {})
+
+  handle('projectSettings:set', async (projectId, changes) => {
+    await store.update((data) => {
+      data.projectSettings[projectId] = { ...data.projectSettings[projectId], ...changes }
+    })
+    return store.data.projectSettings[projectId] ?? {}
+  })
+
   handle('selection:get', () => store.data.selection)
 
   handle('selection:update', async (changes) => {
@@ -217,4 +291,6 @@ export function registerIpcHandlers({
   handle('updates:status', () => updates.status)
   handle('updates:check', () => updates.check(true))
   handle('updates:install', () => updates.install())
+
+  handle('watch:select', (worktreePath) => watcher.watch(worktreePath))
 }

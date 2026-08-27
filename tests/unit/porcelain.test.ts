@@ -5,9 +5,12 @@ import {
   LOG_RECORD_SEPARATOR,
   parseAheadBehind,
   parseBranchList,
+  parseBranchUpstreams,
   parseCommit,
   parseCommitLog,
+  parseCommitNumstat,
   parseRemoteBranchList,
+  parseStashList,
   parseStatus,
   parseUpstreamTrack,
   parseWorktreeList
@@ -161,6 +164,29 @@ describe('parseRemoteBranchList', () => {
   })
 })
 
+describe('parseBranchUpstreams', () => {
+  it('maps a branch to its upstream short name', () => {
+    const output = 'main origin/main\nmy-custom-branch-name origin/feature-y\n'
+
+    expect(parseBranchUpstreams(output)).toEqual(
+      new Map([
+        ['main', 'origin/main'],
+        ['my-custom-branch-name', 'origin/feature-y']
+      ])
+    )
+  })
+
+  it('maps a branch with no upstream to null', () => {
+    expect(parseBranchUpstreams('scratch \n')).toEqual(new Map([['scratch', null]]))
+  })
+
+  it('ignores blank lines', () => {
+    expect(parseBranchUpstreams('\nmain origin/main\n\n')).toEqual(
+      new Map([['main', 'origin/main']])
+    )
+  })
+})
+
 describe('parseAheadBehind', () => {
   it('reads ahead from the left count and behind from the right', () => {
     expect(parseAheadBehind('2\t1\n')).toEqual({ ahead: 2, behind: 1 })
@@ -252,9 +278,10 @@ describe('parseCommit', () => {
 describe('parseCommitLog', () => {
   function record(
     fields: [hash: string, shortHash: string, author: string, date: string, subject: string],
-    shortstat = ''
+    shortstat = '',
+    parents = ''
   ): string {
-    const header = fields.join(LOG_FIELD_SEPARATOR)
+    const header = [...fields, parents].join(LOG_FIELD_SEPARATOR)
     return shortstat
       ? `${LOG_RECORD_SEPARATOR}${header}\n\n ${shortstat}\n`
       : `${LOG_RECORD_SEPARATOR}${header}\n`
@@ -272,6 +299,7 @@ describe('parseCommitLog', () => {
         author: 'Isaac Shea',
         date: '2026-08-20T14:00:00+10:00',
         subject: 'First',
+        parents: [],
         filesChanged: 0,
         insertions: 0,
         deletions: 0
@@ -282,6 +310,7 @@ describe('parseCommitLog', () => {
         author: 'Isaac Shea',
         date: '2026-08-19T09:00:00+10:00',
         subject: 'Second',
+        parents: [],
         filesChanged: 0,
         insertions: 0,
         deletions: 0
@@ -296,6 +325,32 @@ describe('parseCommitLog', () => {
     )
 
     expect(parseCommitLog(output)[0].subject).toBe('Fix: "quoted" | piped')
+  })
+
+  it('reads %P as a plain, ordinary commit — one parent', () => {
+    const output = record(
+      ['bbb', 'bbb1234', 'Isaac Shea', '2026-08-20T14:00:00Z', 'Second'],
+      '',
+      'aaa'
+    )
+
+    expect(parseCommitLog(output)[0].parents).toEqual(['aaa'])
+  })
+
+  it('splits %P on spaces for a merge commit — two or more parents', () => {
+    const output = record(
+      ['ccc', 'ccc1234', 'Isaac Shea', '2026-08-20T14:00:00Z', 'Merge branch a into main'],
+      '',
+      'aaa bbb'
+    )
+
+    expect(parseCommitLog(output)[0].parents).toEqual(['aaa', 'bbb'])
+  })
+
+  it('reads %P as empty for a root commit', () => {
+    const output = record(['aaa', 'aaa1234', 'Isaac Shea', '2026-08-20T14:00:00Z', 'Initial'])
+
+    expect(parseCommitLog(output)[0].parents).toEqual([])
   })
 
   it('splits records correctly when the separator sits right against a newline', () => {
@@ -330,5 +385,83 @@ describe('parseCommitLog', () => {
 
   it('returns nothing for a repository with no commits', () => {
     expect(parseCommitLog('')).toEqual([])
+  })
+})
+
+describe('parseCommitNumstat', () => {
+  it('reads an ordinary modified file', () => {
+    const output = `3\t1\tsrc/a.ts${FIELD_SEPARATOR}`
+
+    expect(parseCommitNumstat(output)).toEqual([
+      { path: 'src/a.ts', origPath: null, insertions: 3, deletions: 1, binary: false }
+    ])
+  })
+
+  it('reads several files from one commit', () => {
+    const output = `3\t1\ta.ts${FIELD_SEPARATOR}0\t5\tb.ts${FIELD_SEPARATOR}`
+
+    expect(parseCommitNumstat(output)).toEqual([
+      { path: 'a.ts', origPath: null, insertions: 3, deletions: 1, binary: false },
+      { path: 'b.ts', origPath: null, insertions: 0, deletions: 5, binary: false }
+    ])
+  })
+
+  it('reads a rename: empty path field, then two more NUL fields', () => {
+    const output = `0\t0\t${FIELD_SEPARATOR}oldpath${FIELD_SEPARATOR}newpath${FIELD_SEPARATOR}`
+
+    expect(parseCommitNumstat(output)).toEqual([
+      { path: 'newpath', origPath: 'oldpath', insertions: 0, deletions: 0, binary: false }
+    ])
+  })
+
+  it('reads a binary file as "-" counts rather than 0', () => {
+    const output = `-\t-\timage.png${FIELD_SEPARATOR}`
+
+    expect(parseCommitNumstat(output)).toEqual([
+      { path: 'image.png', origPath: null, insertions: null, deletions: null, binary: true }
+    ])
+  })
+
+  it('reads a rename mixed with an ordinary file, in either order', () => {
+    const output =
+      `2\t0\ta.ts${FIELD_SEPARATOR}` +
+      `0\t0\t${FIELD_SEPARATOR}old.ts${FIELD_SEPARATOR}new.ts${FIELD_SEPARATOR}` +
+      `-\t-\tb.png${FIELD_SEPARATOR}`
+
+    expect(parseCommitNumstat(output)).toEqual([
+      { path: 'a.ts', origPath: null, insertions: 2, deletions: 0, binary: false },
+      { path: 'new.ts', origPath: 'old.ts', insertions: 0, deletions: 0, binary: false },
+      { path: 'b.png', origPath: null, insertions: null, deletions: null, binary: true }
+    ])
+  })
+
+  it('returns nothing for a commit with no files (an empty commit)', () => {
+    expect(parseCommitNumstat('')).toEqual([])
+  })
+})
+
+describe('parseStashList', () => {
+  it('parses git stash list --format=%gd%x00%s%x00%aI', () => {
+    const output = [
+      `stash@{0}${FIELD_SEPARATOR}Arborist: switching to feature-x${FIELD_SEPARATOR}2026-08-20T14:00:00+00:00`,
+      `stash@{1}${FIELD_SEPARATOR}WIP on main: aaa1234 Initial commit${FIELD_SEPARATOR}2026-08-19T09:00:00+00:00`
+    ].join('\n')
+
+    expect(parseStashList(output)).toEqual([
+      {
+        ref: 'stash@{0}',
+        message: 'Arborist: switching to feature-x',
+        date: '2026-08-20T14:00:00+00:00'
+      },
+      {
+        ref: 'stash@{1}',
+        message: 'WIP on main: aaa1234 Initial commit',
+        date: '2026-08-19T09:00:00+00:00'
+      }
+    ])
+  })
+
+  it('returns nothing for an empty stash', () => {
+    expect(parseStashList('')).toEqual([])
   })
 })

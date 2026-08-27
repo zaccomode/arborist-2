@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
 import type { RemoteBranch, Worktree } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
+import type { DiffRequest } from '@shared/diff'
+import { splitDisplayPath, stagingState } from '@shared/working-tree'
 import { useQueryClient } from '@tanstack/react-query'
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { Shell } from '@/components/shell'
 import { Sidebar } from '@/components/sidebar'
 import { NoProjects, NoWorktreeSelected } from '@/components/detail-pane'
 import { WorktreeDetail } from '@/components/worktree-detail'
@@ -15,18 +16,28 @@ import { DeleteWorktreeDialogs } from '@/components/delete-worktree'
 import { ProjectSettingsDialog } from '@/components/project-settings-dialog'
 import { AutomationConsole, type AutomationTarget } from '@/components/automation-console'
 import { SettingsDialog } from '@/components/settings/settings-dialog'
+import { CommitInspector } from '@/components/commit-inspector'
+import { DiffPanel } from '@/components/diff-panel'
 import {
+  queryKeys,
   useAddProject,
   useFetch,
   useProjects,
   useRemoteBranches,
   useRemoveProject,
   useSettings,
+  useWorkingTree,
   useWorktrees
 } from '@/api/queries'
 import { invoke } from '@/api/client'
 import { samePath } from '@/lib/paths'
-import { useSelection, useSelectedRemoteBranch, useSelectedWorktree } from '@/state/selection'
+import { showErrorToast } from '@/lib/error-toast'
+import {
+  useSelection,
+  useSelectedRemoteBranch,
+  useSelectedWorktree,
+  useWorktreeInspector
+} from '@/state/selection'
 
 /**
  * Matches the strip main/index.ts reserves for the OS's traffic lights or
@@ -45,7 +56,9 @@ function automationTarget(project: Repository, worktree: Worktree): AutomationTa
       branch: worktree.branch,
       commitHash: worktree.status?.lastCommit?.hash ?? worktree.head,
       repoName: project.name,
-      repoPath: project.path
+      repoPath: project.path,
+      filePath: null,
+      fileLine: null
     }
   }
 }
@@ -79,6 +92,33 @@ function App(): React.JSX.Element | null {
   const headLabel = mainWorktree
     ? (mainWorktree.branch ?? `detached at ${mainWorktree.head?.slice(0, 7)}`)
     : null
+
+  const [inspector, , closeInspector] = useWorktreeInspector(
+    selected?.id ?? '',
+    worktree?.path ?? ''
+  )
+  // Only for `origPath`, so a rename's diff keeps rename detection — the
+  // Working Tree tab already has this data loaded, and React Query shares
+  // the cache rather than firing a second request.
+  const inspectorWorkingTree = useWorkingTree(worktree?.path ?? null)
+  const inspectorFile =
+    inspector?.kind === 'file'
+      ? (inspectorWorkingTree.data?.files.find((file) => file.path === inspector.path) ?? null)
+      : null
+  const diffRequest: DiffRequest | null =
+    worktree && inspector?.kind === 'file'
+      ? {
+          kind: inspector.side === 'untracked' ? 'untracked' : inspector.side,
+          worktreePath: worktree.path,
+          path: inspector.path,
+          origPath: inspectorFile?.origPath ?? null
+        }
+      : null
+  // Whether the diff panel needs a way to switch sides: only relevant for a
+  // file with real content on both — a partially-staged `MM` (or an `AM`
+  // partially-staged new file), the case `diffSideFor` can only pick one
+  // side of. `stagingState`'s `indeterminate` is exactly that condition.
+  const diffHasBothSides = inspectorFile ? stagingState(inspectorFile) === 'indeterminate' : false
 
   useEffect(() => {
     void invoke('selection:get').then((data) => useSelection.getState().hydrate(data))
@@ -137,15 +177,72 @@ function App(): React.JSX.Element | null {
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [queryClient])
 
+  const worktreePath = worktree?.path ?? null
+  const repoPath = selected?.path ?? null
+
+  useEffect(() => {
+    // Main owns one watcher at a time; this tells it which worktree that is,
+    // including telling it to stop (null) once nothing here is selected.
+    void invoke('watch:select', worktreePath)
+  }, [worktreePath])
+
+  useEffect(() => {
+    // Reason lets this invalidate precisely rather than refetching
+    // everything on every push — see `WorktreeChangeReason`'s doc comment.
+    // Guarded on a worktree/repo match because the event this listener is
+    // still attached to on unmount could otherwise land after the selection
+    // moved on but before the effect cleanup ran.
+    if (!worktreePath || !repoPath || !worktree) return
+
+    const refreshCurrentWorktree = (): void => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workingTree(worktreePath) })
+      queryClient.invalidateQueries({ queryKey: ['file-diff'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.remoteBranches(repoPath) })
+      // The whole `['commits', repoPath, ...]` prefix, not one exact ref
+      // list: this resets every open commit-graph or Recent Commits query
+      // on this repository back to page 0 — see `useCommitLog`'s doc
+      // comment on why that reset (rather than patching one page in place)
+      // is what makes `--skip`-based paging safe at all.
+      queryClient.invalidateQueries({ queryKey: ['commits', repoPath] })
+    }
+
+    const unsubscribeChange = window.arborist.subscribe('worktree:changed', (payload) => {
+      if (!samePath(payload.worktreePath, worktreePath)) return
+      queryClient.invalidateQueries({ queryKey: queryKeys.workingTree(worktreePath) })
+      if (payload.reason === 'index') {
+        // `fileDiff`'s query key is `['file-diff', request]`; this prefix
+        // invalidates every diff open on this worktree regardless of which
+        // file or side `request` names.
+        queryClient.invalidateQueries({ queryKey: ['file-diff'] })
+      }
+      if (payload.reason === 'head' || payload.reason === 'refs') {
+        queryClient.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
+        queryClient.invalidateQueries({ queryKey: ['commits', repoPath] })
+      }
+    })
+
+    // #61: the watcher can miss a change made while the window was
+    // unfocused (nothing fires if it was paused, and events can be missed
+    // or coalesced regardless), so regaining focus re-reads everything for
+    // the current worktree rather than waiting on a filesystem event that
+    // may never come.
+    const unsubscribeFocus = window.arborist.subscribe('app:focus', refreshCurrentWorktree)
+
+    return () => {
+      unsubscribeChange()
+      unsubscribeFocus()
+    }
+  }, [worktreePath, repoPath, worktree, queryClient])
+
   const handleFetch = (path: string): void => {
     fetchProject.mutate(path, {
-      onError: (error) => toast.error('Fetch failed', { description: error.message })
+      onError: (error) => showErrorToast('Fetch failed', { description: error.message })
     })
   }
   const fetchMutate = fetchProject.mutate
 
   const intervalMinutes = settings.data?.autoFetchIntervalMinutes ?? 0
-  const repoPath = selected?.path ?? null
   useEffect(() => {
     // Off by default, and only while the app is focused: polling a corporate
     // remote every few minutes from a window nobody is looking at is a way to
@@ -194,15 +291,10 @@ function App(): React.JSX.Element | null {
           style={{ height: TITLE_BAR_HEIGHT, WebkitAppRegion: 'drag' } as React.CSSProperties}
         />
       )}
-      <ResizablePanelGroup orientation="horizontal">
-        {/* Numeric sizes are pixels: the concept's sidebar is about 260 wide. */}
-        <ResizablePanel
-          defaultSize={settings.data.sidebarWidth}
-          minSize={200}
-          maxSize={420}
-          groupResizeBehavior="preserve-pixel-size"
-          onResize={handleSidebarResize}
-        >
+      <Shell
+        sidebarWidth={settings.data.sidebarWidth}
+        onSidebarResize={handleSidebarResize}
+        sidebar={
           <Sidebar
             projects={list}
             selectedId={selected?.id ?? null}
@@ -240,10 +332,9 @@ function App(): React.JSX.Element | null {
               />
             )}
           </Sidebar>
-        </ResizablePanel>
-        <ResizableHandle className="mx-1 w-0 bg-transparent" />
-        <ResizablePanel>
-          <main className="h-full rounded-lg border bg-card">
+        }
+        main={
+          <>
             {!selected && <NoProjects onAddProject={() => void handleAddProject()} />}
             {selected && !worktree && !remoteBranch && (
               <NoWorktreeSelected onNewWorktree={openCreateWorktree} />
@@ -253,7 +344,17 @@ function App(): React.JSX.Element | null {
                 worktree={worktree}
                 project={selected}
                 refreshing={worktrees.isFetching}
-                onRefresh={() => void worktrees.refetch()}
+                onRefresh={() => {
+                  void worktrees.refetch()
+                  // The watcher (#50) covers a change made outside Arborist
+                  // automatically, but stays off in a screenshot/e2e run
+                  // (`ARBORIST_DISABLE_WATCHER`) and can miss a change made
+                  // while nothing was selected yet — this button is the
+                  // manual fallback for both.
+                  void queryClient.invalidateQueries({
+                    queryKey: queryKeys.workingTree(worktree.path)
+                  })
+                }}
                 onDelete={() => setDeletingWorktree(true)}
                 onRunSetup={() => setAutomation(automationTarget(selected, worktree))}
               />
@@ -268,9 +369,28 @@ function App(): React.JSX.Element | null {
                 }}
               />
             )}
-          </main>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+          </>
+        }
+        inspector={
+          inspector?.kind === 'commit' && repoPath ? (
+            <CommitInspector
+              key={inspector.hash}
+              repoPath={repoPath}
+              hash={inspector.hash}
+              onClose={closeInspector}
+            />
+          ) : (
+            diffRequest && (
+              <DiffPanel
+                request={diffRequest}
+                label={splitDisplayPath(diffRequest.path).name}
+                hasBothSides={diffHasBothSides}
+                onClose={closeInspector}
+              />
+            )
+          )
+        }
+      />
 
       {selected && worktree && (
         <DeleteWorktreeDialogs
@@ -307,6 +427,7 @@ function App(): React.JSX.Element | null {
             if (!next) setTrackingRemote(null)
           }}
           repoPath={selected.path}
+          projectId={selected.id}
           headLabel={headLabel}
           trackRemote={
             trackingRemote && { ref: trackingRemote.name, shortName: trackingRemote.shortName }

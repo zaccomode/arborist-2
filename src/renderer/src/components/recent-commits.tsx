@@ -4,6 +4,7 @@ import type { CommitLogEntry } from '@shared/domain'
 import { formatCommitTimestamp } from '@shared/format'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
 import { useCommitLog } from '@/api/queries'
 
@@ -52,10 +53,15 @@ function CommitRow({ commit }: { commit: CommitLogEntry }): React.JSX.Element {
 }
 
 /**
- * Commit history for a worktree's branch, or for a remote branch that has no
- * local checkout at all — `repoPath` only has to be somewhere inside the
- * repository, since remote-tracking refs are visible from any worktree that
- * shares it.
+ * A flat commit list for a single ref — used only for a remote branch with
+ * no local checkout (`RemoteBranchDetail`), where there's no worktree to
+ * pair with an upstream and no lanes worth drawing for one ref alone.
+ * `repoPath` only has to be somewhere inside the repository, since
+ * remote-tracking refs are visible from any worktree that shares it.
+ *
+ * A worktree's own Commit Graph tab uses `<CommitGraph>` instead — lanes,
+ * a click-through commit inspector, and the branch-plus-upstream ref pair
+ * this component was never asked to handle.
  */
 export function RecentCommits({
   repoPath,
@@ -107,7 +113,7 @@ export function RecentCommits({
       )}
 
       {query.error && (
-        <p className="mt-1 text-xs text-destructive">{(query.error as Error).message}</p>
+        <CopyableError className="mt-1 text-xs" message={(query.error as Error).message} />
       )}
     </section>
   )

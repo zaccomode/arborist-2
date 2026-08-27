@@ -1,6 +1,7 @@
 import { Brush, Plus, RefreshCw, SlidersHorizontal } from 'lucide-react'
 import type { Repository } from '@shared/persisted'
 import { Button } from '@/components/ui/button'
+import { CopyableError } from '@/components/copyable-error'
 import { ProjectSwitcher } from '@/components/project-switcher'
 
 export function Sidebar({
@@ -50,9 +51,7 @@ export function Sidebar({
       />
 
       {addError && (
-        <p data-testid="add-project-error" className="px-1 text-xs text-destructive">
-          {addError}
-        </p>
+        <CopyableError testId="add-project-error" className="px-1 text-xs" message={addError} />
       )}
 
       <aside className="flex min-h-0 flex-1 flex-col rounded-lg border bg-sidebar">

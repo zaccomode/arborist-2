@@ -4,6 +4,7 @@ import type { GitDiscoveryResult } from '@shared/domain'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
 
 /**
@@ -105,7 +106,7 @@ function GitNotFound({
               Use this
             </Button>
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <CopyableError className="text-sm" message={error} />}
         </form>
       </div>
     </div>
