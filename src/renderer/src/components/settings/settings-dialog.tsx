@@ -10,6 +10,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useSettings } from '@/api/queries'
 import { invoke } from '@/api/client'
+import { AboutSettings } from '@/components/settings/about-settings'
 import { DeveloperSettings } from '@/components/settings/developer-settings'
 import { GeneralSettings } from '@/components/settings/general-settings'
 import { PresetSettings } from '@/components/settings/preset-settings'
@@ -60,6 +61,7 @@ export function SettingsDialog({
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="presets">Presets</TabsTrigger>
             <TabsTrigger value="developer">Developer</TabsTrigger>
+            <TabsTrigger value="about">About</TabsTrigger>
           </TabsList>
           <TabsContent value="general" className="min-h-0 flex-1 overflow-y-auto pt-4">
             {settings.data && (
@@ -79,6 +81,9 @@ export function SettingsDialog({
                 onChange={(changes) => void change(changes)}
               />
             )}
+          </TabsContent>
+          <TabsContent value="about" className="min-h-0 flex-1 overflow-y-auto pt-4">
+            <AboutSettings />
           </TabsContent>
         </Tabs>
       </DialogContent>

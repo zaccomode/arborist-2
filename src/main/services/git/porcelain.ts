@@ -141,6 +141,29 @@ export function parseRemoteBranchList(output: string): string[] {
 }
 
 /**
+ * Parses `git for-each-ref --format=%(refname:short) %(upstream:short) refs/heads`:
+ * one local branch name per line, followed by its upstream remote-tracking
+ * ref's short name (`origin/feature-x`), or nothing when the branch has no
+ * upstream configured.
+ *
+ * This is what lets remote-branch hiding (#47) follow the actual tracking
+ * relationship rather than string-matching branch names: a local branch
+ * named differently from the remote branch it tracks (`git branch -b
+ * my-name --track origin/feature-x`) still has an upstream of
+ * `origin/feature-x`, even though `my-name` and `feature-x` share nothing in
+ * their names.
+ */
+export function parseBranchUpstreams(output: string): Map<string, string | null> {
+  const upstreams = new Map<string, string | null>()
+  for (const line of splitLines(output)) {
+    if (line.trim().length === 0) continue
+    const [branch, upstream] = splitRecord(line)
+    upstreams.set(branch, upstream && upstream.length > 0 ? upstream : null)
+  }
+  return upstreams
+}
+
+/**
  * Parses `git rev-list --count --left-right HEAD...@{upstream}`, which prints
  * the two counts separated by a tab. HEAD is on the left, so the left count is
  * how far ahead the branch is and the right is how far behind.

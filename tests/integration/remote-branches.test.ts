@@ -46,6 +46,22 @@ describe('listRemoteBranches, against a bare-remote fixture', () => {
     expect(await service.listRemoteBranches(fixture.repoPath)).toEqual([])
   }, 30_000)
 
+  it('hides a remote branch once a local worktree tracks it under a different branch name (#47)', async () => {
+    await fixture.commitFromElsewhere('feature-y', 'Pushed from elsewhere')
+    await service.fetchAll(fixture.repoPath)
+    expect(await service.listRemoteBranches(fixture.repoPath)).toHaveLength(1)
+
+    // Folder name AND branch name both differ from the remote's short name —
+    // only the upstream tracking relationship ties this worktree back to it.
+    await fixture.addWorktree('a-completely-different-folder', {
+      branch: 'my-custom-branch-name',
+      startPoint: 'origin/feature-y'
+    })
+    await fixture.git(['branch', '--set-upstream-to=origin/feature-y', 'my-custom-branch-name'])
+
+    expect(await service.listRemoteBranches(fixture.repoPath)).toEqual([])
+  }, 30_000)
+
   it('creating a worktree from a remote branch removes it from the list and gives it a working upstream', async () => {
     await fixture.commitFromElsewhere('feature-z', 'Pushed from elsewhere')
     await service.fetchAll(fixture.repoPath)

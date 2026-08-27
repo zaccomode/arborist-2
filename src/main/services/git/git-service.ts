@@ -52,6 +52,7 @@ import {
   LOG_FORMAT,
   LOG_RECORD_SEPARATOR,
   parseBranchList,
+  parseBranchUpstreams,
   parseCommit,
   parseCommitLog,
   parseCommitNumstat,
@@ -813,27 +814,41 @@ export class GitService {
 
   /**
    * Remote branches with no local worktree of their own, tip commit
-   * included. The subtraction matches on short name — `origin/feature-x` is
-   * hidden once a worktree exists on `feature-x` — which misses a local
-   * branch deliberately tracking a differently-named remote branch. Rare
-   * enough to accept.
+   * included. A remote ref is hidden either when a worktree's branch shares
+   * its short name (`origin/feature-x` <-> `feature-x`, the common case), or
+   * when a worktree's branch has that ref configured as its upstream (#47) —
+   * a local branch checked out under a different name, e.g. `git worktree
+   * add -b my-name --track origin/feature-x`, still ties back to the same
+   * remote branch and must hide it too, otherwise the same remote branch can
+   * be turned into any number of local worktrees under different names.
    */
   async listRemoteBranches(
     repoPath: string,
     concurrency: number = DEFAULT_REFRESH_CONCURRENCY
   ): Promise<RemoteBranch[]> {
-    const [remotes, worktrees] = await Promise.all([
+    const [remotes, worktrees, upstreamsResult] = await Promise.all([
       this.#git.runOrThrow(['branch', '-r', '--list', '--format=%(refname:short)'], { repoPath }),
-      this.#git.runOrThrow(['worktree', 'list', '--porcelain'], { repoPath })
+      this.#git.runOrThrow(['worktree', 'list', '--porcelain'], { repoPath }),
+      this.#git.runOrThrow(
+        ['for-each-ref', '--format=%(refname:short) %(upstream:short)', 'refs/heads'],
+        { repoPath }
+      )
     ])
 
-    const localBranches = new Set(
-      parseWorktreeList(worktrees.stdout)
-        .map((entry) => entry.branch)
-        .filter((branch): branch is string => branch !== null)
+    const localBranchNames = parseWorktreeList(worktrees.stdout)
+      .map((entry) => entry.branch)
+      .filter((branch): branch is string => branch !== null)
+    const localBranches = new Set(localBranchNames)
+
+    const upstreamByBranch = parseBranchUpstreams(upstreamsResult.stdout)
+    const trackedUpstreams = new Set(
+      localBranchNames
+        .map((branch) => upstreamByBranch.get(branch) ?? null)
+        .filter((upstream): upstream is string => upstream !== null)
     )
+
     const candidates = parseRemoteBranchList(remotes.stdout).filter(
-      (ref) => !localBranches.has(shortRemoteName(ref))
+      (ref) => !localBranches.has(shortRemoteName(ref)) && !trackedUpstreams.has(ref)
     )
 
     const commits = await mapWithConcurrency(candidates, concurrency, (ref) =>

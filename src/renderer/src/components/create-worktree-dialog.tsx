@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { BranchCombobox, type BaseRefOption } from '@/components/branch-combobox'
+import { CopyableError } from '@/components/copyable-error'
 import { useLocalBranches, useRemoteBranches } from '@/api/queries'
 import { invoke } from '@/api/client'
 
@@ -237,9 +238,11 @@ export function CreateWorktreeDialog({
           </div>
 
           {error && (
-            <p data-testid="create-worktree-error" className="mt-3 text-sm text-destructive">
-              {error}
-            </p>
+            <CopyableError
+              testId="create-worktree-error"
+              className="mt-3 text-sm"
+              message={error}
+            />
           )}
 
           <DialogFooter className="mt-6">

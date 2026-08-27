@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { invoke } from '@/api/client'
+import { CopyableError } from '@/components/copyable-error'
 import { NotesEditor } from '@/components/notes-editor'
 import { ProjectConflictEditor } from '@/components/settings/project-conflict-editor'
 import { ProjectPresetOverrides } from '@/components/settings/project-preset-overrides'
@@ -207,7 +208,7 @@ export function ProjectSettingsDialog({
           </TabsContent>
         </Tabs>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <CopyableError className="text-sm" message={error} />}
 
         <DialogFooter className="shrink-0">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>

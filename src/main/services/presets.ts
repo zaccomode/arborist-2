@@ -346,9 +346,22 @@ export class PresetService {
       }
     }
     if (process.platform === 'win32') {
+      // The default per-user install location the NSIS installer uses when
+      // "Add to PATH" was left unchecked, then the machine-wide one a
+      // system-level install (or an admin pushing it via `ProgramFiles`)
+      // uses instead. Both are `Code.exe` directly rather than the `bin`
+      // wrapper scripts, which sidesteps #63's `where`-ordering problem
+      // entirely — a real `.exe` needs no shell and nothing to disambiguate.
       const local = process.env['LocalAppData']
-      const exe = local ? `${local}\\Programs\\Microsoft VS Code\\Code.exe` : ''
-      if (exe && (await pathExists(exe))) return { command: exe, args: [] }
+      const programFiles = process.env['ProgramFiles']
+      const candidates = [
+        local ? `${local}\\Programs\\Microsoft VS Code\\Code.exe` : null,
+        programFiles ? `${programFiles}\\Microsoft VS Code\\Code.exe` : null
+      ].filter((path): path is string => path !== null)
+
+      for (const exe of candidates) {
+        if (await pathExists(exe)) return { command: exe, args: [] }
+      }
     }
     return null
   }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Textarea } from '@/components/ui/textarea'
+import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
 import { queryKeys, useNote } from '@/api/queries'
 
@@ -78,7 +79,7 @@ export function NotesEditor({
           scheduleSave(event.target.value)
         }}
       />
-      {error && <p className="mt-1 text-xs text-destructive">Not saved: {error}</p>}
+      {error && <CopyableError className="mt-1 text-xs" message={`Not saved: ${error}`} />}
     </section>
   )
 }

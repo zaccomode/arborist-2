@@ -403,6 +403,15 @@ export interface IpcEventContract {
   'app:refresh': void
   'app:newWorktree': void
   'app:openSettings': void
+  /**
+   * The window just regained OS focus (#61) — e.g. the user tabbed back in
+   * after running a command in a terminal. The watcher covers a change made
+   * while focused, but nothing fires while unfocused if it was paused, and
+   * events can be missed or coalesced regardless, so this is the backstop:
+   * the renderer treats it as a cue to re-read the selected worktree's git
+   * state, the same way an external change notification would.
+   */
+  'app:focus': void
   /** Every updater transition, so the toast follows a download it did not start. */
   'updates:changed': UpdateStatus
   /**
@@ -421,6 +430,7 @@ const EVENT_CHANNELS: Record<IpcEventChannel, true> = {
   'app:refresh': true,
   'app:newWorktree': true,
   'app:openSettings': true,
+  'app:focus': true,
   'updates:changed': true,
   'worktree:changed': true
 }

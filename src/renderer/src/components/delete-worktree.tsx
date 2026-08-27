@@ -11,6 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '@/components/ui/alert-dialog'
+import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
 
 /**
@@ -73,7 +74,7 @@ export function DeleteWorktreeDialogs({
               This deletes the worktree directory and its files. The branch itself is left alone.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <CopyableError className="text-sm" message={error} />}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
@@ -98,7 +99,7 @@ export function DeleteWorktreeDialogs({
               Force deleting will permanently discard them. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <CopyableError className="text-sm" message={error} />}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction

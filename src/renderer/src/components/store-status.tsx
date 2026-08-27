@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { toast } from 'sonner'
 import { invoke } from '@/api/client'
+import { showErrorToast } from '@/lib/error-toast'
 
 /**
  * Surfaces how persistence came up. v1 printed these to a console nobody was
@@ -13,7 +14,7 @@ export function StoreStatusToasts(): null {
       if (status.corruptWarning) {
         // Fixed ids, so StrictMode's second effect pass replaces the toast
         // rather than stacking a duplicate on top of it.
-        toast.error('Your Arborist data could not be read', {
+        showErrorToast('Your Arborist data could not be read', {
           id: 'store-corrupt',
           description: status.corruptWarning,
           duration: Infinity

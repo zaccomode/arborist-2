@@ -33,6 +33,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { CommitBox } from '@/components/commit-box'
 import { ConflictSection } from '@/components/conflict-section'
+import { CopyableError } from '@/components/copyable-error'
 import { FilePathCell } from '@/components/file-path-cell'
 import { NewStashMenu } from '@/components/new-stash-menu'
 import { StashSection } from '@/components/stash-section'
@@ -220,82 +221,95 @@ export function WorkingTreeTab({
   }
 
   return (
-    <div>
-      {query.isPending && (
-        <div className="space-y-2">
-          {[0, 1, 2].map((row) => (
-            <Skeleton key={row} className="h-8 w-full" />
-          ))}
-        </div>
-      )}
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* The scrollable region: everything but the commit box, which stays
+          pinned to the bottom of the panel regardless of how many files or
+          stashes are above it (#66) — matching the sidebar's own worktree
+          list, which pins "Project settings" below a scrolling list the
+          same way. */}
+      <div className="min-h-0 flex-1 overflow-y-auto p-6 pt-4">
+        {query.isPending && (
+          <div className="space-y-2">
+            {[0, 1, 2].map((row) => (
+              <Skeleton key={row} className="h-8 w-full" />
+            ))}
+          </div>
+        )}
 
-      {!query.isPending && allFiles.length === 0 && (
-        <p className="text-sm text-muted-foreground">No changes.</p>
-      )}
+        {!query.isPending && allFiles.length === 0 && (
+          <p className="text-sm text-muted-foreground">No changes.</p>
+        )}
 
-      {/* Shown whenever there is a `u` record to deal with, or a git
-          operation is still in progress after the last one was resolved
-          (Continue hasn't run yet) — not gated on the operation alone, since
-          a conflicting stash pop leaves `u` records with no operation behind
-          them at all (see `ConflictSection`'s doc comment on `conflictState`). */}
-      {(conflictedFiles.length > 0 || conflictQuery.data?.operation) && (
-        <ConflictSection
+        {/* Shown whenever there is a `u` record to deal with, or a git
+            operation is still in progress after the last one was resolved
+            (Continue hasn't run yet) — not gated on the operation alone, since
+            a conflicting stash pop leaves `u` records with no operation behind
+            them at all (see `ConflictSection`'s doc comment on `conflictState`). */}
+        {(conflictedFiles.length > 0 || conflictQuery.data?.operation) && (
+          <ConflictSection
+            repositoryId={repositoryId}
+            repoPath={repoPath}
+            repoName={repoName}
+            worktree={worktree}
+            files={conflictedFiles}
+            conflictState={
+              conflictQuery.data ?? { operation: null, sourceLabel: null, targetLabel: null }
+            }
+            onChanged={invalidate}
+          />
+        )}
+
+        {files.length > 0 && (
+          <div className="overflow-hidden rounded-lg border">
+            <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2 text-sm font-medium">
+              <Checkbox
+                checked={allStaged ? true : anyStaged ? 'indeterminate' : false}
+                onCheckedChange={() => void toggleAll()}
+                aria-label="All changed files"
+              />
+              Changed Files
+              <NewStashMenu repoPath={repoPath} worktreePath={worktreePath} files={files} />
+            </div>
+            <ul data-testid="working-tree-files" className="divide-y">
+              {files.map((file) => (
+                <FileRow
+                  key={file.path}
+                  file={file}
+                  selected={inspector?.kind === 'file' && inspector.path === file.path}
+                  onSelect={() =>
+                    openInspector({ kind: 'file', path: file.path, side: diffSideFor(file) })
+                  }
+                  onToggleStage={() => void toggleFile(file)}
+                  onDiscard={() => {
+                    setDiscardError(null)
+                    setDiscarding(file)
+                  }}
+                />
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {query.error && (
+          <CopyableError className="mt-2 text-xs" message={(query.error as Error).message} />
+        )}
+
+        <StashSection repoPath={repoPath} worktreePath={worktreePath} />
+      </div>
+
+      {/* Pinned footer, full-width border and all — the same shape as the
+          tab line above and the line above "Project settings" in the
+          sidebar, both of which separate a fixed piece of chrome from a
+          scrolling region above it. */}
+      <div className="shrink-0 border-t p-6 pt-4">
+        <CommitBox
           repositoryId={repositoryId}
           repoPath={repoPath}
-          repoName={repoName}
           worktree={worktree}
-          files={conflictedFiles}
-          conflictState={
-            conflictQuery.data ?? { operation: null, sourceLabel: null, targetLabel: null }
-          }
-          onChanged={invalidate}
+          stagedCount={stagedFileCount(files)}
+          focusToken={focusCommitToken}
         />
-      )}
-
-      {files.length > 0 && (
-        <div className="overflow-hidden rounded-lg border">
-          <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2 text-sm font-medium">
-            <Checkbox
-              checked={allStaged ? true : anyStaged ? 'indeterminate' : false}
-              onCheckedChange={() => void toggleAll()}
-              aria-label="All changed files"
-            />
-            Changed Files
-            <NewStashMenu repoPath={repoPath} worktreePath={worktreePath} files={files} />
-          </div>
-          <ul data-testid="working-tree-files" className="divide-y">
-            {files.map((file) => (
-              <FileRow
-                key={file.path}
-                file={file}
-                selected={inspector?.kind === 'file' && inspector.path === file.path}
-                onSelect={() =>
-                  openInspector({ kind: 'file', path: file.path, side: diffSideFor(file) })
-                }
-                onToggleStage={() => void toggleFile(file)}
-                onDiscard={() => {
-                  setDiscardError(null)
-                  setDiscarding(file)
-                }}
-              />
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {query.error && (
-        <p className="mt-2 text-xs text-destructive">{(query.error as Error).message}</p>
-      )}
-
-      <StashSection repoPath={repoPath} worktreePath={worktreePath} />
-
-      <CommitBox
-        repositoryId={repositoryId}
-        repoPath={repoPath}
-        worktree={worktree}
-        stagedCount={stagedFileCount(files)}
-        focusToken={focusCommitToken}
-      />
+      </div>
 
       <AlertDialog open={discarding !== null} onOpenChange={(open) => !open && setDiscarding(null)}>
         <AlertDialogContent data-testid="discard-file-dialog">
@@ -309,7 +323,7 @@ export function WorkingTreeTab({
                 : 'This discards its uncommitted changes. This cannot be undone.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {discardError && <p className="text-sm text-destructive">{discardError}</p>}
+          {discardError && <CopyableError className="text-sm" message={discardError} />}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction

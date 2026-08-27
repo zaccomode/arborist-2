@@ -15,10 +15,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { CopyableError } from '@/components/copyable-error'
 import { FilePathCell } from '@/components/file-path-cell'
 import { PresetConsole, type PresetRun } from '@/components/preset-console'
 import { invoke } from '@/api/client'
 import { queryKeys, usePresets, useProjectSettings, useSettings } from '@/api/queries'
+import { showErrorToast } from '@/lib/error-toast'
 
 /**
  * One conflicted file's row: no checkbox — staging half a conflict is
@@ -165,7 +167,7 @@ export function ConflictSection({
       )
       if (result.kind === 'console') setConsoleRun(result)
     } catch (cause) {
-      toast.error('Could not open', { description: (cause as Error).message })
+      showErrorToast('Could not open', { description: (cause as Error).message })
     } finally {
       setBusyPath(null)
     }
@@ -257,7 +259,7 @@ export function ConflictSection({
         </ul>
       )}
 
-      {error && <p className="px-3 py-1.5 text-xs text-destructive">{error}</p>}
+      {error && <CopyableError className="px-3 py-1.5 text-xs" message={error} />}
 
       {/* No git operation to abort or continue for a `u` record with no
           MERGE_HEAD/etc behind it (a conflicting stash pop) — resolving those
