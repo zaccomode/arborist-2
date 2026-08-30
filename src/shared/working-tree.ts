@@ -71,6 +71,13 @@ export function isInspectable(file: ChangedFile): boolean {
  * Which side of the file a click on its row opens: whichever side actually
  * has content, preferring staged when a file has both (`MM`) since that's
  * what the next commit will contain.
+ *
+ * Since #73 the distinction that still matters here is tracked against
+ * untracked — the diff panel shows both sides of a tracked file at once and
+ * ignores which of the two this picked. The `'staged'`/`'unstaged'` answer
+ * is kept because `Inspector.side` stores it, and because the day this feeds
+ * something that does want one side, preferring the one with content is
+ * still the right answer.
  */
 export function diffSideFor(file: ChangedFile): 'staged' | 'unstaged' | 'untracked' {
   if (file.kind === 'untracked') return 'untracked'

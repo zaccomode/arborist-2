@@ -178,11 +178,10 @@ export function wholeFilePathsFor(request: DiffRequest): string[] {
 
 /**
  * Identifies the *file* a request is for, deliberately ignoring which side
- * (`'unstaged'`/`'staged'`) of a tracked file it names. Used by the diff
- * panel to tell "the user flipped sides on the same file" apart from "the
- * user opened a different file" — the former should leave the panel's
- * chosen side alone, the latter should reset it to the freshly-computed
- * default (see `withDiffSide`).
+ * (`'unstaged'`/`'staged'`) of a tracked file it names. Since #73 the panel
+ * shows both sides at once, so this is what says two requests differing only
+ * in `kind` are the same file — see `stagingSides`, which throws that `kind`
+ * away.
  */
 export function diffRequestIdentity(request: DiffRequest): string {
   if (request.kind === 'commit') {
@@ -193,20 +192,142 @@ export function diffRequestIdentity(request: DiffRequest): string {
 }
 
 /**
- * The request the diff panel should actually query: `request` unmodified,
- * unless the user has manually picked a side with the panel's Unstaged/
- * Staged toggle *and* the file has a side to pick — an `'untracked'` file or
- * a historical `'commit'` has only ever the one side `request` already
- * names, so `manualSide` is ignored for those rather than fabricating a
- * `DiffRequest` kind that doesn't apply.
+ * The two requests a tracked working-tree file needs for the unified view
+ * (#73), or `null` for a file that has only ever had one side — an
+ * `'untracked'` file, or a historical `'commit'`.
+ *
+ * `kind` on the incoming request is ignored deliberately: it says which side
+ * the row click preferred, and the unified view wants both regardless.
  */
-export function withDiffSide(
-  request: DiffRequest,
-  manualSide: 'unstaged' | 'staged' | null
-): DiffRequest {
-  if (!manualSide) return request
-  if (request.kind !== 'unstaged' && request.kind !== 'staged') return request
-  return { ...request, kind: manualSide }
+export function stagingSides(
+  request: DiffRequest
+): { unstaged: DiffRequest; staged: DiffRequest } | null {
+  if (request.kind !== 'unstaged' && request.kind !== 'staged') return null
+  return { unstaged: { ...request, kind: 'unstaged' }, staged: { ...request, kind: 'staged' } }
+}
+
+/** Which side of the index a hunk in the unified view came from. */
+export type HunkSide = 'staged' | 'unstaged'
+
+export interface UnifiedHunk extends DiffHunk {
+  side: HunkSide
+}
+
+/**
+ * One file's whole change, staged and unstaged parts together — what the
+ * diff panel renders since #73.
+ */
+export interface UnifiedDiff {
+  oldPath: string | null
+  newPath: string | null
+  changeKind: FileChangeKind
+  binary: boolean
+  lossy: boolean
+  truncated: boolean
+  hunks: UnifiedHunk[]
+  stagedHunks: number
+  unstagedHunks: number
+  /** Whether that side has a change no hunk can represent — see `isHunklessChange`. */
+  hunkless: { staged: boolean; unstaged: boolean }
+}
+
+/**
+ * How the header's checkbox reads: everything staged, nothing staged, or a
+ * file with content on both sides.
+ */
+export type UnifiedStagingState = 'checked' | 'unchecked' | 'indeterminate'
+
+export function unifiedStagingState(diff: UnifiedDiff): UnifiedStagingState {
+  const staged = diff.stagedHunks > 0 || diff.hunkless.staged
+  const unstaged = diff.unstagedHunks > 0 || diff.hunkless.unstaged
+  if (staged && unstaged) return 'indeterminate'
+  return staged ? 'checked' : 'unchecked'
+}
+
+/**
+ * Merges the unstaged and staged diffs of one file into the single list the
+ * panel draws (#73), each hunk tagged with the side it came from.
+ *
+ * Two sides rather than one diff against HEAD, which is the obvious
+ * alternative and the wrong one here. A `git diff HEAD` hunk can contain
+ * staged and unstaged lines at once, and there is then no answer to what its
+ * "Stage hunk" button should do — the whole per-hunk protocol (#49) is built
+ * on a hunk being a patch that applies cleanly to one side of the index, and
+ * a combined hunk is not that. Keeping the two diffs and interleaving them
+ * leaves every hunk individually stageable by the code that already works,
+ * and still puts the staged ones in front of the reader instead of behind a
+ * tab.
+ *
+ * The cost is that the two sides carry different line coordinates: an
+ * unstaged hunk's old side is the index, a staged hunk's old side is HEAD.
+ * For hunks that do not overlap — the ordinary case, since a hunk staged out
+ * of a file leaves the rest where it was — the numbers agree closely enough
+ * to read. Where they disagree, they disagree by the size of the staged
+ * change above them, which is the honest description of what happened rather
+ * than a rendering bug.
+ *
+ * Ordering is by `newStart`, so the list reads down the file. A staged hunk
+ * sorts before an unstaged one at the same start line, because the staged
+ * content is what is already in the index and so comes first in any reading
+ * of "what will this file be".
+ */
+export function mergeStagingSides(unstaged: FileDiff | null, staged: FileDiff | null): UnifiedDiff {
+  const sided = (file: FileDiff | null, side: HunkSide): UnifiedHunk[] =>
+    (file?.hunks ?? []).map((hunk) => ({ ...hunk, side }))
+
+  const hunks = [...sided(staged, 'staged'), ...sided(unstaged, 'unstaged')].sort((a, b) => {
+    if (a.newStart !== b.newStart) return a.newStart - b.newStart
+    if (a.side === b.side) return 0
+    return a.side === 'staged' ? -1 : 1
+  })
+
+  // Whichever side actually describes the file: an `A ` staged addition has
+  // no unstaged diff at all, and a plain ` M` has no staged one, so the path,
+  // change kind and binary flag have to come from whichever diff is the real
+  // one. "Has hunks" alone is not the test — a mode-only flip or a pure
+  // rename describes the file perfectly well with no hunks at all, and
+  // reading the change kind off the empty side instead turns "File mode
+  // changed" into "No changes".
+  const describes = (file: FileDiff | null): boolean =>
+    file !== null && (file.hunks.length > 0 || isHunklessChange(file))
+  const primary =
+    (describes(unstaged) ? unstaged : null) ??
+    (describes(staged) ? staged : null) ??
+    unstaged ??
+    staged ??
+    null
+
+  return {
+    oldPath: primary?.oldPath ?? null,
+    newPath: primary?.newPath ?? null,
+    changeKind: primary?.changeKind ?? 'modified',
+    binary: (unstaged?.binary ?? false) || (staged?.binary ?? false),
+    lossy: (unstaged?.lossy ?? false) || (staged?.lossy ?? false),
+    truncated: (unstaged?.truncated ?? false) || (staged?.truncated ?? false),
+    hunks,
+    stagedHunks: staged?.hunks.length ?? 0,
+    unstagedHunks: unstaged?.hunks.length ?? 0,
+    hunkless: {
+      staged: staged !== null && isHunklessChange(staged),
+      unstaged: unstaged !== null && isHunklessChange(unstaged)
+    }
+  }
+}
+
+/** Insertions and deletions across a merged diff, for the panel's header. */
+export function unifiedDiffStats(diff: UnifiedDiff): {
+  insertions: number
+  deletions: number
+} {
+  let insertions = 0
+  let deletions = 0
+  for (const hunk of diff.hunks) {
+    for (const line of hunk.lines) {
+      if (line.kind === 'add') insertions++
+      else if (line.kind === 'remove') deletions++
+    }
+  }
+  return { insertions, deletions }
 }
 
 function splitLines(text: string): string[] {

@@ -8,7 +8,10 @@ import {
   syntheticNewFileDiff,
   truncateFileDiff,
   wholeFilePathsFor,
-  withDiffSide,
+  stagingSides,
+  mergeStagingSides,
+  unifiedDiffStats,
+  unifiedStagingState,
   type DiffHunk,
   type DiffRequest,
   type FileDiff
@@ -453,52 +456,145 @@ describe('diffRequestIdentity', () => {
   })
 })
 
-describe('withDiffSide', () => {
-  it('returns the request unchanged when no manual side is picked', () => {
-    const request: DiffRequest = { kind: 'unstaged', worktreePath: '/repo', path: 'f.txt' }
-    expect(withDiffSide(request, null)).toBe(request)
-  })
-
-  it('overrides an unstaged request with the manually picked staged side', () => {
-    const request: DiffRequest = { kind: 'unstaged', worktreePath: '/repo', path: 'f.txt' }
-    expect(withDiffSide(request, 'staged')).toEqual({
-      kind: 'staged',
-      worktreePath: '/repo',
-      path: 'f.txt'
-    })
-  })
-
-  it('overrides a staged request with the manually picked unstaged side', () => {
+describe('stagingSides', () => {
+  it('gives both sides of a tracked file, whichever side the request named', () => {
     const request: DiffRequest = { kind: 'staged', worktreePath: '/repo', path: 'f.txt' }
-    expect(withDiffSide(request, 'unstaged')).toEqual({
-      kind: 'unstaged',
-      worktreePath: '/repo',
-      path: 'f.txt'
+
+    expect(stagingSides(request)).toEqual({
+      unstaged: { kind: 'unstaged', worktreePath: '/repo', path: 'f.txt' },
+      staged: { kind: 'staged', worktreePath: '/repo', path: 'f.txt' }
     })
   })
 
-  it('preserves origPath when overriding the side', () => {
+  it('carries origPath onto both, so a rename keeps its detection on either side', () => {
     const request: DiffRequest = {
       kind: 'unstaged',
       worktreePath: '/repo',
       path: 'new.txt',
       origPath: 'old.txt'
     }
-    expect(withDiffSide(request, 'staged')).toEqual({
-      kind: 'staged',
-      worktreePath: '/repo',
-      path: 'new.txt',
-      origPath: 'old.txt'
-    })
+    const sides = stagingSides(request)
+
+    expect(sides?.unstaged).toMatchObject({ origPath: 'old.txt' })
+    expect(sides?.staged).toMatchObject({ origPath: 'old.txt' })
   })
 
-  it('ignores a manual side for an untracked file, which has none to pick', () => {
-    const request: DiffRequest = { kind: 'untracked', worktreePath: '/repo', path: 'new.txt' }
-    expect(withDiffSide(request, 'staged')).toBe(request)
+  it('has no sides for an untracked file, which has only ever had the one', () => {
+    expect(stagingSides({ kind: 'untracked', worktreePath: '/repo', path: 'new.txt' })).toBeNull()
   })
 
-  it('ignores a manual side for a historical commit, which has none to pick', () => {
-    const request: DiffRequest = { kind: 'commit', repoPath: '/repo', hash: 'aaa', path: 'f.txt' }
-    expect(withDiffSide(request, 'unstaged')).toBe(request)
+  it('has no sides for a historical commit', () => {
+    expect(
+      stagingSides({ kind: 'commit', repoPath: '/repo', hash: 'aaa', path: 'f.txt' })
+    ).toBeNull()
+  })
+})
+
+/** A `FileDiff` carrying hunks at the given start lines and nothing else of note. */
+function fileWith(starts: number[], overrides: Partial<FileDiff> = {}): FileDiff {
+  return {
+    oldPath: 'f.txt',
+    newPath: 'f.txt',
+    changeKind: 'modified',
+    oldMode: null,
+    newMode: null,
+    similarity: null,
+    binary: false,
+    hunks: starts.map((newStart, index) => ({
+      header: `@@ -${newStart},1 +${newStart},1 @@`,
+      oldStart: newStart,
+      oldLines: 1,
+      newStart,
+      newLines: 1,
+      lines: [{ kind: 'add' as const, text: `line ${newStart}`, oldLine: null, newLine: newStart }],
+      lineRange: { start: index, end: index }
+    })),
+    ...overrides
+  }
+}
+
+describe('mergeStagingSides', () => {
+  it('interleaves the two sides down the file rather than grouping them', () => {
+    const merged = mergeStagingSides(fileWith([10, 30]), fileWith([20]))
+
+    expect(merged.hunks.map((hunk) => [hunk.newStart, hunk.side])).toEqual([
+      [10, 'unstaged'],
+      [20, 'staged'],
+      [30, 'unstaged']
+    ])
+  })
+
+  it('puts the staged hunk first where both sides start on the same line', () => {
+    const merged = mergeStagingSides(fileWith([5]), fileWith([5]))
+
+    expect(merged.hunks.map((hunk) => hunk.side)).toEqual(['staged', 'unstaged'])
+  })
+
+  it('counts each side, which is what the header checkbox reads', () => {
+    const merged = mergeStagingSides(fileWith([1, 2]), fileWith([3]))
+
+    expect(merged).toMatchObject({ unstagedHunks: 2, stagedHunks: 1 })
+  })
+
+  it('handles a side that does not exist at all, as a staged-only addition has', () => {
+    const merged = mergeStagingSides(null, fileWith([1]))
+
+    expect(merged.hunks).toHaveLength(1)
+    expect(merged.hunks[0].side).toBe('staged')
+    expect(merged.unstagedHunks).toBe(0)
+  })
+
+  it('takes the path and change kind from a side that actually has content', () => {
+    const staged = fileWith([1], { changeKind: 'added', newPath: 'added.txt' })
+    const merged = mergeStagingSides(fileWith([], { newPath: 'added.txt' }), staged)
+
+    expect(merged).toMatchObject({ changeKind: 'added', newPath: 'added.txt' })
+  })
+
+  it('is binary, lossy or truncated if either side is', () => {
+    const merged = mergeStagingSides(fileWith([1], { lossy: true }), fileWith([2]))
+
+    expect(merged.lossy).toBe(true)
+    expect(mergeStagingSides(fileWith([1]), fileWith([2], { binary: true })).binary).toBe(true)
+    expect(mergeStagingSides(fileWith([1], { truncated: true }), fileWith([2])).truncated).toBe(
+      true
+    )
+  })
+
+  it('reports a hunk-less change on the side that carries it', () => {
+    const modeOnly = fileWith([], { changeKind: 'mode-change' })
+    const merged = mergeStagingSides(modeOnly, fileWith([1]))
+
+    expect(merged.hunkless).toEqual({ unstaged: true, staged: false })
+  })
+})
+
+describe('unifiedStagingState', () => {
+  it('is checked when everything is on the staged side', () => {
+    expect(unifiedStagingState(mergeStagingSides(fileWith([]), fileWith([1])))).toBe('checked')
+  })
+
+  it('is unchecked when nothing is', () => {
+    expect(unifiedStagingState(mergeStagingSides(fileWith([1]), fileWith([])))).toBe('unchecked')
+  })
+
+  it('is indeterminate for a file with hunks on both sides', () => {
+    expect(unifiedStagingState(mergeStagingSides(fileWith([1]), fileWith([2])))).toBe(
+      'indeterminate'
+    )
+  })
+
+  it('counts a hunk-less change as content on its side', () => {
+    const modeOnly = fileWith([], { changeKind: 'mode-change' })
+
+    expect(unifiedStagingState(mergeStagingSides(fileWith([]), modeOnly))).toBe('checked')
+  })
+})
+
+describe('unifiedDiffStats', () => {
+  it('sums both sides, since the panel now shows both at once', () => {
+    const merged = mergeStagingSides(fileWith([1, 2]), fileWith([3]))
+
+    expect(unifiedDiffStats(merged)).toEqual({ insertions: 3, deletions: 0 })
   })
 })
