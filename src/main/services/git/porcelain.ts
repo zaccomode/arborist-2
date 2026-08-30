@@ -126,18 +126,26 @@ export function parseBranchList(output: string): BranchInfo[] {
 }
 
 /**
+ * Whether a short ref name from the remote-tracking namespace names a branch
+ * anyone could check out, as opposed to a symbolic `origin/HEAD`. Git 2.55
+ * (unlike 2.43, where this app's own tests were first written) shortens that
+ * symbolic ref to a bare remote name — just `origin`, no slash — where 2.43
+ * prints `origin/HEAD`; a real remote branch always has the shape
+ * `<remote>/<path>`, so requiring a slash drops it under either git version
+ * rather than chasing the exact string each one prints.
+ */
+export function isRemoteBranchRef(name: string): boolean {
+  return name.length > 0 && name.includes('/') && !/(^|\/)HEAD$/.test(name)
+}
+
+/**
  * Parses `git branch -r --list --format=%(refname:short)`, dropping the
- * symbolic `origin/HEAD` entries, which are not branches anyone can check
- * out. Git 2.55 (unlike 2.43, where this app's own tests were first
- * written) also prints a bare remote name — just `origin`, no slash — for
- * that same symbolic ref on some setups; a real remote branch always has
- * the shape `<remote>/<path>`, so requiring a slash drops it under either
- * git version rather than chasing the exact string each one prints.
+ * symbolic `origin/HEAD` entries — see `isRemoteBranchRef`.
  */
 export function parseRemoteBranchList(output: string): string[] {
   return splitLines(output)
     .map((line) => line.trim())
-    .filter((line) => line.length > 0 && line.includes('/') && !/(^|\/)HEAD$/.test(line))
+    .filter(isRemoteBranchRef)
 }
 
 /**
@@ -205,6 +213,43 @@ export const FIELD_SEPARATOR = '\u0000'
 
 export const COMMIT_FORMAT = ['%H', '%h', '%an', '%aI', '%s'].join('%x00')
 
+/**
+ * `COMMIT_FORMAT`'s five fields again, in `for-each-ref`'s own placeholder
+ * dialect, prefixed by the ref's short name. `for-each-ref` reads a whole
+ * namespace in one process, which is the point: the remote-branch list used
+ * to run `git log -1` once per branch, and a repository with a few thousand
+ * remote branches is a few thousand spawns per refresh (#75).
+ *
+ * Verified field for field against `git log -1 --format=${COMMIT_FORMAT}` on
+ * the same commit: byte-identical output, which is what lets `parseCommit`
+ * read either one.
+ */
+export const REMOTE_BRANCH_FORMAT = [
+  '%(refname:short)',
+  '%(objectname)',
+  '%(objectname:short)',
+  '%(authorname)',
+  '%(authordate:iso-strict)',
+  '%(contents:subject)'
+].join('%00')
+
+/**
+ * A local branch's upstream, divergence and tip commit, in the one
+ * `for-each-ref` the refresh pipeline runs per worktree. Folds what used to
+ * be a separate `git log -1` into the call that was already asking about the
+ * branch: three spawns per worktree became two, which on a repository with a
+ * lot of worktrees is a third of the refresh's process count (#75).
+ */
+export const BRANCH_STATE_FORMAT = [
+  '%(upstream:short)',
+  '%(upstream:track)',
+  '%(objectname)',
+  '%(objectname:short)',
+  '%(authorname)',
+  '%(authordate:iso-strict)',
+  '%(contents:subject)'
+].join('%00')
+
 /** Parses one commit written with `COMMIT_FORMAT`. */
 export function parseCommit(output: string): CommitSummary | null {
   const fields = output.replace(/\r?\n$/, '').split(FIELD_SEPARATOR)
@@ -216,6 +261,56 @@ export function parseCommit(output: string): CommitSummary | null {
     date: fields[3],
     subject: fields[4]
   }
+}
+
+/**
+ * Parses `git for-each-ref --format=${BRANCH_STATE_FORMAT} refs/heads/<branch>`.
+ *
+ * Every field is absent for a branch that doesn't exist yet — an unborn
+ * `main` in a repository with no commits — which git reports as empty output
+ * rather than an error. That reads as "no upstream, nowhere ahead or behind,
+ * no last commit", which is exactly true of a branch nobody has committed to.
+ */
+export function parseBranchState(output: string): {
+  upstream: string | null
+  track: UpstreamTrack
+  lastCommit: CommitSummary | null
+} {
+  const line = splitLines(output)[0] ?? ''
+  const fields = line.split(FIELD_SEPARATOR)
+  const upstream = (fields[0] ?? '').trim()
+  return {
+    upstream: upstream.length > 0 ? upstream : null,
+    track: parseUpstreamTrack(fields[1] ?? ''),
+    lastCommit: parseCommit(fields.slice(2).join(FIELD_SEPARATOR))
+  }
+}
+
+/**
+ * Parses `git for-each-ref --format=${REMOTE_BRANCH_FORMAT} refs/remotes`:
+ * one remote branch per line, tip commit included, with the symbolic
+ * `origin/HEAD` entries dropped the same way `parseRemoteBranchList` drops
+ * them.
+ *
+ * `lastCommit` is null only for a line git printed without the five commit
+ * fields behind it — which shouldn't happen for a remote-tracking ref, and
+ * is reported as "no commit" rather than dropping the branch, since a branch
+ * that exists with an unreadable tip is still a branch worth listing.
+ */
+export function parseRemoteBranchRefs(
+  output: string
+): { ref: string; lastCommit: CommitSummary | null }[] {
+  const branches: { ref: string; lastCommit: CommitSummary | null }[] = []
+  for (const line of splitLines(output)) {
+    const separator = line.indexOf(FIELD_SEPARATOR)
+    const ref = (separator === -1 ? line : line.slice(0, separator)).trim()
+    if (!isRemoteBranchRef(ref)) continue
+    branches.push({
+      ref,
+      lastCommit: separator === -1 ? null : parseCommit(line.slice(separator + 1))
+    })
+  }
+  return branches
 }
 
 /**

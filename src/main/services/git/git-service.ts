@@ -47,20 +47,21 @@ import {
   type ByteRange
 } from './diff-bytes'
 import {
+  BRANCH_STATE_FORMAT,
   COMMIT_FORMAT,
-  FIELD_SEPARATOR,
   LOG_FORMAT,
   LOG_RECORD_SEPARATOR,
+  REMOTE_BRANCH_FORMAT,
   parseBranchList,
+  parseBranchState,
   parseBranchUpstreams,
   parseCommit,
   parseCommitLog,
   parseCommitNumstat,
-  parseRemoteBranchList,
+  parseRemoteBranchRefs,
   parseStashList,
   parseStatus,
   parseStatusV2,
-  parseUpstreamTrack,
   parseWorktreeList
 } from './porcelain'
 
@@ -822,12 +823,11 @@ export class GitService {
    * remote branch and must hide it too, otherwise the same remote branch can
    * be turned into any number of local worktrees under different names.
    */
-  async listRemoteBranches(
-    repoPath: string,
-    concurrency: number = DEFAULT_REFRESH_CONCURRENCY
-  ): Promise<RemoteBranch[]> {
+  async listRemoteBranches(repoPath: string): Promise<RemoteBranch[]> {
     const [remotes, worktrees, upstreamsResult] = await Promise.all([
-      this.#git.runOrThrow(['branch', '-r', '--list', '--format=%(refname:short)'], { repoPath }),
+      this.#git.runOrThrow(['for-each-ref', `--format=${REMOTE_BRANCH_FORMAT}`, 'refs/remotes'], {
+        repoPath
+      }),
       this.#git.runOrThrow(['worktree', 'list', '--porcelain'], { repoPath }),
       this.#git.runOrThrow(
         ['for-each-ref', '--format=%(refname:short) %(upstream:short)', 'refs/heads'],
@@ -847,22 +847,13 @@ export class GitService {
         .filter((upstream): upstream is string => upstream !== null)
     )
 
-    const candidates = parseRemoteBranchList(remotes.stdout).filter(
-      (ref) => !localBranches.has(shortRemoteName(ref)) && !trackedUpstreams.has(ref)
-    )
-
-    const commits = await mapWithConcurrency(candidates, concurrency, (ref) =>
-      this.#git.runOrThrow(['log', '-1', `--format=${COMMIT_FORMAT}`, ref], { repoPath })
-    )
-
-    return candidates.map((ref, index) => {
-      const result = commits[index]
-      return {
+    return parseRemoteBranchRefs(remotes.stdout)
+      .filter(({ ref }) => !localBranches.has(shortRemoteName(ref)) && !trackedUpstreams.has(ref))
+      .map(({ ref, lastCommit }) => ({
         name: ref,
         shortName: shortRemoteName(ref),
-        lastCommit: result.status === 'fulfilled' ? parseCommit(result.value.stdout) : null
-      }
-    })
+        lastCommit
+      }))
   }
 
   /**
@@ -937,42 +928,55 @@ export class GitService {
     }
 
     const repoPath = entry.path
-    const [status, tracking, commit] = await Promise.all([
+    const [status, branchState] = await Promise.all([
       this.#git.runOrThrow(['status', '--porcelain'], { repoPath }),
-      entry.branch ? this.#tracking(repoPath, entry.branch) : Promise.resolve(null),
-      this.#git.runOrThrow(['log', '-1', `--format=${COMMIT_FORMAT}`], { repoPath })
+      entry.branch ? this.#branchState(repoPath, entry.branch) : this.#detachedState(repoPath)
     ])
 
     return {
       ...parseStatus(status.stdout),
-      upstream: tracking?.upstream ?? null,
-      ahead: tracking?.track.ahead ?? 0,
-      behind: tracking?.track.behind ?? 0,
-      gone: tracking?.track.gone ?? false,
-      lastCommit: parseCommit(commit.stdout)
+      upstream: branchState.upstream,
+      ahead: branchState.track.ahead,
+      behind: branchState.track.behind,
+      gone: branchState.track.gone,
+      lastCommit: branchState.lastCommit
     }
   }
 
   /**
-   * Upstream name and divergence in one call. Asking git for its own
-   * `%(upstream:track)` also settles whether the remote branch was deleted,
-   * which `@{upstream}` cannot answer once the tracking ref is pruned.
+   * Upstream name, divergence and tip commit in one call. Asking git for its
+   * own `%(upstream:track)` also settles whether the remote branch was
+   * deleted, which `@{upstream}` cannot answer once the tracking ref is
+   * pruned; folding the tip commit into the same `for-each-ref` is what takes
+   * enrichment from three spawns per worktree to two (#75).
    */
-  async #tracking(
-    repoPath: string,
-    branch: string
-  ): Promise<{ upstream: string | null; track: ReturnType<typeof parseUpstreamTrack> }> {
+  async #branchState(repoPath: string, branch: string): Promise<BranchState> {
     const { stdout } = await this.#git.runOrThrow(
-      ['for-each-ref', '--format=%(upstream:short)%00%(upstream:track)', `refs/heads/${branch}`],
+      ['for-each-ref', `--format=${BRANCH_STATE_FORMAT}`, `refs/heads/${branch}`],
       { repoPath }
     )
-    const [upstream = '', track = ''] = stdout.split(/\r?\n/)[0]?.split(FIELD_SEPARATOR) ?? []
+    return parseBranchState(stdout)
+  }
+
+  /**
+   * The same shape for a detached HEAD, which has no branch ref for
+   * `for-each-ref` to read and so no upstream either — only a commit, which
+   * `git log` is still the way to ask for.
+   */
+  async #detachedState(repoPath: string): Promise<BranchState> {
+    const { stdout } = await this.#git.runOrThrow(['log', '-1', `--format=${COMMIT_FORMAT}`], {
+      repoPath
+    })
     return {
-      upstream: upstream.trim() ? upstream.trim() : null,
-      track: parseUpstreamTrack(track)
+      upstream: null,
+      track: { ahead: 0, behind: 0, gone: false },
+      lastCommit: parseCommit(stdout)
     }
   }
 }
+
+/** What `#enrich` needs about the ref a worktree has checked out. */
+type BranchState = ReturnType<typeof parseBranchState>
 
 async function exists(path: string): Promise<boolean> {
   try {
