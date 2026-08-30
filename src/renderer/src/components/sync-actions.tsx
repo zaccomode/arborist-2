@@ -33,6 +33,10 @@ import { showErrorToast } from '@/lib/error-toast'
  * rebase and merge for when it cannot. A diverged branch turns the refusal
  * into that offer rather than an error, since `--ff-only` refusing is an
  * answer and not a failure — see `GitService.pull`.
+ *
+ * Neither button is ever rendered disabled: each one exists only while it has
+ * work to do, and the whole component drops out when neither does (#79
+ * review). See `syncAvailability` for what that costs.
  */
 export function SyncActions({
   repoPath,
@@ -43,7 +47,7 @@ export function SyncActions({
 }): React.JSX.Element | null {
   const queryClient = useQueryClient()
   const [busy, setBusy] = useState<'pull' | 'push' | null>(null)
-  const { visible, canPull, pushEnabled, behind, ahead, hasUpstream } = syncAvailability(worktree)
+  const { canPull, canPush, behind, ahead, hasUpstream } = syncAvailability(worktree)
   const worktreePath = worktree.path
 
   const invalidate = (): void => {
@@ -96,7 +100,7 @@ export function SyncActions({
     }
   }
 
-  if (!visible) return null
+  if (!canPull && !canPush) return null
 
   return (
     <div className="flex shrink-0 items-center gap-2" data-testid="sync-actions">
@@ -133,21 +137,18 @@ export function SyncActions({
           </DropdownMenu>
         </ButtonGroup>
       )}
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={!pushEnabled || busy !== null}
-        onClick={() => void runPush()}
-      >
-        <ArrowUp />
-        {/* Short forms, not `pushLabel`'s sentences: this button sits in a
-            header that already has a title, a path and two other controls in
-            it, and the commit box a tab away is the one with room to spell
-            "Publish branch" out. Keeping the two labels distinct also keeps
-            them individually addressable, which a scenario driving either
-            one needs. */}
-        {hasUpstream ? `Push ${ahead}` : 'Publish'}
-      </Button>
+      {canPush && (
+        <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void runPush()}>
+          <ArrowUp />
+          {/* Short forms, not `pushLabel`'s sentences: this button sits in a
+              header that already has a title, a path and two other controls in
+              it, and the commit box a tab away is the one with room to spell
+              "Publish branch" out. Keeping the two labels distinct also keeps
+              them individually addressable, which a scenario driving either
+              one needs. */}
+          {hasUpstream ? `Push ${ahead}` : 'Publish'}
+        </Button>
+      )}
     </div>
   )
 }

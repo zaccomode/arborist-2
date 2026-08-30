@@ -59,47 +59,70 @@ describe('pullArgsFor', () => {
 })
 
 describe('pullLabel', () => {
-  it('names the count when there is one', () => {
+  it('names the count, which is the only case it is rendered in', () => {
     expect(pullLabel(3)).toBe('Pull 3')
-  })
-
-  it('stays a bare Pull at zero rather than inviting you not to press it', () => {
-    expect(pullLabel(0)).toBe('Pull')
+    expect(pullLabel(1)).toBe('Pull 1')
   })
 })
 
 describe('syncAvailability', () => {
-  it('offers both actions on an ordinary tracked branch', () => {
+  it('offers both actions on a branch that is ahead and behind at once', () => {
     const result = syncAvailability(worktree({}, { ahead: 2, behind: 1 }))
 
-    expect(result).toMatchObject({ visible: true, canPull: true, pushEnabled: true })
+    expect(result).toMatchObject({ canPull: true, canPush: true })
   })
 
-  it('hides the pair entirely on a detached HEAD, which has no branch to name', () => {
-    expect(syncAvailability(worktree({ branch: null })).visible).toBe(false)
+  /**
+   * #79 review: each button exists only when it has work to do, rather than
+   * standing there disabled. A branch level with its upstream therefore shows
+   * neither, and the component renders nothing at all.
+   */
+  it('offers neither on a branch level with its upstream', () => {
+    const result = syncAvailability(worktree({}, { ahead: 0, behind: 0 }))
+
+    expect(result).toMatchObject({ canPull: false, canPush: false })
   })
 
-  it('hides the pair on a worktree whose folder has gone', () => {
-    expect(syncAvailability(worktree({ prunable: true })).visible).toBe(false)
+  it('offers pull alone when the branch is only behind', () => {
+    expect(syncAvailability(worktree({}, { behind: 3 }))).toMatchObject({
+      canPull: true,
+      canPush: false
+    })
   })
 
-  it('hides the pair while enrichment has not produced a status', () => {
-    expect(syncAvailability(worktree({ status: null })).visible).toBe(false)
+  it('offers push alone when the branch is only ahead', () => {
+    expect(syncAvailability(worktree({}, { ahead: 3 }))).toMatchObject({
+      canPull: false,
+      canPush: true
+    })
   })
 
-  it('drops pull for a branch that was never pushed, which has nothing to pull from', () => {
-    const result = syncAvailability(worktree({}, { upstream: null }))
+  it('offers neither on a detached HEAD, which has no branch to name', () => {
+    const result = syncAvailability(worktree({ branch: null }, { ahead: 2, behind: 1 }))
 
+    expect(result).toMatchObject({ canPull: false, canPush: false })
+  })
+
+  it('offers neither on a worktree whose folder has gone', () => {
+    const result = syncAvailability(worktree({ prunable: true }, { ahead: 2, behind: 1 }))
+
+    expect(result).toMatchObject({ canPull: false, canPush: false })
+  })
+
+  it('offers neither while enrichment has not produced a status', () => {
+    const result = syncAvailability(worktree({ status: null }))
+
+    expect(result).toMatchObject({ canPull: false, canPush: false })
+  })
+
+  it('offers push on a branch that was never pushed, where 0 ahead is not nothing to do', () => {
+    const result = syncAvailability(worktree({}, { upstream: null, ahead: 0 }))
+
+    expect(result.canPush).toBe(true)
     expect(result.canPull).toBe(false)
-    // 0 ahead with no upstream is not the same fact as nothing to publish.
-    expect(result.pushEnabled).toBe(true)
   })
 
-  it('drops pull once the upstream is deleted on the remote', () => {
-    expect(syncAvailability(worktree({}, { gone: true })).canPull).toBe(false)
-  })
-
-  it('disables push when the branch is level with its upstream', () => {
-    expect(syncAvailability(worktree({}, { ahead: 0 })).pushEnabled).toBe(false)
+  it('drops pull once the upstream is deleted on the remote, whatever the stale count says', () => {
+    expect(syncAvailability(worktree({}, { gone: true, behind: 4 })).canPull).toBe(false)
   })
 })

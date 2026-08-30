@@ -1386,10 +1386,10 @@ export const scenarios: Scenario[] = [
     name: 'pull-push',
     description:
       'Pull and push in the worktree detail header (#78): a branch behind ' +
-      'its upstream with Pull offering the count and Push disabled at zero, ' +
-      'the pull menu holding rebase and merge, the branch level again after ' +
-      'a fast-forward, and the offer a diverged branch gets when --ff-only ' +
-      'refuses.',
+      'its upstream showing Pull alone, since there is nothing to push, the ' +
+      'pull menu holding rebase and merge, both buttons gone once the ' +
+      'branch is level (#79 review — each exists only while it has work to ' +
+      'do), and the offer a diverged branch gets when --ff-only refuses.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -1421,9 +1421,9 @@ export const scenarios: Scenario[] = [
       await window.keyboard.press('Escape')
       await window.getByRole('menu').waitFor({ state: 'detached' })
       await window.getByRole('button', { name: 'Pull 1' }).click()
-      // The label losing its count is the branch having caught up, which is
-      // a settled state to wait on rather than the toast, which fades.
-      await window.getByRole('button', { name: 'Pull', exact: true }).waitFor({ state: 'visible' })
+      // The whole pair going away is the branch having caught up, which is a
+      // settled state to wait on rather than the toast, which fades.
+      await window.getByTestId('sync-actions').waitFor({ state: 'detached' })
       await shot('pulled')
 
       await window.getByRole('button', { name: /feature\/diverged/ }).click()

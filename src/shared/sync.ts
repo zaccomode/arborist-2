@@ -56,48 +56,54 @@ export function pullArgsFor(mode: PullMode): string[] {
   }
 }
 
-/**
- * The pull button's label: the count when there is something to pull, and a
- * bare "Pull" when there is not — a button reading "Pull 0 commits" is a
- * button telling you not to press it, and the remote may have moved since
- * the last fetch regardless, which is exactly when someone presses this.
- */
+/** The pull button's label. Only ever rendered with something to pull — see `syncAvailability`. */
 export function pullLabel(behind: number): string {
-  return behind > 0 ? `Pull ${behind}` : 'Pull'
+  return `Pull ${behind}`
 }
 
 /**
- * Which of the two sync actions a worktree can offer, and in what state.
+ * Which of the two sync actions a worktree can offer.
+ *
+ * Each button exists only when it has work to do (#79 review): Pull when the
+ * branch is actually behind, Push when there is something local to send.
+ * Between them they are absent more often than present, which is the point —
+ * a header that only grows a control when that control would change
+ * something is a header you can read at a glance, where a permanently
+ * disabled pair is furniture.
+ *
+ * The consequence worth knowing: with nothing behind, there is no Pull button
+ * to press *speculatively*. `behind` only moves after a fetch, so the flow is
+ * Fetch (the Remote Branches header) and then Pull, rather than pulling to
+ * find out. That is the same order git works in, and it is why the fetch
+ * control is not the one being hidden here.
+ *
+ * `canPull` needs an upstream that still exists: one deleted on the remote
+ * (`gone`) has nothing left to pull from, and the counts against it are
+ * stale anyway.
+ *
+ * `canPush` is deliberately looser. A branch with no upstream is 0 ahead by
+ * definition, which is not the same fact as having nothing to publish — see
+ * `pushLabel` in `working-tree.ts`, which says the same thing about its own
+ * label.
  *
  * A worktree whose folder is gone has nothing to sync, and a detached HEAD
- * has no branch for either action to name — both drop the pair entirely
- * rather than showing two permanently disabled buttons.
- *
- * `canPull` needs an upstream that still exists: an upstream deleted on the
- * remote (`gone`) has nothing left to pull from, and pulling would fail with
- * a message about a ref that is no longer there.
- *
- * `pushEnabled` is deliberately looser than `canPull`. A branch with no
- * upstream is 0 ahead by definition, which is not the same fact as having
- * nothing to publish — see `pushLabel` in `working-tree.ts`, which says the
- * same thing about its own label.
+ * has no branch for either action to name, so both are false for either.
  */
 export function syncAvailability(worktree: Worktree): {
-  visible: boolean
   canPull: boolean
-  pushEnabled: boolean
+  canPush: boolean
   behind: number
   ahead: number
   hasUpstream: boolean
 } {
   const status = worktree.status
+  const usable = !worktree.prunable && worktree.branch !== null && status !== null
   const hasUpstream = (status?.upstream ?? null) !== null
   const ahead = status?.ahead ?? 0
   const behind = status?.behind ?? 0
   return {
-    visible: !worktree.prunable && worktree.branch !== null && status !== null,
-    canPull: hasUpstream && !(status?.gone ?? false),
-    pushEnabled: !hasUpstream || ahead > 0,
+    canPull: usable && hasUpstream && !(status?.gone ?? false) && behind > 0,
+    canPush: usable && (!hasUpstream || ahead > 0),
     behind,
     ahead,
     hasUpstream
