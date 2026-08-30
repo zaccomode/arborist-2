@@ -2,6 +2,7 @@ import { Brush, Plus, RefreshCw, SlidersHorizontal } from 'lucide-react'
 import type { Repository } from '@shared/persisted'
 import { Button } from '@/components/ui/button'
 import { CopyableError } from '@/components/copyable-error'
+import { ListControls, ListSearchField, type ListViewControls } from '@/components/list-controls'
 import { ProjectSwitcher } from '@/components/project-switcher'
 
 export function Sidebar({
@@ -17,6 +18,8 @@ export function Sidebar({
   addError,
   onFetch,
   fetching,
+  worktreeView,
+  remoteBranchView,
   remoteBranches,
   children
 }: {
@@ -34,6 +37,9 @@ export function Sidebar({
   addError: string | null
   onFetch: () => void
   fetching: boolean
+  /** Sort and search for each list — see `ListViewControls`. */
+  worktreeView: ListViewControls
+  remoteBranchView: ListViewControls
   /** The Remote Branches section body, rendered under its own header. */
   remoteBranches?: React.ReactNode
   children?: React.ReactNode
@@ -55,8 +61,11 @@ export function Sidebar({
       )}
 
       <aside className="flex min-h-0 flex-1 flex-col rounded-lg border bg-sidebar">
-        <div className="flex items-center justify-between py-2 pr-2 pl-3">
-          <p className="text-xs font-medium text-muted-foreground">Worktrees</p>
+        <div className="flex items-center justify-between gap-1 py-2 pr-2 pl-3">
+          <p className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground">
+            Worktrees
+          </p>
+          <ListControls label="Worktrees" view={worktreeView} disabled={!selectedId} />
           <Button
             variant="ghost"
             size="icon-xs"
@@ -68,6 +77,9 @@ export function Sidebar({
           </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          {worktreeView.search.open && (
+            <ListSearchField label="Worktrees" search={worktreeView.search} />
+          )}
           {children}
 
           {/* Under the rows it is about, and only when there is something to
@@ -88,8 +100,11 @@ export function Sidebar({
 
           {/* Directly below the worktrees rather than its own scrolling
               slice, so the two lists move together. */}
-          <div className="mt-4 flex items-center justify-between py-2 pl-1">
-            <p className="text-xs font-medium text-muted-foreground">Remote Branches</p>
+          <div className="mt-4 flex items-center justify-between gap-1 py-2 pl-1">
+            <p className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground">
+              Remote Branches
+            </p>
+            <ListControls label="Remote Branches" view={remoteBranchView} disabled={!selectedId} />
             <Button
               variant="ghost"
               size="icon-xs"
@@ -100,6 +115,9 @@ export function Sidebar({
               <RefreshCw className={fetching ? 'animate-spin' : undefined} />
             </Button>
           </div>
+          {remoteBranchView.search.open && (
+            <ListSearchField label="Remote Branches" search={remoteBranchView.search} />
+          )}
           {remoteBranches}
         </div>
 

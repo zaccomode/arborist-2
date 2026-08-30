@@ -78,6 +78,35 @@ async function fillAndSettle(
 }
 
 /**
+ * Waits for the sidebar's worktree list to settle on exactly `count` rows.
+ * A filter re-renders the list rather than replacing it, so waiting on any
+ * one row's presence would pass while the previous, longer list was still on
+ * screen.
+ */
+async function expectRowCount(window: Page, count: number): Promise<void> {
+  await window.waitForFunction(
+    (expected) =>
+      document.querySelectorAll('[data-testid="worktree-list"] > li').length === expected,
+    count
+  )
+}
+
+/**
+ * Waits for the worktree list's last row to be the one named `title`.
+ *
+ * Changing the sort writes to settings and re-reads them, so the reorder
+ * lands a round trip after the menu closes. Waiting on the menu alone
+ * captures the previous order and reads as the toggle having done nothing —
+ * which is exactly what it looked like before this wait existed.
+ */
+async function expectLastWorktreeRow(window: Page, title: string): Promise<void> {
+  await window.waitForFunction((expected) => {
+    const rows = document.querySelectorAll('[data-testid="worktree-list"] > li')
+    return (rows[rows.length - 1]?.textContent ?? '').startsWith(expected)
+  }, title)
+}
+
+/**
  * Seeds `arborist-data.json` with a repository already registered, so the
  * scenario opens straight to it rather than going through the folder
  * picker — which frees `ARBORIST_PICK_FOLDER` for a scenario that also
@@ -232,6 +261,60 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
       await window.getByRole('listitem').filter({ hasText: 'feature/ahead-behind' }).waitFor()
+    }
+  },
+  {
+    name: 'list-sort-search',
+    description:
+      "The Worktrees and Remote Branches lists' sort and search controls " +
+      '(#77): the two new icon buttons in each header, the sort menu open ' +
+      'with its orders and the "keep main at the top" toggle, the list with ' +
+      'the pin switched off, the list reordered by tip commit date, the ' +
+      'search field open and filtering, and the no-matches state.',
+    setup: async ({ workDir }) => {
+      const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('listitem').filter({ hasText: 'feature/ahead-behind' }).waitFor()
+      await shot('default')
+
+      await window.getByRole('button', { name: 'Sort Worktrees' }).click()
+      await window.getByRole('menu').waitFor({ state: 'visible' })
+      await shot('sort-menu')
+
+      // Unpinned first, while the order is still alphabetical: that is where
+      // the toggle is legible, since `main` visibly drops from the top into
+      // its alphabetical place rather than staying put by coincidence.
+      await window.getByRole('menuitemcheckbox', { name: 'Keep main at the top' }).click()
+      await window.getByRole('menu').waitFor({ state: 'detached' })
+      // `main` sorts last alphabetically, so it dropping to the bottom is
+      // both the visible point of the shot and the settled state to wait on.
+      await expectLastWorktreeRow(window, 'main')
+      await shot('unpinned')
+
+      await window.getByRole('button', { name: 'Sort Worktrees' }).click()
+      await window.getByRole('menuitemradio', { name: 'Recently updated' }).click()
+      await window.getByRole('menu').waitFor({ state: 'detached' })
+      // The prunable worktree's folder is gone, so it has no commit date and
+      // sorts last under this order — see `byDateDescending`.
+      await expectLastWorktreeRow(window, 'feature/prunable')
+      await shot('recently-updated')
+
+      await window.getByRole('button', { name: 'Search Worktrees' }).click()
+      await window.getByLabel('Filter worktrees').fill('feature/')
+      // Six of the matrix's eight worktrees are on a `feature/` branch, and
+      // the slash keeps the folder paths (which use hyphens) out of it.
+      // Waiting on the count is what keeps the capture from racing the filter
+      // it is showing.
+      await expectRowCount(window, 6)
+      await shot('searching')
+
+      await window.getByLabel('Filter worktrees').fill('nothing-like-this')
+      await window.getByText('Nothing matches').waitFor({ state: 'visible' })
+      await shot('no-matches')
     }
   },
   {
@@ -482,7 +565,7 @@ export const scenarios: Scenario[] = [
       await shot('before')
 
       await window.getByRole('button', { name: 'New worktree', exact: true }).click()
-      await window.getByLabel('Branch').fill('git checkout -b feature/ABC-123')
+      await window.getByLabel('Branch', { exact: true }).fill('git checkout -b feature/ABC-123')
       await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
       await shot('dialog')
 
@@ -518,7 +601,7 @@ export const scenarios: Scenario[] = [
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
 
       await window.getByRole('button', { name: 'New worktree', exact: true }).click()
-      await window.getByLabel('Branch').fill('some-topic')
+      await window.getByLabel('Branch', { exact: true }).fill('some-topic')
       await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
       await shot('closed')
 
@@ -531,7 +614,7 @@ export const scenarios: Scenario[] = [
       await shot('filtered')
 
       await window.getByRole('option', { name: 'release/1.0' }).click()
-      await window.getByLabel('Branch').fill('feature-x')
+      await window.getByLabel('Branch', { exact: true }).fill('feature-x')
       await window.getByRole('combobox').click()
       await window.getByPlaceholder('Search branches…').fill('origin/feature-x')
       await window.getByRole('option', { name: 'origin/feature-x' }).click()
@@ -639,7 +722,7 @@ export const scenarios: Scenario[] = [
       // with the remote branch's own — the folder name already differed by
       // default (#47 is about the branch, not the folder), so this is the
       // part that used to slip through.
-      await window.getByLabel('Branch').fill('renamed-locally')
+      await window.getByLabel('Branch', { exact: true }).fill('renamed-locally')
       await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
       await shot('renaming')
 
@@ -854,7 +937,7 @@ export const scenarios: Scenario[] = [
     drive: async (window, shot) => {
       await window.getByRole('button', { name: /main/ }).first().waitFor()
       await window.getByRole('button', { name: 'New worktree', exact: true }).click()
-      await window.getByLabel('Branch').fill('feature/central')
+      await window.getByLabel('Branch', { exact: true }).fill('feature/central')
       await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
       await window.waitForFunction(() => {
         const input = document.getElementById('worktree-path') as HTMLInputElement | null

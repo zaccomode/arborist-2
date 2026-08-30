@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RemoteBranch, Worktree } from '@shared/domain'
-import type { Repository } from '@shared/persisted'
+import type { Repository, Settings } from '@shared/persisted'
 import type { DiffRequest } from '@shared/diff'
+import {
+  filterRemoteBranches,
+  filterWorktrees,
+  sortRemoteBranches,
+  sortWorktrees
+} from '@shared/list-view'
 import { splitDisplayPath, stagingState } from '@shared/working-tree'
 import { useQueryClient } from '@tanstack/react-query'
 import { Shell } from '@/components/shell'
@@ -32,6 +38,7 @@ import {
 import { invoke } from '@/api/client'
 import { samePath } from '@/lib/paths'
 import { showErrorToast } from '@/lib/error-toast'
+import { useListSearchBox } from '@/state/list-search'
 import {
   useSelection,
   useSelectedRemoteBranch,
@@ -88,6 +95,32 @@ function App(): React.JSX.Element | null {
   const remoteBranches = useRemoteBranches(selected?.path ?? null)
   const remoteBranch =
     remoteBranches.data?.find((entry) => entry.name === selectedRemoteBranchName) ?? null
+  const worktreeSearch = useListSearchBox('worktrees', selected?.id ?? null)
+  const remoteBranchSearch = useListSearchBox('remote-branches', selected?.id ?? null)
+  // The order is persisted, so it survives a restart; the filter is not, so
+  // it does not (#77). Both are applied here rather than in the list
+  // components, which stay presentational and take a list already in the
+  // order they should draw it.
+  const worktreeSort = settings.data?.worktreeSort ?? 'alphabetical'
+  const worktreeMainFirst = settings.data?.worktreeSortMainFirst ?? true
+  const remoteBranchSort = settings.data?.remoteBranchSort ?? 'alphabetical'
+  const visibleWorktrees = useMemo(
+    () =>
+      sortWorktrees(
+        filterWorktrees(worktrees.data ?? [], worktreeSearch.query),
+        worktreeSort,
+        worktreeMainFirst
+      ),
+    [worktrees.data, worktreeSearch.query, worktreeSort, worktreeMainFirst]
+  )
+  const visibleRemoteBranches = useMemo(
+    () =>
+      sortRemoteBranches(
+        filterRemoteBranches(remoteBranches.data ?? [], remoteBranchSearch.query),
+        remoteBranchSort
+      ),
+    [remoteBranches.data, remoteBranchSearch.query, remoteBranchSort]
+  )
   const mainWorktree = worktrees.data?.find((entry) => entry.isMain) ?? null
   const headLabel = mainWorktree
     ? (mainWorktree.branch ?? `detached at ${mainWorktree.head?.slice(0, 7)}`)
@@ -159,6 +192,14 @@ function App(): React.JSX.Element | null {
         queryClient.invalidateQueries({ queryKey: ['settings'] })
       )
     }, 400)
+  }
+
+  // Writes straight through rather than debouncing the way the sidebar's
+  // width does: this is a menu click, not a drag producing an event per pixel.
+  const updateSettings = (changes: Partial<Settings>): void => {
+    void invoke('settings:update', changes).then(() =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings })
+    )
   }
 
   const openCreateWorktree = (): void => {
@@ -312,11 +353,25 @@ function App(): React.JSX.Element | null {
             addError={addError}
             onFetch={() => selected && handleFetch(selected.path)}
             fetching={fetchProject.isPending}
+            worktreeView={{
+              sort: worktreeSort,
+              onSortChange: (sort) => updateSettings({ worktreeSort: sort }),
+              mainFirst: worktreeMainFirst,
+              onMainFirstChange: (mainFirst) =>
+                updateSettings({ worktreeSortMainFirst: mainFirst }),
+              search: worktreeSearch
+            }}
+            remoteBranchView={{
+              sort: remoteBranchSort,
+              onSortChange: (sort) => updateSettings({ remoteBranchSort: sort }),
+              search: remoteBranchSearch
+            }}
             remoteBranches={
               selected && (
                 <RemoteBranchList
-                  branches={remoteBranches.data ?? []}
+                  branches={visibleRemoteBranches}
                   loading={remoteBranches.isPending}
+                  query={remoteBranchSearch.query}
                   selectedName={selectedRemoteBranchName}
                   onSelect={selectRemoteBranch}
                 />
@@ -325,8 +380,9 @@ function App(): React.JSX.Element | null {
           >
             {selected && (
               <WorktreeList
-                worktrees={worktrees.data ?? []}
+                worktrees={visibleWorktrees}
                 loading={worktrees.isPending}
+                query={worktreeSearch.query}
                 selectedPath={selectedWorktree}
                 onSelect={selectWorktree}
               />

@@ -254,7 +254,7 @@ test('creates a new branch from a base ref picked on the create-worktree dialog'
   await addProject(app)
 
   await window.getByRole('button', { name: 'New worktree', exact: true }).click()
-  await window.getByLabel('Branch').fill('from-origin-main')
+  await window.getByLabel('Branch', { exact: true }).fill('from-origin-main')
   await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
 
   await window.getByRole('combobox').click()
@@ -307,7 +307,7 @@ test('filters the base-ref combobox as you type, against a fixture with 30 branc
   await addProject(app)
 
   await window.getByRole('button', { name: 'New worktree', exact: true }).click()
-  await window.getByLabel('Branch').fill('feature/x')
+  await window.getByLabel('Branch', { exact: true }).fill('feature/x')
   await window.getByRole('combobox').click()
 
   const options = window.getByRole('option')
