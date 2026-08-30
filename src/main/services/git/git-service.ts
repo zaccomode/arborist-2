@@ -35,6 +35,7 @@ import {
   type DiffRequest,
   type FileDiff
 } from '../../../shared/diff'
+import { pullArgsFor, type PullMode, type PullResult } from '../../../shared/sync'
 import { worktreeBasePath, type ResolvedLocation } from '../../../shared/worktree-location'
 import { sortChangedFiles, stagePathsFor } from '../../../shared/working-tree'
 import type { GitRunner } from './git-runner'
@@ -47,20 +48,22 @@ import {
   type ByteRange
 } from './diff-bytes'
 import {
+  BRANCH_STATE_FORMAT,
   COMMIT_FORMAT,
-  FIELD_SEPARATOR,
   LOG_FORMAT,
   LOG_RECORD_SEPARATOR,
+  REMOTE_BRANCH_FORMAT,
+  parseAheadBehind,
   parseBranchList,
+  parseBranchState,
   parseBranchUpstreams,
   parseCommit,
   parseCommitLog,
   parseCommitNumstat,
-  parseRemoteBranchList,
+  parseRemoteBranchRefs,
   parseStashList,
   parseStatus,
   parseStatusV2,
-  parseUpstreamTrack,
   parseWorktreeList
 } from './porcelain'
 
@@ -398,6 +401,65 @@ export class GitService {
       )
     }
     throw new AppError(result.stderr.trim() || 'git push failed', 'git-command-failed')
+  }
+
+  /**
+   * `git pull`, in whichever of the three modes the caller picked — see
+   * `PullMode`. Failure is classified by re-reading git's own state rather
+   * than by matching its stderr, the same way `#stashApplyLike` does:
+   *
+   * - Unmerged records in status means the pull got as far as a content
+   *   merge and left conflicts, which the Conflicts section already knows
+   *   how to abort or continue. That is a result, not an error.
+   * - `--ff-only` refusing on a branch that has diverged is likewise a
+   *   result: `rev-list --left-right` answers "have both sides moved" as
+   *   data, and the caller turns a `diverged` into the offer of a rebase or
+   *   a merge instead of a dead end.
+   *
+   * Anything else is a real failure and throws. `isAuthFailure` is reused
+   * for the message only, exactly as `fetchAll` and `push` do.
+   */
+  async pull(worktreePath: string, mode: PullMode): Promise<PullResult> {
+    this.#suppressWatcher(worktreePath)
+    const result = await this.#git.run(pullArgsFor(mode), {
+      repoPath: worktreePath,
+      timeoutMs: FETCH_TIMEOUT_MS
+    })
+    if (result.exitCode === 0) return { conflict: false, diverged: false }
+
+    if (isAuthFailure(result.stderr)) {
+      throw new AppError(
+        'Arborist uses your system git credentials; pull from a terminal to check them.',
+        'pull-auth-failed'
+      )
+    }
+
+    const status = await this.workingTreeChanges(worktreePath)
+    if (status.files.some((file) => file.kind === 'unmerged')) {
+      return { conflict: true, diverged: false }
+    }
+
+    if (mode === 'ff-only' && (await this.#hasDiverged(worktreePath))) {
+      return { conflict: false, diverged: true }
+    }
+
+    throw new AppError(result.stderr.trim() || 'git pull failed', 'git-command-failed')
+  }
+
+  /**
+   * Whether HEAD and its upstream have both moved since they last agreed,
+   * which is the one thing `--ff-only` cannot get past. Run only after a
+   * refused fast-forward, so the cost lands on the failure rather than on
+   * every pull.
+   */
+  async #hasDiverged(worktreePath: string): Promise<boolean> {
+    const { exitCode, stdout } = await this.#git.run(
+      ['rev-list', '--count', '--left-right', 'HEAD...@{upstream}'],
+      { repoPath: worktreePath }
+    )
+    if (exitCode !== 0) return false
+    const counts = parseAheadBehind(stdout)
+    return counts !== null && counts.ahead > 0 && counts.behind > 0
   }
 
   /**
@@ -822,12 +884,11 @@ export class GitService {
    * remote branch and must hide it too, otherwise the same remote branch can
    * be turned into any number of local worktrees under different names.
    */
-  async listRemoteBranches(
-    repoPath: string,
-    concurrency: number = DEFAULT_REFRESH_CONCURRENCY
-  ): Promise<RemoteBranch[]> {
+  async listRemoteBranches(repoPath: string): Promise<RemoteBranch[]> {
     const [remotes, worktrees, upstreamsResult] = await Promise.all([
-      this.#git.runOrThrow(['branch', '-r', '--list', '--format=%(refname:short)'], { repoPath }),
+      this.#git.runOrThrow(['for-each-ref', `--format=${REMOTE_BRANCH_FORMAT}`, 'refs/remotes'], {
+        repoPath
+      }),
       this.#git.runOrThrow(['worktree', 'list', '--porcelain'], { repoPath }),
       this.#git.runOrThrow(
         ['for-each-ref', '--format=%(refname:short) %(upstream:short)', 'refs/heads'],
@@ -847,22 +908,13 @@ export class GitService {
         .filter((upstream): upstream is string => upstream !== null)
     )
 
-    const candidates = parseRemoteBranchList(remotes.stdout).filter(
-      (ref) => !localBranches.has(shortRemoteName(ref)) && !trackedUpstreams.has(ref)
-    )
-
-    const commits = await mapWithConcurrency(candidates, concurrency, (ref) =>
-      this.#git.runOrThrow(['log', '-1', `--format=${COMMIT_FORMAT}`, ref], { repoPath })
-    )
-
-    return candidates.map((ref, index) => {
-      const result = commits[index]
-      return {
+    return parseRemoteBranchRefs(remotes.stdout)
+      .filter(({ ref }) => !localBranches.has(shortRemoteName(ref)) && !trackedUpstreams.has(ref))
+      .map(({ ref, lastCommit }) => ({
         name: ref,
         shortName: shortRemoteName(ref),
-        lastCommit: result.status === 'fulfilled' ? parseCommit(result.value.stdout) : null
-      }
-    })
+        lastCommit
+      }))
   }
 
   /**
@@ -937,42 +989,55 @@ export class GitService {
     }
 
     const repoPath = entry.path
-    const [status, tracking, commit] = await Promise.all([
+    const [status, branchState] = await Promise.all([
       this.#git.runOrThrow(['status', '--porcelain'], { repoPath }),
-      entry.branch ? this.#tracking(repoPath, entry.branch) : Promise.resolve(null),
-      this.#git.runOrThrow(['log', '-1', `--format=${COMMIT_FORMAT}`], { repoPath })
+      entry.branch ? this.#branchState(repoPath, entry.branch) : this.#detachedState(repoPath)
     ])
 
     return {
       ...parseStatus(status.stdout),
-      upstream: tracking?.upstream ?? null,
-      ahead: tracking?.track.ahead ?? 0,
-      behind: tracking?.track.behind ?? 0,
-      gone: tracking?.track.gone ?? false,
-      lastCommit: parseCommit(commit.stdout)
+      upstream: branchState.upstream,
+      ahead: branchState.track.ahead,
+      behind: branchState.track.behind,
+      gone: branchState.track.gone,
+      lastCommit: branchState.lastCommit
     }
   }
 
   /**
-   * Upstream name and divergence in one call. Asking git for its own
-   * `%(upstream:track)` also settles whether the remote branch was deleted,
-   * which `@{upstream}` cannot answer once the tracking ref is pruned.
+   * Upstream name, divergence and tip commit in one call. Asking git for its
+   * own `%(upstream:track)` also settles whether the remote branch was
+   * deleted, which `@{upstream}` cannot answer once the tracking ref is
+   * pruned; folding the tip commit into the same `for-each-ref` is what takes
+   * enrichment from three spawns per worktree to two (#75).
    */
-  async #tracking(
-    repoPath: string,
-    branch: string
-  ): Promise<{ upstream: string | null; track: ReturnType<typeof parseUpstreamTrack> }> {
+  async #branchState(repoPath: string, branch: string): Promise<BranchState> {
     const { stdout } = await this.#git.runOrThrow(
-      ['for-each-ref', '--format=%(upstream:short)%00%(upstream:track)', `refs/heads/${branch}`],
+      ['for-each-ref', `--format=${BRANCH_STATE_FORMAT}`, `refs/heads/${branch}`],
       { repoPath }
     )
-    const [upstream = '', track = ''] = stdout.split(/\r?\n/)[0]?.split(FIELD_SEPARATOR) ?? []
+    return parseBranchState(stdout)
+  }
+
+  /**
+   * The same shape for a detached HEAD, which has no branch ref for
+   * `for-each-ref` to read and so no upstream either — only a commit, which
+   * `git log` is still the way to ask for.
+   */
+  async #detachedState(repoPath: string): Promise<BranchState> {
+    const { stdout } = await this.#git.runOrThrow(['log', '-1', `--format=${COMMIT_FORMAT}`], {
+      repoPath
+    })
     return {
-      upstream: upstream.trim() ? upstream.trim() : null,
-      track: parseUpstreamTrack(track)
+      upstream: null,
+      track: { ahead: 0, behind: 0, gone: false },
+      lastCommit: parseCommit(stdout)
     }
   }
 }
+
+/** What `#enrich` needs about the ref a worktree has checked out. */
+type BranchState = ReturnType<typeof parseBranchState>
 
 async function exists(path: string): Promise<boolean> {
   try {

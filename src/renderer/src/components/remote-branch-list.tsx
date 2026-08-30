@@ -3,6 +3,7 @@ import type { RemoteBranch } from '@shared/domain'
 import { formatRelativeDate } from '@shared/format'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
+import { NoListMatches } from '@/components/list-controls'
 
 function metadataLine(branch: RemoteBranch): string {
   if (!branch.lastCommit) return ''
@@ -18,11 +19,15 @@ function metadataLine(branch: RemoteBranch): string {
 export function RemoteBranchList({
   branches,
   loading,
+  query,
   selectedName,
   onSelect
 }: {
+  /** Already sorted and filtered — see `sortRemoteBranches`/`filterRemoteBranches`. */
   branches: RemoteBranch[]
   loading: boolean
+  /** The active search, so an empty list can say which of the two emptinesses it is. */
+  query: string
   selectedName: string | null
   onSelect: (name: string) => void
 }): React.JSX.Element {
@@ -37,6 +42,7 @@ export function RemoteBranchList({
   }
 
   if (branches.length === 0) {
+    if (query.trim()) return <NoListMatches query={query} />
     return (
       <p className="px-2 py-1 text-sm text-muted-foreground">
         No remote branches without worktrees.
@@ -45,7 +51,7 @@ export function RemoteBranchList({
   }
 
   return (
-    <ul className="space-y-0.5">
+    <ul data-testid="remote-branch-list" className="space-y-0.5">
       {branches.map((branch) => {
         const selected = branch.name === selectedName
         const metadata = metadataLine(branch)

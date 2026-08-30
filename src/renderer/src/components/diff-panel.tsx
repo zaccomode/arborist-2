@@ -2,21 +2,21 @@ import { useState } from 'react'
 import { ChevronRight, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
-import type { DiffHunk, DiffLine, DiffRequest } from '@shared/diff'
+import type { DiffLine, DiffRequest, UnifiedDiff, UnifiedHunk } from '@shared/diff'
 import {
-  diffRequestIdentity,
-  diffStats,
-  isHunklessChange,
-  wholeFilePathsFor,
-  withDiffSide
+  mergeStagingSides,
+  stagingSides,
+  unifiedDiffStats,
+  unifiedStagingState,
+  wholeFilePathsFor
 } from '@shared/diff'
 import { AppError } from '@shared/errors'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
 import { queryKeys, useFileDiff } from '@/api/queries'
@@ -34,10 +34,10 @@ function linePrefix(kind: DiffLine['kind']): string {
   return ' '
 }
 
-/** What to say about a file with no hunks, before any whole-file staging offer. */
-function noHunksMessage(file: { changeKind: string }): string {
-  if (file.changeKind === 'mode-change') return 'File mode changed, no content changes.'
-  if (file.changeKind === 'renamed') return 'File renamed, no content changes.'
+/** What to say about a file with no hunks on either side. */
+function noHunksMessage(changeKind: string): string {
+  if (changeKind === 'mode-change') return 'File mode changed, no content changes.'
+  if (changeKind === 'renamed') return 'File renamed, no content changes.'
   return 'No changes.'
 }
 
@@ -46,6 +46,10 @@ function noHunksMessage(file: { changeKind: string }): string {
  * binary file — see `isHunklessChange`) gets in place of a per-hunk button:
  * "stage this hunk" is meaningless when there's no hunk, so this says so
  * rather than leaving the file with no staging control at all.
+ *
+ * Kept in its simple whole-file form through #73, deliberately: there is no
+ * hunk here to mark as staged in place, so there is nothing for the unified
+ * view to unify.
  */
 function WholeFileOffer({
   label,
@@ -66,29 +70,53 @@ function WholeFileOffer({
   )
 }
 
+/**
+ * One hunk, marked in place with the side it is on (#73).
+ *
+ * A staged hunk carries an accent rail down its left edge and a "Staged"
+ * badge in its header. Both, rather than either alone: the badge is what
+ * says which of the two states this is in words, and the rail is what makes
+ * a run of staged hunks legible while scrolling past them, which a badge on
+ * each header does not.
+ */
 function HunkView({
   hunk,
   actionLabel,
   actionPending,
   onAction
 }: {
-  hunk: DiffHunk
+  hunk: UnifiedHunk
   /** Omitted for a request kind (untracked, a historical commit) hunk staging doesn't apply to. */
   actionLabel?: string
   actionPending: boolean
   onAction: () => void
 }): React.JSX.Element {
   const [open, setOpen] = useState(true)
+  const staged = hunk.side === 'staged'
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="border-b last:border-b-0">
-      <div className="flex items-center gap-1.5 bg-muted/40 py-1 pr-1.5 pl-2 hover:bg-muted/70">
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      data-side={hunk.side}
+      className={`border-b last:border-b-0 ${staged ? 'border-l-2 border-l-primary' : ''}`}
+    >
+      <div
+        className={`flex items-center gap-1.5 py-1 pr-1.5 pl-2 ${
+          staged ? 'bg-primary/10 hover:bg-primary/15' : 'bg-muted/40 hover:bg-muted/70'
+        }`}
+      >
         <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-1.5 text-left font-mono text-xs text-muted-foreground">
           <ChevronRight
             className={`size-3 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
           />
           <span className="truncate">{hunk.header}</span>
         </CollapsibleTrigger>
+        {staged && (
+          <Badge variant="secondary" className="shrink-0 font-sans text-[10px]">
+            Staged
+          </Badge>
+        )}
         {actionLabel && (
           <Button
             size="xs"
@@ -141,111 +169,78 @@ function HunkView({
  * caller only renders this when an inspector is open, so there's no empty
  * state to design for.
  *
- * Staging lives at two grains, per #49: a hunk button on each `HunkView`
- * when the request is `'unstaged'` or `'staged'` (an `'untracked'` file or a
- * historical `'commit'` has nothing for `worktree:applyHunk` to re-diff
- * against, so neither offers one), and a whole-file offer wherever
- * `isHunklessChange` says a hunk can't represent the change at all — a
- * mode-only flip, a pure rename, or a binary file.
+ * Since #73 a tracked working-tree file is shown as one list with its staged
+ * and unstaged hunks interleaved in file order, staged ones marked in place.
+ * Before that, staging a hunk moved it into a separate Staged view and it
+ * read as having vanished — the user had to know to go and look somewhere
+ * else to confirm the thing they had just done. Now it stays where it was
+ * and grows a badge.
  *
- * A partially-staged file (`MM`, or an `AM` partially-staged new file) has
- * real content on both the unstaged and staged side at once, but `request`
- * only ever names one of them — `diffSideFor` picks staged, since that's
- * what the next commit will contain. Staging one of several hunks from that
- * side would otherwise strand the user there with no way back to the rest:
- * re-clicking the row can only ever reopen the side `diffSideFor` prefers.
- * `hasBothSides` says when that's live, and the Unstaged/Staged tabs below
- * let the user flip without closing and reopening the panel.
+ * Each hunk keeps its own button, and what that button does follows from the
+ * side it is on: stage an unstaged hunk, unstage a staged one. That is the
+ * whole reason this merges two diffs rather than rendering one diff against
+ * HEAD — see `mergeStagingSides`, which has the argument in full.
+ *
+ * An `'untracked'` file and a historical `'commit'` have only ever the one
+ * side, so they take the same path with the staged query switched off and no
+ * per-hunk buttons at all.
  */
 export function DiffPanel({
   request,
   label,
-  hasBothSides,
   onClose
 }: {
   request: DiffRequest
   /** Shown in the header before the diff has loaded. */
   label: string
-  /** Whether to offer the Unstaged/Staged toggle — see the doc comment above. */
-  hasBothSides: boolean
   onClose: () => void
 }): React.JSX.Element {
   const queryClient = useQueryClient()
 
-  // The side the user picked with the toggle, overriding `request.kind`
-  // until the panel is asked to show a different file — see
-  // `diffRequestIdentity`. Reset here, during render, rather than in an
-  // effect: an effect would run the initial "unstaged" render before
-  // snapping back, flashing the wrong side for a frame.
-  const identity = diffRequestIdentity(request)
-  const [priorIdentity, setPriorIdentity] = useState(identity)
-  const [manualSide, setManualSide] = useState<'unstaged' | 'staged' | null>(null)
-  if (identity !== priorIdentity) {
-    setPriorIdentity(identity)
-    setManualSide(null)
-  }
-  // Also reset the moment the file stops having two sides to choose
-  // between — typically because a stage/unstage from within this very
-  // panel resolved the last hunk on the other side. `request.kind` was
-  // fixed at whatever `diffSideFor` preferred when the panel was opened, so
-  // falling back to it here lands back on the side that still has content,
-  // rather than leaving the user stranded on a manually-picked side that
-  // just went empty with the toggle no longer there to escape it.
-  const [priorHasBothSides, setPriorHasBothSides] = useState(hasBothSides)
-  if (hasBothSides !== priorHasBothSides) {
-    setPriorHasBothSides(hasBothSides)
-    if (!hasBothSides) setManualSide(null)
-  }
-
-  const activeRequest = withDiffSide(request, manualSide)
-
-  const query = useFileDiff(activeRequest)
-  const file = query.data
-  const stats = file ? diffStats(file) : null
-  const displayPath = file ? (file.newPath ?? file.oldPath ?? label) : label
+  const sides = stagingSides(request)
+  // A tracked file queries both sides; everything else queries the one
+  // request it was given and leaves the staged query disabled.
+  const unstagedQuery = useFileDiff(sides?.unstaged ?? request)
+  const stagedQuery = useFileDiff(sides?.staged ?? null)
 
   const [pendingHunkId, setPendingHunkId] = useState<string | null>(null)
   const [wholeFilePending, setWholeFilePending] = useState(false)
 
-  // Neither an untracked file nor a historical commit has a `--cached`
-  // index state to move a hunk into or out of.
-  const actionable = activeRequest.kind === 'unstaged' || activeRequest.kind === 'staged'
-  const direction: 'stage' | 'unstage' = activeRequest.kind === 'staged' ? 'unstage' : 'stage'
-  const showSideToggle = hasBothSides && actionable
+  // Neither an untracked file nor a historical commit has a `--cached` index
+  // state to move a hunk into or out of.
+  const actionable = sides !== null
+  const pending = unstagedQuery.isPending || (actionable && stagedQuery.isPending)
+  const error = unstagedQuery.error ?? stagedQuery.error
+
+  const diff: UnifiedDiff | null =
+    unstagedQuery.data || stagedQuery.data
+      ? mergeStagingSides(unstagedQuery.data ?? null, stagedQuery.data ?? null)
+      : null
+  const stats = diff ? unifiedDiffStats(diff) : null
+  const displayPath = diff ? (diff.newPath ?? diff.oldPath ?? label) : label
 
   const invalidate = (): void => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.fileDiff(activeRequest) })
-    if (activeRequest.kind === 'commit') return
-    queryClient.invalidateQueries({ queryKey: queryKeys.workingTree(activeRequest.worktreePath) })
-    // Staging or unstaging a hunk changes both sides of this file's diff at
-    // once. The default 15s staleTime means the sibling view (staged when
-    // this one is unstaged, or vice versa) would otherwise go on showing
-    // what was true before this action for as long as that window lasts,
-    // the moment the user switches to it — invalidating only `activeRequest`
-    // leaves that stale.
-    if (activeRequest.kind === 'unstaged' || activeRequest.kind === 'staged') {
-      const sibling: DiffRequest = {
-        ...activeRequest,
-        kind: activeRequest.kind === 'unstaged' ? 'staged' : 'unstaged'
-      }
-      queryClient.invalidateQueries({ queryKey: queryKeys.fileDiff(sibling) })
-    }
+    // Both sides, always: staging or unstaging a hunk changes each of them,
+    // and the panel now has both on screen at once, so leaving either stale
+    // shows the same hunk twice or not at all.
+    queryClient.invalidateQueries({ queryKey: queryKeys.fileDiff(sides?.unstaged ?? request) })
+    if (sides) queryClient.invalidateQueries({ queryKey: queryKeys.fileDiff(sides.staged) })
+    if (request.kind === 'commit') return
+    queryClient.invalidateQueries({ queryKey: queryKeys.workingTree(request.worktreePath) })
   }
 
-  const runApplyHunk = async (hunk: DiffHunk): Promise<void> => {
-    // The literal checks (rather than the `actionable` flag above) are what
-    // let TypeScript narrow `activeRequest` to the variant with
-    // `worktreePath` below — `actionable` is just a boolean, with no link
-    // back to it.
-    if (activeRequest.kind === 'commit' || activeRequest.kind === 'untracked' || !hunk.id) return
+  const runApplyHunk = async (hunk: UnifiedHunk): Promise<void> => {
+    // The literal check (rather than the `actionable` flag) is what lets
+    // TypeScript narrow `request` to the variant with `worktreePath` below.
+    if (request.kind === 'commit' || request.kind === 'untracked' || !hunk.id) return
     setPendingHunkId(hunk.id)
     try {
       await invoke(
         'worktree:applyHunk',
-        activeRequest.worktreePath,
-        { path: activeRequest.path, origPath: activeRequest.origPath ?? null },
+        request.worktreePath,
+        { path: request.path, origPath: request.origPath ?? null },
         hunk.id,
-        direction
+        hunk.side === 'staged' ? 'unstage' : 'stage'
       )
       invalidate()
     } catch (cause) {
@@ -253,7 +248,7 @@ export function DiffPanel({
         toast.info('This file changed since the diff was shown — showing the latest version.')
         invalidate()
       } else {
-        showErrorToast(direction === 'stage' ? 'Could not stage hunk' : 'Could not unstage hunk', {
+        showErrorToast(hunk.side === 'staged' ? 'Could not unstage hunk' : 'Could not stage hunk', {
           description: (cause as Error).message
         })
       }
@@ -262,15 +257,14 @@ export function DiffPanel({
     }
   }
 
-  const runWholeFileStage = async (): Promise<void> => {
-    if (activeRequest.kind === 'commit') return
+  const runWholeFile = async (direction: 'stage' | 'unstage'): Promise<void> => {
+    if (request.kind === 'commit') return
     setWholeFilePending(true)
     try {
-      const paths = wholeFilePathsFor(activeRequest)
       await invoke(
         direction === 'stage' ? 'workingTree:stage' : 'workingTree:unstage',
-        activeRequest.worktreePath,
-        paths
+        request.worktreePath,
+        wholeFilePathsFor(request)
       )
       invalidate()
     } catch (cause) {
@@ -282,12 +276,14 @@ export function DiffPanel({
     }
   }
 
-  const wholeFileLabel = direction === 'stage' ? 'Stage file' : 'Unstage file'
-  const hunkActionLabel = actionable
-    ? direction === 'stage'
-      ? 'Stage hunk'
-      : 'Unstage hunk'
-    : undefined
+  // Which way the whole-file offer points for a change no hunk can
+  // represent: unstage it when the staged side is the one carrying it,
+  // otherwise stage it.
+  const wholeFileDirection: 'stage' | 'unstage' =
+    diff?.hunkless.staged && !diff.hunkless.unstaged ? 'unstage' : 'stage'
+  const wholeFileLabel = wholeFileDirection === 'stage' ? 'Stage file' : 'Unstage file'
+  const showWholeFileOffer =
+    actionable && diff !== null && (diff.binary || diff.hunkless.staged || diff.hunkless.unstaged)
 
   return (
     <div
@@ -298,7 +294,16 @@ export function DiffPanel({
       }}
     >
       <div className="flex shrink-0 items-start gap-2 border-b p-4">
-        <Checkbox checked={activeRequest.kind === 'staged'} disabled className="mt-0.5" />
+        <Checkbox
+          checked={diff ? checkboxState(diff) : false}
+          disabled
+          className="mt-0.5"
+          // Not "<path> staging state", which is the Changed Files row's own
+          // label: the two would then be one accessible name for two
+          // different controls, and this one is a read-only indicator while
+          // that one stages the file.
+          aria-label="Staging state"
+        />
         <div className="min-w-0 flex-1">
           <p className="truncate font-semibold">{displayPath}</p>
           {stats && (
@@ -316,22 +321,8 @@ export function DiffPanel({
         </Button>
       </div>
 
-      {showSideToggle && (
-        <div className="shrink-0 border-b px-4 py-2">
-          <Tabs
-            value={activeRequest.kind}
-            onValueChange={(value) => setManualSide(value as 'unstaged' | 'staged')}
-          >
-            <TabsList variant="line" className="w-fit">
-              <TabsTrigger value="unstaged">Unstaged</TabsTrigger>
-              <TabsTrigger value="staged">Staged</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
-      )}
-
       <ScrollArea className="min-h-0 flex-1">
-        {query.isPending && (
+        {pending && (
           <div className="space-y-2 p-4">
             {[0, 1, 2].map((row) => (
               <Skeleton key={row} className="h-4 w-full" />
@@ -339,49 +330,48 @@ export function DiffPanel({
           </div>
         )}
 
-        {query.error && (
-          <CopyableError className="p-4 text-sm" message={(query.error as Error).message} />
-        )}
+        {error && <CopyableError className="p-4 text-sm" message={(error as Error).message} />}
 
-        {file?.binary && (
+        {diff?.binary && (
           <div className="space-y-2 p-4 text-sm">
             <p className="text-muted-foreground">Binary file, not shown.</p>
-            {actionable && (
-              <WholeFileOffer
-                label={wholeFileLabel}
-                pending={wholeFilePending}
-                onStage={() => void runWholeFileStage()}
-              />
-            )}
           </div>
         )}
 
-        {file && !file.binary && file.hunks.length === 0 && (
+        {diff && !diff.binary && diff.hunks.length === 0 && (
           <div className="space-y-2 p-4 text-sm">
-            <p className="text-muted-foreground">{noHunksMessage(file)}</p>
-            {actionable && isHunklessChange(file) && (
-              <WholeFileOffer
-                label={wholeFileLabel}
-                pending={wholeFilePending}
-                onStage={() => void runWholeFileStage()}
-              />
-            )}
+            <p className="text-muted-foreground">{noHunksMessage(diff.changeKind)}</p>
           </div>
         )}
 
-        {file?.lossy && (
+        {showWholeFileOffer && (
+          <div className="px-4 pb-4 text-sm">
+            <WholeFileOffer
+              label={wholeFileLabel}
+              pending={wholeFilePending}
+              onStage={() => void runWholeFile(wholeFileDirection)}
+            />
+          </div>
+        )}
+
+        {diff?.lossy && (
           <p className="border-b bg-amber-500/10 px-4 py-2 text-xs text-muted-foreground">
             This file isn&apos;t UTF-8; the diff shown is approximate.
           </p>
         )}
 
-        {file && file.hunks.length > 0 && (
+        {diff && diff.hunks.length > 0 && (
           <div>
-            {file.hunks.map((hunk, index) => (
+            {diff.hunks.map((hunk, index) => (
               <HunkView
+                // Index, not `hunk.id`: staging one hunk can change a
+                // sibling's diff header, and so its id, with no change of
+                // its own — see #73's note on hunk-identity instability.
                 key={index}
                 hunk={hunk}
-                actionLabel={hunkActionLabel}
+                actionLabel={
+                  actionable ? (hunk.side === 'staged' ? 'Unstage hunk' : 'Stage hunk') : undefined
+                }
                 actionPending={pendingHunkId === hunk.id}
                 onAction={() => void runApplyHunk(hunk)}
               />
@@ -389,7 +379,7 @@ export function DiffPanel({
           </div>
         )}
 
-        {file?.truncated && (
+        {diff?.truncated && (
           <p className="border-t px-4 py-2 text-xs text-muted-foreground">
             This diff is too large to show in full and has been truncated.
           </p>
@@ -397,4 +387,11 @@ export function DiffPanel({
       </ScrollArea>
     </div>
   )
+}
+
+/** Radix's `checked` prop, from the tri-state `unifiedStagingState` computes. */
+function checkboxState(diff: UnifiedDiff): boolean | 'indeterminate' {
+  const state = unifiedStagingState(diff)
+  if (state === 'indeterminate') return 'indeterminate'
+  return state === 'checked'
 }

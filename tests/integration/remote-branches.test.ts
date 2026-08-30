@@ -36,6 +36,37 @@ describe('listRemoteBranches, against a bare-remote fixture', () => {
     expect(branches[0].lastCommit).toMatchObject({ subject: 'Pushed from elsewhere' })
   }, 30_000)
 
+  /**
+   * #75: the tip commits used to come from one `git log -1` per remote
+   * branch, and now come out of the `for-each-ref` that produced the list.
+   * The two formats are meant to be field-for-field equivalent, which is a
+   * claim worth checking against real git rather than only in the parser's
+   * own tests — `commitLog` still runs `git log`, so it is the control.
+   */
+  it('reports the same tip commit for-each-ref that git log reports for the same ref', async () => {
+    await fixture.commitFromElsewhere('feature-x', 'Pushed from elsewhere')
+    await fixture.commitFromElsewhere('feature-z', 'Pushed from elsewhere too')
+    await service.fetchAll(fixture.repoPath)
+
+    const branches = await service.listRemoteBranches(fixture.repoPath)
+    expect(branches).toHaveLength(2)
+
+    for (const branch of branches) {
+      const [viaLog] = await service.commitLog(fixture.repoPath, [branch.name], 1, 0)
+      expect(branch.lastCommit).toMatchObject({
+        hash: viaLog.hash,
+        shortHash: viaLog.shortHash,
+        author: viaLog.author,
+        subject: viaLog.subject
+      })
+      // `%aI` and `%(authordate:iso-strict)` are the same instant in the same
+      // notation; `commitLog` asks for `%ad --date=iso-strict`, so comparing
+      // the parsed instants rather than the strings keeps this about the
+      // fields rather than about date formatting.
+      expect(Date.parse(branch.lastCommit!.date)).toBe(Date.parse(viaLog.date))
+    }
+  }, 30_000)
+
   it('hides a remote branch once a local worktree exists on its short name', async () => {
     await fixture.commitFromElsewhere('feature-y', 'Pushed from elsewhere')
     await service.fetchAll(fixture.repoPath)

@@ -91,7 +91,19 @@ export const settingsSchema = z.object({
   /** The central directory, when `worktreeLocation` is `'central'`. */
   worktreeRoot: z.string().nullable().default(null),
   /** Which preset opens a conflicted file's editor. Null resolves to the first file-capable enabled preset. Phase 10 uses it. */
-  conflictEditorPresetId: z.string().nullable().default(null)
+  conflictEditorPresetId: z.string().nullable().default(null),
+  /**
+   * The sidebar's list ordering (#77). App-wide rather than per project:
+   * an order chosen on one repository is the order every repository uses,
+   * since the alternative is the same list arriving differently depending on
+   * which project you opened last. Mirrors `ListSort` in
+   * `src/shared/list-view.ts`, which cannot be imported here — that module
+   * imports domain types, and this one is the persistence contract.
+   */
+  worktreeSort: z.enum(['alphabetical', 'recently-updated']).default('alphabetical'),
+  /** Pins the main worktree above the rest of the list. On by default, per #77. */
+  worktreeSortMainFirst: z.boolean().default(true),
+  remoteBranchSort: z.enum(['alphabetical', 'recently-updated']).default('alphabetical')
 })
 
 /**

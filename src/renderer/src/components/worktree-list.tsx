@@ -4,6 +4,7 @@ import { formatRelativeDate, worktreeTitle } from '@shared/format'
 import { samePath } from '@/lib/paths'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
+import { NoListMatches } from '@/components/list-controls'
 import { WorktreeBadges } from '@/components/worktree-badges'
 
 function metadataLine(worktree: Worktree): string {
@@ -17,11 +18,15 @@ function metadataLine(worktree: Worktree): string {
 export function WorktreeList({
   worktrees,
   loading,
+  query,
   selectedPath,
   onSelect
 }: {
+  /** Already sorted and filtered — see `sortWorktrees`/`filterWorktrees`. */
   worktrees: Worktree[]
   loading: boolean
+  /** The active search, so an empty list can say which of the two emptinesses it is. */
+  query: string
   selectedPath: string | null
   onSelect: (path: string) => void
 }): React.JSX.Element {
@@ -36,11 +41,12 @@ export function WorktreeList({
   }
 
   if (worktrees.length === 0) {
+    if (query.trim()) return <NoListMatches query={query} />
     return <p className="px-2 py-1 text-sm text-muted-foreground">No worktrees yet.</p>
   }
 
   return (
-    <ul className="space-y-0.5">
+    <ul data-testid="worktree-list" className="space-y-0.5">
       {worktrees.map((worktree) => {
         const selected = samePath(worktree.path, selectedPath)
         const metadata = metadataLine(worktree)

@@ -78,6 +78,35 @@ async function fillAndSettle(
 }
 
 /**
+ * Waits for the sidebar's worktree list to settle on exactly `count` rows.
+ * A filter re-renders the list rather than replacing it, so waiting on any
+ * one row's presence would pass while the previous, longer list was still on
+ * screen.
+ */
+async function expectRowCount(window: Page, count: number): Promise<void> {
+  await window.waitForFunction(
+    (expected) =>
+      document.querySelectorAll('[data-testid="worktree-list"] > li').length === expected,
+    count
+  )
+}
+
+/**
+ * Waits for the worktree list's last row to be the one named `title`.
+ *
+ * Changing the sort writes to settings and re-reads them, so the reorder
+ * lands a round trip after the menu closes. Waiting on the menu alone
+ * captures the previous order and reads as the toggle having done nothing —
+ * which is exactly what it looked like before this wait existed.
+ */
+async function expectLastWorktreeRow(window: Page, title: string): Promise<void> {
+  await window.waitForFunction((expected) => {
+    const rows = document.querySelectorAll('[data-testid="worktree-list"] > li')
+    return (rows[rows.length - 1]?.textContent ?? '').startsWith(expected)
+  }, title)
+}
+
+/**
  * Seeds `arborist-data.json` with a repository already registered, so the
  * scenario opens straight to it rather than going through the folder
  * picker — which frees `ARBORIST_PICK_FOLDER` for a scenario that also
@@ -232,6 +261,60 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
       await window.getByRole('listitem').filter({ hasText: 'feature/ahead-behind' }).waitFor()
+    }
+  },
+  {
+    name: 'list-sort-search',
+    description:
+      "The Worktrees and Remote Branches lists' sort and search controls " +
+      '(#77): the two new icon buttons in each header, the sort menu open ' +
+      'with its orders and the "keep main at the top" toggle, the list with ' +
+      'the pin switched off, the list reordered by tip commit date, the ' +
+      'search field open and filtering, and the no-matches state.',
+    setup: async ({ workDir }) => {
+      const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('listitem').filter({ hasText: 'feature/ahead-behind' }).waitFor()
+      await shot('default')
+
+      await window.getByRole('button', { name: 'Sort Worktrees' }).click()
+      await window.getByRole('menu').waitFor({ state: 'visible' })
+      await shot('sort-menu')
+
+      // Unpinned first, while the order is still alphabetical: that is where
+      // the toggle is legible, since `main` visibly drops from the top into
+      // its alphabetical place rather than staying put by coincidence.
+      await window.getByRole('menuitemcheckbox', { name: 'Keep main at the top' }).click()
+      await window.getByRole('menu').waitFor({ state: 'detached' })
+      // `main` sorts last alphabetically, so it dropping to the bottom is
+      // both the visible point of the shot and the settled state to wait on.
+      await expectLastWorktreeRow(window, 'main')
+      await shot('unpinned')
+
+      await window.getByRole('button', { name: 'Sort Worktrees' }).click()
+      await window.getByRole('menuitemradio', { name: 'Recently updated' }).click()
+      await window.getByRole('menu').waitFor({ state: 'detached' })
+      // The prunable worktree's folder is gone, so it has no commit date and
+      // sorts last under this order — see `byDateDescending`.
+      await expectLastWorktreeRow(window, 'feature/prunable')
+      await shot('recently-updated')
+
+      await window.getByRole('button', { name: 'Search Worktrees' }).click()
+      await window.getByLabel('Filter worktrees').fill('feature/')
+      // Six of the matrix's eight worktrees are on a `feature/` branch, and
+      // the slash keeps the folder paths (which use hyphens) out of it.
+      // Waiting on the count is what keeps the capture from racing the filter
+      // it is showing.
+      await expectRowCount(window, 6)
+      await shot('searching')
+
+      await window.getByLabel('Filter worktrees').fill('nothing-like-this')
+      await window.getByText('Nothing matches').waitFor({ state: 'visible' })
+      await shot('no-matches')
     }
   },
   {
@@ -482,7 +565,7 @@ export const scenarios: Scenario[] = [
       await shot('before')
 
       await window.getByRole('button', { name: 'New worktree', exact: true }).click()
-      await window.getByLabel('Branch').fill('git checkout -b feature/ABC-123')
+      await window.getByLabel('Branch', { exact: true }).fill('git checkout -b feature/ABC-123')
       await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
       await shot('dialog')
 
@@ -518,7 +601,7 @@ export const scenarios: Scenario[] = [
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
 
       await window.getByRole('button', { name: 'New worktree', exact: true }).click()
-      await window.getByLabel('Branch').fill('some-topic')
+      await window.getByLabel('Branch', { exact: true }).fill('some-topic')
       await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
       await shot('closed')
 
@@ -531,7 +614,7 @@ export const scenarios: Scenario[] = [
       await shot('filtered')
 
       await window.getByRole('option', { name: 'release/1.0' }).click()
-      await window.getByLabel('Branch').fill('feature-x')
+      await window.getByLabel('Branch', { exact: true }).fill('feature-x')
       await window.getByRole('combobox').click()
       await window.getByPlaceholder('Search branches…').fill('origin/feature-x')
       await window.getByRole('option', { name: 'origin/feature-x' }).click()
@@ -639,7 +722,7 @@ export const scenarios: Scenario[] = [
       // with the remote branch's own — the folder name already differed by
       // default (#47 is about the branch, not the folder), so this is the
       // part that used to slip through.
-      await window.getByLabel('Branch').fill('renamed-locally')
+      await window.getByLabel('Branch', { exact: true }).fill('renamed-locally')
       await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
       await shot('renaming')
 
@@ -854,7 +937,7 @@ export const scenarios: Scenario[] = [
     drive: async (window, shot) => {
       await window.getByRole('button', { name: /main/ }).first().waitFor()
       await window.getByRole('button', { name: 'New worktree', exact: true }).click()
-      await window.getByLabel('Branch').fill('feature/central')
+      await window.getByLabel('Branch', { exact: true }).fill('feature/central')
       await window.getByTestId('branch-existence').waitFor({ state: 'visible' })
       await window.waitForFunction(() => {
         const input = document.getElementById('worktree-path') as HTMLInputElement | null
@@ -1077,15 +1160,13 @@ export const scenarios: Scenario[] = [
   {
     name: 'diff-panel-hunks',
     description:
-      'Hunk-level staging (#49): a two-hunk unstaged diff, staging just ' +
-      'the top hunk — the file row goes indeterminate and that hunk drops ' +
-      'out of the unstaged view, and the panel offers Unstaged/Staged tabs ' +
-      'now that the file has content on both sides. Switching to Staged ' +
-      'in place shows the hunk that moved, without closing and reopening ' +
-      'the panel (#67 — previously the only way back to the unstaged side, ' +
-      'once anything was staged, was gone for good); switching back and ' +
-      'unstaging it there returns to the same two-hunk unstaged view it ' +
-      'started from, tabs gone again since only one side has content.',
+      'Hunk-level staging (#49) in the unified view (#73): a two-hunk diff ' +
+      'with nothing staged, then the top hunk staged — it stays exactly ' +
+      'where it was, marked with a rail and a Staged badge and its button ' +
+      'flipped to "Unstage hunk", rather than disappearing into a separate ' +
+      'Staged view the way it used to. The file row goes indeterminate ' +
+      'alongside it. Unstaging it there returns the list to the state it ' +
+      'started from.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -1115,32 +1196,20 @@ export const scenarios: Scenario[] = [
       await window
         .locator('[aria-label="f.txt staging state"][data-state="indeterminate"]')
         .waitFor({ state: 'visible' })
-      // The staged hunk's own text is gone from this (still-unstaged) view
-      // once the refetch lands — the clearest signal the panel, not just the
-      // row checkbox, has caught up.
-      await window.getByText('inserted near the top').waitFor({ state: 'detached' })
-      // The file now has content on both sides, so the panel offers its own
-      // way to see the other one — no more relying on re-clicking the row,
-      // which can only ever reopen the side `diffSideFor` prefers.
-      await window.getByRole('tab', { name: 'Staged', exact: true }).waitFor({ state: 'visible' })
-      await shot('one-staged')
-
-      // Flip to the staged side in place — no closing and reopening the panel.
-      await window.getByRole('tab', { name: 'Staged', exact: true }).click()
-      await window.getByRole('button', { name: 'Unstage hunk' }).waitFor({ state: 'visible' })
+      // The point of #73: the staged hunk's own text is still on screen, in
+      // the same list, rather than having moved to a view the user has to go
+      // and find. Waiting on the marked hunk is what says the refetch landed.
+      await window.locator('[data-side="staged"]').waitFor({ state: 'visible' })
       await window.getByText('inserted near the top').waitFor({ state: 'visible' })
-      await shot('switched-to-staged')
+      await window.getByRole('button', { name: 'Unstage hunk' }).waitFor({ state: 'visible' })
+      await shot('one-staged')
 
       await window.getByRole('button', { name: 'Unstage hunk' }).click()
       await window
         .locator('[aria-label="f.txt staging state"][data-state="unchecked"]')
         .waitFor({ state: 'visible' })
-      // Back to one side only, so the tabs go away again, and unstaging the
-      // last staged hunk from within the Staged tab lands back on the
-      // (now-current) unstaged view rather than an empty "No changes".
-      await window.getByRole('tab', { name: 'Staged', exact: true }).waitFor({ state: 'detached' })
+      await window.locator('[data-side="staged"]').waitFor({ state: 'detached' })
       await window.getByRole('button', { name: 'Stage hunk' }).nth(1).waitFor({ state: 'visible' })
-      await window.getByText('inserted near the top').waitFor({ state: 'visible' })
       await shot('after')
     }
   },
@@ -1311,6 +1380,58 @@ export const scenarios: Scenario[] = [
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByText(/No git identity configured/).waitFor({ state: 'visible' })
       await shot('hint')
+    }
+  },
+  {
+    name: 'pull-push',
+    description:
+      'Pull and push in the worktree detail header (#78): a branch behind ' +
+      'its upstream showing Pull alone, since there is nothing to push, the ' +
+      'pull menu holding rebase and merge, both buttons gone once the ' +
+      'branch is level (#79 review — each exists only while it has work to ' +
+      'do), and the offer a diverged branch gets when --ff-only refuses.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+
+      // `main` one commit behind: their push is fetched but not integrated,
+      // which is the state the Pull button exists for.
+      await fixture.commitFromElsewhere('main', 'Pushed while nobody was looking')
+
+      // A second worktree that has moved on both sides at once, so a
+      // fast-forward is genuinely impossible rather than merely unlikely.
+      const diverged = await fixture.addWorktree('diverged', { branch: 'feature/diverged' })
+      await fixture.git(['push', '--set-upstream', 'origin', 'feature/diverged'], diverged)
+      await fixture.commitFromElsewhere('feature/diverged', 'Their commit')
+      await fixture.commit('Our commit', { 'ours.txt': 'ours\n' }, diverged)
+
+      await fixture.git(['fetch', 'origin'])
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('button', { name: 'Pull 1' }).waitFor({ state: 'visible' })
+      await shot('behind')
+
+      await window.getByRole('button', { name: 'Pull options' }).click()
+      await window.getByRole('menu').waitFor({ state: 'visible' })
+      await shot('pull-menu')
+
+      await window.keyboard.press('Escape')
+      await window.getByRole('menu').waitFor({ state: 'detached' })
+      await window.getByRole('button', { name: 'Pull 1' }).click()
+      // The whole pair going away is the branch having caught up, which is a
+      // settled state to wait on rather than the toast, which fades.
+      await window.getByTestId('sync-actions').waitFor({ state: 'detached' })
+      await shot('pulled')
+
+      await window.getByRole('button', { name: /feature\/diverged/ }).click()
+      await window.getByRole('button', { name: 'Pull 1' }).click()
+      await window.getByText('This branch and its upstream have both moved').waitFor({
+        state: 'visible'
+      })
+      await shot('diverged')
     }
   },
   {
@@ -1503,10 +1624,11 @@ export const scenarios: Scenario[] = [
   {
     name: 'stash-list',
     description:
-      "The Working Tree tab's Stash section (#51): empty, one entry after " +
-      'stashing an uncommitted edit through the UI, and the aftermath of a ' +
-      'pop that left conflicts — the stash stays in the list rather than ' +
-      'being silently dropped, and the conflicted file surfaces honestly.',
+      "The Working Tree tab's Stash section (#51): absent entirely while " +
+      'there are no stashes (#76), one entry after stashing an uncommitted ' +
+      'edit through the UI, and the aftermath of a pop that left conflicts ' +
+      '— the stash stays in the list rather than being silently dropped, ' +
+      'and the conflicted file surfaces honestly.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -1518,8 +1640,10 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
       await window.getByRole('tab', { name: 'Working Tree' }).click()
-      await window.getByTestId('stash-section').waitFor({ state: 'visible' })
-      await window.getByText('No stashes.').waitFor({ state: 'visible' })
+      // #76: no stashes means no section at all, so the wait is for the tab
+      // itself to have loaded — waiting on the section would wait forever.
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+      await window.getByTestId('stash-section').waitFor({ state: 'detached' })
       await shot('empty')
 
       // Nothing is checked for staging, so the menu falls back to "Stash all

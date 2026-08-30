@@ -11,7 +11,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { Skeleton } from '@/components/ui/skeleton'
 import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
 import { queryKeys, useStashes } from '@/api/queries'
@@ -99,6 +98,14 @@ function StashRow({
  * the list alone. Switching branches onto conflicting changes also stashes
  * (see `SwitchBranchDialog`), which is what makes this necessary in the same
  * phase — the pop it offers there is never automatic.
+ *
+ * A worktree with no stashes gets no section at all (#76), header included:
+ * most worktrees have none, and a standing "No stashes." under every clean
+ * tree is a line that only ever states the obvious. That extends to the
+ * pending state, which would otherwise flash a header and a skeleton on the
+ * way to showing nothing. An error still renders, under the header, because
+ * "the stash list could not be read" is not the same fact as "there are no
+ * stashes" and hiding it would leave the failure invisible.
  */
 export function StashSection({
   repoPath,
@@ -106,7 +113,7 @@ export function StashSection({
 }: {
   repoPath: string
   worktreePath: string
-}): React.JSX.Element {
+}): React.JSX.Element | null {
   const queryClient = useQueryClient()
   const query = useStashes(worktreePath)
   const entries = query.data ?? []
@@ -117,19 +124,11 @@ export function StashSection({
     queryClient.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
   }
 
+  if (entries.length === 0 && !query.error) return null
+
   return (
     <section className="mt-6" data-testid="stash-section">
       <p className="text-xs font-medium text-muted-foreground">Stash</p>
-
-      {query.isPending && (
-        <div className="mt-2 space-y-2">
-          <Skeleton className="h-8 w-full" />
-        </div>
-      )}
-
-      {!query.isPending && entries.length === 0 && (
-        <p className="mt-1 text-sm text-muted-foreground">No stashes.</p>
-      )}
 
       {entries.length > 0 && (
         <ul data-testid="stash-list" className="mt-1 divide-y overflow-hidden rounded-lg border">

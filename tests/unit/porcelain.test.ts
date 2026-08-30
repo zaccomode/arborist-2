@@ -9,7 +9,9 @@ import {
   parseCommit,
   parseCommitLog,
   parseCommitNumstat,
+  parseBranchState,
   parseRemoteBranchList,
+  parseRemoteBranchRefs,
   parseStashList,
   parseStatus,
   parseUpstreamTrack,
@@ -161,6 +163,105 @@ describe('parseRemoteBranchList', () => {
     const output = 'origin\norigin/main\norigin/feature/x\n'
 
     expect(parseRemoteBranchList(output)).toEqual(['origin/main', 'origin/feature/x'])
+  })
+})
+
+describe('parseRemoteBranchRefs', () => {
+  const line = (ref: string, subject = 'Subject'): string =>
+    [ref, 'a'.repeat(40), 'aaaaaaa', 'Isaac Shea', '2026-08-20T14:00:00+10:00', subject].join(
+      '\u0000'
+    )
+
+  it('reads a ref and its tip commit off one line', () => {
+    expect(parseRemoteBranchRefs(line('origin/feature-x', 'Add the thing'))).toEqual([
+      {
+        ref: 'origin/feature-x',
+        lastCommit: {
+          hash: 'a'.repeat(40),
+          shortHash: 'aaaaaaa',
+          author: 'Isaac Shea',
+          date: '2026-08-20T14:00:00+10:00',
+          subject: 'Add the thing'
+        }
+      }
+    ])
+  })
+
+  it('drops the symbolic HEAD entry under either of the shapes git prints it as', () => {
+    const output = [line('origin'), line('origin/HEAD'), line('origin/main')].join('\n')
+
+    expect(parseRemoteBranchRefs(output).map((branch) => branch.ref)).toEqual(['origin/main'])
+  })
+
+  it('keeps a branch whose tip fields are missing rather than dropping the branch', () => {
+    expect(parseRemoteBranchRefs('origin/feature-x\n')).toEqual([
+      { ref: 'origin/feature-x', lastCommit: null }
+    ])
+  })
+
+  it('keeps a subject containing the field separator out of the picture, since git never prints one', () => {
+    const [branch] = parseRemoteBranchRefs(line('origin/x', 'A subject with, commas and | pipes'))
+
+    expect(branch.lastCommit?.subject).toBe('A subject with, commas and | pipes')
+  })
+})
+
+describe('parseBranchState', () => {
+  it('reads upstream, divergence and the tip commit from one line', () => {
+    const output = [
+      'origin/feature-x',
+      '[ahead 2, behind 1]',
+      'b'.repeat(40),
+      'bbbbbbb',
+      'Isaac Shea',
+      '2026-08-20T14:00:00+10:00',
+      'Ahead two'
+    ].join('\u0000')
+
+    expect(parseBranchState(output)).toEqual({
+      upstream: 'origin/feature-x',
+      track: { ahead: 2, behind: 1, gone: false },
+      lastCommit: {
+        hash: 'b'.repeat(40),
+        shortHash: 'bbbbbbb',
+        author: 'Isaac Shea',
+        date: '2026-08-20T14:00:00+10:00',
+        subject: 'Ahead two'
+      }
+    })
+  })
+
+  it('reports an upstream deleted on the remote as gone', () => {
+    const output = [
+      'origin/x',
+      '[gone]',
+      'c'.repeat(40),
+      'ccccccc',
+      'A',
+      '2026-01-01T00:00:00Z',
+      'S'
+    ].join('\u0000')
+
+    expect(parseBranchState(output).track).toEqual({ ahead: 0, behind: 0, gone: true })
+  })
+
+  it('reads a branch with no upstream configured', () => {
+    const output = ['', '', 'd'.repeat(40), 'ddddddd', 'A', '2026-01-01T00:00:00Z', 'S'].join(
+      '\u0000'
+    )
+
+    expect(parseBranchState(output)).toMatchObject({
+      upstream: null,
+      track: { ahead: 0, behind: 0, gone: false }
+    })
+  })
+
+  it('reads an unborn branch, which git reports as no output at all, as simply having nothing', () => {
+    expect(parseBranchState('')).toEqual({
+      upstream: null,
+      track: { ahead: 0, behind: 0, gone: false },
+      lastCommit: null
+    })
   })
 })
 

@@ -83,6 +83,55 @@ describe('applyHunk', () => {
     expect(await statusPorcelain()).toBe(before)
   }, 30_000)
 
+  /**
+   * #73's note on hunk-identity instability, pinned down. Staging one hunk
+   * can change a *sibling* hunk's `@@` header with no change to the sibling
+   * itself: git updates the old-side line offset and can add a trailing
+   * function-context annotation once something before it in the file has
+   * moved. `DiffHunk.id` is a sha1 over the hunk's raw bytes including that
+   * header (by design, per #49), so the sibling's id changes too.
+   *
+   * That is fine as long as nothing caches an id across a refetch. This
+   * checks the property the unified view depends on: after staging hunk 1,
+   * hunk 2's *freshly re-read* id is the one that works, and the id read
+   * before the stage is correctly rejected as stale rather than applying to
+   * the wrong hunk.
+   */
+  it('re-reads a sibling hunk’s id after staging its neighbour, and rejects the id from before', async () => {
+    const original = Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n') + '\n'
+    await fs.writeFile(join(fixture.repoPath, 'f.txt'), original, 'utf8')
+    await fixture.git(['add', 'f.txt'])
+    await fixture.git(['commit', '-m', 'Add f.txt'])
+
+    const edited = original
+      .split('\n')
+      .flatMap((line, index) => (index === 1 ? ['inserted near the top', line] : [line]))
+      .map((line, index) => (index === 31 ? 'edited near line 30' : line))
+      .join('\n')
+    await fs.writeFile(join(fixture.repoPath, 'f.txt'), edited, 'utf8')
+
+    const request = { kind: 'unstaged' as const, worktreePath: fixture.repoPath, path: 'f.txt' }
+    const before = await service.fileDiff(request)
+    expect(before.hunks).toHaveLength(2)
+    const staleSecondId = before.hunks[1].id!
+
+    await service.applyHunk(fixture.repoPath, { path: 'f.txt' }, before.hunks[0].id!, 'stage')
+
+    const after = await service.fileDiff(request)
+    expect(after.hunks).toHaveLength(1)
+
+    // The header moved, so the id did too — which is exactly why nothing may
+    // hold one across a refetch.
+    expect(after.hunks[0].id).not.toBe(staleSecondId)
+    await expect(
+      service.applyHunk(fixture.repoPath, { path: 'f.txt' }, staleSecondId, 'stage')
+    ).rejects.toMatchObject({ code: 'diff-stale' })
+
+    // The fresh id is the one that works, on the very next action.
+    await service.applyHunk(fixture.repoPath, { path: 'f.txt' }, after.hunks[0].id!, 'stage')
+    expect(await statusPorcelain()).toBe('M  f.txt')
+  }, 30_000)
+
   it('throws diff-stale when the hunk no longer matches the file shown', async () => {
     await fs.writeFile(join(fixture.repoPath, 'README.md'), '# fixture\nedited\n', 'utf8')
     const diff = await service.fileDiff({
