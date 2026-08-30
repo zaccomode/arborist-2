@@ -1503,10 +1503,11 @@ export const scenarios: Scenario[] = [
   {
     name: 'stash-list',
     description:
-      "The Working Tree tab's Stash section (#51): empty, one entry after " +
-      'stashing an uncommitted edit through the UI, and the aftermath of a ' +
-      'pop that left conflicts — the stash stays in the list rather than ' +
-      'being silently dropped, and the conflicted file surfaces honestly.',
+      "The Working Tree tab's Stash section (#51): absent entirely while " +
+      'there are no stashes (#76), one entry after stashing an uncommitted ' +
+      'edit through the UI, and the aftermath of a pop that left conflicts ' +
+      '— the stash stays in the list rather than being silently dropped, ' +
+      'and the conflicted file surfaces honestly.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -1518,8 +1519,10 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
       await window.getByRole('tab', { name: 'Working Tree' }).click()
-      await window.getByTestId('stash-section').waitFor({ state: 'visible' })
-      await window.getByText('No stashes.').waitFor({ state: 'visible' })
+      // #76: no stashes means no section at all, so the wait is for the tab
+      // itself to have loaded — waiting on the section would wait forever.
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+      await window.getByTestId('stash-section').waitFor({ state: 'detached' })
       await shot('empty')
 
       // Nothing is checked for staging, so the menu falls back to "Stash all
