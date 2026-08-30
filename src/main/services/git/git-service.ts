@@ -35,6 +35,7 @@ import {
   type DiffRequest,
   type FileDiff
 } from '../../../shared/diff'
+import { pullArgsFor, type PullMode, type PullResult } from '../../../shared/sync'
 import { worktreeBasePath, type ResolvedLocation } from '../../../shared/worktree-location'
 import { sortChangedFiles, stagePathsFor } from '../../../shared/working-tree'
 import type { GitRunner } from './git-runner'
@@ -52,6 +53,7 @@ import {
   LOG_FORMAT,
   LOG_RECORD_SEPARATOR,
   REMOTE_BRANCH_FORMAT,
+  parseAheadBehind,
   parseBranchList,
   parseBranchState,
   parseBranchUpstreams,
@@ -399,6 +401,65 @@ export class GitService {
       )
     }
     throw new AppError(result.stderr.trim() || 'git push failed', 'git-command-failed')
+  }
+
+  /**
+   * `git pull`, in whichever of the three modes the caller picked — see
+   * `PullMode`. Failure is classified by re-reading git's own state rather
+   * than by matching its stderr, the same way `#stashApplyLike` does:
+   *
+   * - Unmerged records in status means the pull got as far as a content
+   *   merge and left conflicts, which the Conflicts section already knows
+   *   how to abort or continue. That is a result, not an error.
+   * - `--ff-only` refusing on a branch that has diverged is likewise a
+   *   result: `rev-list --left-right` answers "have both sides moved" as
+   *   data, and the caller turns a `diverged` into the offer of a rebase or
+   *   a merge instead of a dead end.
+   *
+   * Anything else is a real failure and throws. `isAuthFailure` is reused
+   * for the message only, exactly as `fetchAll` and `push` do.
+   */
+  async pull(worktreePath: string, mode: PullMode): Promise<PullResult> {
+    this.#suppressWatcher(worktreePath)
+    const result = await this.#git.run(pullArgsFor(mode), {
+      repoPath: worktreePath,
+      timeoutMs: FETCH_TIMEOUT_MS
+    })
+    if (result.exitCode === 0) return { conflict: false, diverged: false }
+
+    if (isAuthFailure(result.stderr)) {
+      throw new AppError(
+        'Arborist uses your system git credentials; pull from a terminal to check them.',
+        'pull-auth-failed'
+      )
+    }
+
+    const status = await this.workingTreeChanges(worktreePath)
+    if (status.files.some((file) => file.kind === 'unmerged')) {
+      return { conflict: true, diverged: false }
+    }
+
+    if (mode === 'ff-only' && (await this.#hasDiverged(worktreePath))) {
+      return { conflict: false, diverged: true }
+    }
+
+    throw new AppError(result.stderr.trim() || 'git pull failed', 'git-command-failed')
+  }
+
+  /**
+   * Whether HEAD and its upstream have both moved since they last agreed,
+   * which is the one thing `--ff-only` cannot get past. Run only after a
+   * refused fast-forward, so the cost lands on the failure rather than on
+   * every pull.
+   */
+  async #hasDiverged(worktreePath: string): Promise<boolean> {
+    const { exitCode, stdout } = await this.#git.run(
+      ['rev-list', '--count', '--left-right', 'HEAD...@{upstream}'],
+      { repoPath: worktreePath }
+    )
+    if (exitCode !== 0) return false
+    const counts = parseAheadBehind(stdout)
+    return counts !== null && counts.ahead > 0 && counts.behind > 0
   }
 
   /**

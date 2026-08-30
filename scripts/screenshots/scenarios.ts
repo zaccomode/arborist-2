@@ -1397,6 +1397,58 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'pull-push',
+    description:
+      'Pull and push in the worktree detail header (#78): a branch behind ' +
+      'its upstream with Pull offering the count and Push disabled at zero, ' +
+      'the pull menu holding rebase and merge, the branch level again after ' +
+      'a fast-forward, and the offer a diverged branch gets when --ff-only ' +
+      'refuses.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+
+      // `main` one commit behind: their push is fetched but not integrated,
+      // which is the state the Pull button exists for.
+      await fixture.commitFromElsewhere('main', 'Pushed while nobody was looking')
+
+      // A second worktree that has moved on both sides at once, so a
+      // fast-forward is genuinely impossible rather than merely unlikely.
+      const diverged = await fixture.addWorktree('diverged', { branch: 'feature/diverged' })
+      await fixture.git(['push', '--set-upstream', 'origin', 'feature/diverged'], diverged)
+      await fixture.commitFromElsewhere('feature/diverged', 'Their commit')
+      await fixture.commit('Our commit', { 'ours.txt': 'ours\n' }, diverged)
+
+      await fixture.git(['fetch', 'origin'])
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('button', { name: 'Pull 1' }).waitFor({ state: 'visible' })
+      await shot('behind')
+
+      await window.getByRole('button', { name: 'Pull options' }).click()
+      await window.getByRole('menu').waitFor({ state: 'visible' })
+      await shot('pull-menu')
+
+      await window.keyboard.press('Escape')
+      await window.getByRole('menu').waitFor({ state: 'detached' })
+      await window.getByRole('button', { name: 'Pull 1' }).click()
+      // The label losing its count is the branch having caught up, which is
+      // a settled state to wait on rather than the toast, which fades.
+      await window.getByRole('button', { name: 'Pull', exact: true }).waitFor({ state: 'visible' })
+      await shot('pulled')
+
+      await window.getByRole('button', { name: /feature\/diverged/ }).click()
+      await window.getByRole('button', { name: 'Pull 1' }).click()
+      await window.getByText('This branch and its upstream have both moved').waitFor({
+        state: 'visible'
+      })
+      await shot('diverged')
+    }
+  },
+  {
     name: 'push-button',
     description:
       'The push button in both states it appears: counting commits ahead ' +

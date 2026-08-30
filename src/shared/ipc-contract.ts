@@ -22,6 +22,7 @@ import type { BranchSwitchPlan } from './branch-switch'
 import type { ConflictOperation, ConflictState } from './conflicts'
 import type { DiffRequest, FileDiff } from './diff'
 import type { Preset, ProjectSettings, Repository, SelectionState, Settings } from './persisted'
+import type { PullMode, PullResult } from './sync'
 import type { AutomationEvent } from './automation'
 import type { PresetCatalogue, PresetRunResult, ResolvedPreset } from './presets'
 import type { SubstitutionValues } from './substitution'
@@ -103,6 +104,18 @@ export interface IpcInvokeContract {
   'workingTree:push': {
     args: [worktreePath: string, branch: string, setUpstream: boolean]
     result: void
+  }
+  /**
+   * `git pull`, in one of the three modes `PullMode` describes. Neither of
+   * `PullResult`'s two flags is an error: `conflict` means the pull reached a
+   * content merge and left `u` records for the Conflicts section, and
+   * `diverged` means `--ff-only` refused because both sides have moved, which
+   * is what the renderer turns into the offer of a rebase or a merge. A real
+   * failure throws.
+   */
+  'workingTree:pull': {
+    args: [worktreePath: string, mode: PullMode]
+    result: PullResult
   }
   /** Whether `user.email` is configured — a warning under the commit box, never a block. */
   'workingTree:hasIdentity': { args: [worktreePath: string]; result: boolean }
@@ -341,6 +354,7 @@ const CHANNELS: Record<IpcChannel, true> = {
   'workingTree:discard': true,
   'workingTree:commit': true,
   'workingTree:push': true,
+  'workingTree:pull': true,
   'workingTree:hasIdentity': true,
   'conflicts:state': true,
   'conflicts:keepOurs': true,

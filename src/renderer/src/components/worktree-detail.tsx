@@ -17,6 +17,7 @@ import { CopyableError } from '@/components/copyable-error'
 import { NotesEditor } from '@/components/notes-editor'
 import { OpenInGrid } from '@/components/open-in-grid'
 import { SwitchBranchDialog } from '@/components/switch-branch-dialog'
+import { SyncActions } from '@/components/sync-actions'
 import { WorkingTreeTab } from '@/components/working-tree-tab'
 import { invoke } from '@/api/client'
 import { useWorktreeTab } from '@/state/selection'
@@ -69,6 +70,7 @@ export function WorktreeDetail({
               {worktree.path}
             </button>
           </div>
+          <SyncActions repoPath={project.path} worktree={worktree} />
           <Button
             variant="ghost"
             size="icon-sm"

@@ -122,6 +122,7 @@ export function registerIpcHandlers({
   handle('workingTree:push', (worktreePath, branch, setUpstream) =>
     gitService.push(worktreePath, branch, setUpstream)
   )
+  handle('workingTree:pull', (worktreePath, mode) => gitService.pull(worktreePath, mode))
   handle('workingTree:hasIdentity', (worktreePath) => gitService.hasIdentity(worktreePath))
   handle('conflicts:state', (worktreePath) => gitService.conflictState(worktreePath))
   handle('conflicts:keepOurs', (worktreePath, path) => gitService.keepOurs(worktreePath, path))
