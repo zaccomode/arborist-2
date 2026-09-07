@@ -3,7 +3,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { describe, it, expect } from 'vitest'
 import { AppError } from '../../src/shared/errors'
-import { execGitAt, gitEnv, isTransientSpawnCode } from '../../src/main/services/git/git-executor'
+import { execGitAt, gitEnv } from '../../src/main/services/git/git-executor'
 
 // The executor's contract is about process handling, not about git itself, so
 // these drive it with node as a stand-in for a git binary that behaves however
@@ -78,27 +78,6 @@ describe('execGitAt', () => {
     expect((error as AppError).code).toBe('git-unavailable')
 
     await rm(dir, { recursive: true, force: true })
-  })
-})
-
-describe('isTransientSpawnCode', () => {
-  /**
-   * The retry is deliberately narrow. `ENOENT` and `EACCES` are facts about
-   * the binary that will not change on a second attempt, so retrying them
-   * would double the wait before telling the user their git is missing.
-   */
-  it('covers the resource-exhaustion errnos and nothing else', () => {
-    for (const code of ['EBADF', 'EMFILE', 'ENFILE', 'EAGAIN']) {
-      expect(isTransientSpawnCode(code)).toBe(true)
-    }
-    for (const code of ['ENOENT', 'EACCES', 'ENOTDIR', 'ABORT_ERR']) {
-      expect(isTransientSpawnCode(code)).toBe(false)
-    }
-  })
-
-  it('ignores a numeric exit code, which is an exit rather than a spawn failure', () => {
-    expect(isTransientSpawnCode(128)).toBe(false)
-    expect(isTransientSpawnCode(undefined)).toBe(false)
   })
 })
 

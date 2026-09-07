@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Worktree } from '@shared/domain'
 import { validateBranchName } from '@shared/branch-name'
+import { resolveSwitchTarget } from '@shared/branch-switch'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -54,6 +55,11 @@ interface Conflict {
  * the same two-stage shape `DeleteWorktreeDialogs` uses — and offers no force
  * or discard option: deleting work behind one confirmation isn't something
  * this app should do.
+ *
+ * The picker lists remote branches as well as local ones, remote first, and
+ * `resolveSwitchTarget` turns whatever was picked or typed into the branch to
+ * end up on plus how to get there — see its doc comment for what "prefer the
+ * remote" does and does not mean here (#86).
  */
 export function SwitchBranchDialog({
   open,
@@ -82,29 +88,40 @@ export function SwitchBranchDialog({
   const [busy, setBusy] = useState(false)
   const [conflict, setConflict] = useState<Conflict | null>(null)
 
-  const options: BaseRefOption[] = (localBranches.data ?? [])
-    .filter((entry) => entry.name !== worktree.branch)
-    .map((entry) => ({ value: entry.name, label: entry.name, group: 'local' as const }))
+  const localNames = (localBranches.data ?? []).map((entry) => entry.name)
+  const remoteRefs = remoteBranches.data ?? []
 
-  // Whether the typed name is a branch that doesn't exist yet, rather than
-  // one picked from `options` — the create-a-new-branch flow (#69 review).
-  // Checked against every local branch, not just `options`: typing the
-  // worktree's own current branch is an existing branch too, even though
-  // it's excluded from the picker above.
+  const options: BaseRefOption[] = [
+    // A remote branch whose short name is already a local branch would be a
+    // second row for the same switch — `listRemoteBranches` has already
+    // dropped the ones checked out in a worktree, and this drops the rest.
+    ...remoteRefs
+      .filter((entry) => !localNames.includes(entry.shortName))
+      .map((entry) => ({ value: entry.name, label: entry.name, group: 'remote' as const })),
+    ...localNames
+      .filter((name) => name !== worktree.branch)
+      .map((name) => ({ value: name, label: name, group: 'local' as const }))
+  ]
+
+  // What the picked or typed name actually means: which branch to end up on,
+  // whether it has to be created first, and from where. `create` being
+  // non-null is the create-a-new-branch flow (#69 review), and `tracking`
+  // says a remote branch is supplying the start point rather than the Base
+  // picker (#86).
+  const target = resolveSwitchTarget(branch, localNames, remoteRefs, newBranchBase || null)
+  // Held back until both lists are in: a name typed while the remote list is
+  // still loading would otherwise be offered a Base picker for one moment and
+  // a remote to track the next.
   const isNewBranch =
-    branch.trim().length > 0 &&
-    !localBranches.isPending &&
-    !(localBranches.data ?? []).some((entry) => entry.name === branch)
-  const newBranchValidation = isNewBranch ? validateBranchName(branch) : null
+    !localBranches.isPending && !remoteBranches.isPending && target.create !== null
+  // The remote ref a picked row carries is git's to validate, not this — only
+  // a name someone typed can be one git would refuse.
+  const newBranchValidation = isNewBranch ? validateBranchName(target.branch) : null
 
   const baseOptions: BaseRefOption[] = [
     { value: '', label: `HEAD${worktree.branch ? ` (${worktree.branch})` : ''}`, group: 'head' },
-    ...(localBranches.data ?? []).map((entry) => ({
-      value: entry.name,
-      label: entry.name,
-      group: 'local' as const
-    })),
-    ...(remoteBranches.data ?? []).map((entry) => ({
+    ...localNames.map((name) => ({ value: name, label: name, group: 'local' as const })),
+    ...remoteRefs.map((entry) => ({
       value: entry.name,
       label: entry.name,
       group: 'remote' as const
@@ -133,17 +150,22 @@ export function SwitchBranchDialog({
     // is exactly the query this switch just made stale.
     queryClient.invalidateQueries({ queryKey: ['commits', repoPath] })
     queryClient.invalidateQueries({ queryKey: queryKeys.localBranches(repoPath) })
+    // Creating a local branch from a remote one takes that remote branch out
+    // of the sidebar's Remote Branches list, which now has a worktree on it.
+    queryClient.invalidateQueries({ queryKey: queryKeys.remoteBranches(repoPath) })
     closeInspector()
   }
 
   const finishSwitch = async (
-    target: string,
+    branchName: string,
     carriesChanges: boolean,
-    create: CreateOption
+    create: CreateOption,
+    tracking: string | null
   ): Promise<void> => {
-    await invoke('branches:switch', worktree.path, target, create)
+    await invoke('branches:switch', worktree.path, branchName, create)
     afterSwitch()
-    if (create) toast(`Created ${target} and switched to it.`)
+    if (create && tracking) toast(`Created ${branchName}, tracking ${tracking}.`)
+    else if (create) toast(`Created ${branchName} and switched to it.`)
     else if (carriesChanges) toast('Your uncommitted changes came with you.')
     setOpen(false)
   }
@@ -157,15 +179,21 @@ export function SwitchBranchDialog({
     }
     setError(null)
     setBusy(true)
-    const create: CreateOption = isNewBranch ? { startPoint: newBranchBase || null } : null
+    const create: CreateOption = target.create
     try {
-      const plan = await invoke('branches:switchPrecheck', repoPath, worktree.path, branch, create)
+      const plan = await invoke(
+        'branches:switchPrecheck',
+        repoPath,
+        worktree.path,
+        target.branch,
+        create
+      )
       switch (plan.outcome) {
         case 'branch-missing':
           setError('That branch no longer exists.')
           break
         case 'in-use':
-          setError(`${branch} is already checked out at ${plan.path}.`)
+          setError(`${target.branch} is already checked out at ${plan.path}.`)
           break
         case 'unmerged':
           setError('Resolve the unmerged files in the Working Tree tab before switching branches.')
@@ -173,11 +201,11 @@ export function SwitchBranchDialog({
         case 'conflicting':
           // Hands off to the AlertDialog below rather than stacking under it
           // — captured first, since closing resets `branch`.
-          setConflict({ branch, paths: plan.paths, create })
+          setConflict({ branch: target.branch, paths: plan.paths, create })
           setOpen(false)
           break
         case 'clear':
-          await finishSwitch(branch, plan.carriesChanges, create)
+          await finishSwitch(target.branch, plan.carriesChanges, create, target.tracking)
           break
       }
     } catch (cause) {
@@ -236,8 +264,9 @@ export function SwitchBranchDialog({
                 value={branch}
                 onChange={setBranch}
                 options={options}
-                loading={localBranches.isPending}
+                loading={localBranches.isPending || remoteBranches.isPending}
                 allowCreate
+                remoteFirst
               />
               {isNewBranch && newBranchValidation?.valid === false && (
                 <p data-testid="switch-branch-new-name-error" className="text-xs text-destructive">
@@ -245,17 +274,17 @@ export function SwitchBranchDialog({
                 </p>
               )}
               {isNewBranch && newBranchValidation?.valid && (
-                <p className="text-xs text-muted-foreground">
-                  New branch — created from{' '}
-                  {newBranchBase
-                    ? newBranchBase
-                    : `HEAD${worktree.branch ? ` (${worktree.branch})` : ''}`}
-                  .
+                <p data-testid="switch-branch-plan" className="text-xs text-muted-foreground">
+                  {target.tracking
+                    ? `New branch ${target.branch} — created from ${target.tracking} and tracking it.`
+                    : `New branch — created from ${
+                        newBranchBase || `HEAD${worktree.branch ? ` (${worktree.branch})` : ''}`
+                      }.`}
                 </p>
               )}
             </div>
 
-            {isNewBranch && newBranchValidation?.valid && (
+            {isNewBranch && !target.tracking && newBranchValidation?.valid && (
               <div className="mt-4 space-y-2">
                 <Label htmlFor="switch-branch-base">Base</Label>
                 <BranchCombobox

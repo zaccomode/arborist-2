@@ -4,7 +4,7 @@ import { watch as watchPaths, type FSWatcher } from 'chokidar'
 import type { WorktreeChangeReason } from '../../../shared/ipc-contract'
 import { createDebouncer, type Debouncer } from '../../../shared/debounce'
 import type { GitRunner } from '../git/git-runner'
-import { buildIgnorePredicate, parseIgnoredDirectories } from './ignore'
+import { buildIgnorePredicate, MAX_WATCHED_DIRECTORIES, parseIgnoredDirectories } from './ignore'
 import { reasonForGitPath, resolveGitWatchPaths } from './git-paths'
 
 const TRAILING_DEBOUNCE_MS = 250
@@ -99,7 +99,10 @@ function onceReady(watcher: FSWatcher): Promise<void> {
  * - The worktree tree itself, recursively, ignoring `.git`, a hardcoded
  *   floor of build/dependency directories, and whatever `git` itself says is
  *   ignored at the top level (see `ignore.ts`) — the reason a large repo
- *   with a real `.gitignore` doesn't melt this.
+ *   with a real `.gitignore` doesn't melt this. Capped at
+ *   `MAX_WATCHED_DIRECTORIES` on top of that, because one watch is one file
+ *   descriptor and a monorepo has more directories than the process has
+ *   descriptors to give (#83).
  * - Git's own metadata, as four paths resolved per worktree (see
  *   `git-paths.ts`) rather than `.git` recursively, which fires hundreds of
  *   times during a fetch or a gc. Resolving them matters because a linked
@@ -217,7 +220,15 @@ export class WorktreeWatcher {
     this.#ignoredDirectories = await this.#listIgnoredDirectories(target)
     if (!isCurrent()) return
 
-    const ignored = buildIgnorePredicate(target, () => this.#ignoredDirectories)
+    const ignored = buildIgnorePredicate(target, () => this.#ignoredDirectories, {
+      max: MAX_WATCHED_DIRECTORIES,
+      onExhausted: () =>
+        console.warn(
+          `[watcher] ${target} has more than ${MAX_WATCHED_DIRECTORIES} directories; ` +
+            'watching stops there so the app keeps its file descriptors (#83). ' +
+            'Refresh, or refocus the window, to re-read the rest.'
+        )
+    })
     const treeWatcher = watchPaths(target, {
       ignoreInitial: true,
       ignored,

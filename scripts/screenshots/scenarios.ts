@@ -107,6 +107,23 @@ async function expectLastWorktreeRow(window: Page, title: string): Promise<void>
 }
 
 /**
+ * Scrolls the sidebar's own list — the scroll container the two headings
+ * stick inside — to the bottom, and waits for it to be there. Waiting on the
+ * settled `scrollTop` rather than on the assignment returning is what keeps a
+ * capture of a pinned heading from racing the scroll it is showing.
+ */
+async function scrollSidebarToBottom(window: Page): Promise<void> {
+  const selector = '[data-testid="sidebar-scroll"]'
+  await window.locator(selector).evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+  })
+  await window.waitForFunction((sel) => {
+    const element = document.querySelector(sel)
+    return element !== null && element.scrollTop + element.clientHeight >= element.scrollHeight - 1
+  }, selector)
+}
+
+/**
  * Seeds `arborist-data.json` with a repository already registered, so the
  * scenario opens straight to it rather than going through the folder
  * picker — which frees `ARBORIST_PICK_FOLDER` for a scenario that also
@@ -318,6 +335,56 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'sticky-headings',
+    description:
+      'The two sidebar headings on the way past (#80). At the top, Worktrees ' +
+      'heads its own list as before; scrolled to the branches, the Remote ' +
+      'Branches heading has arrived over it and taken its place, rather than ' +
+      'a fixed "Worktrees" sitting above a list of branches.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      // Enough of each list to overflow the sidebar, which is the only state
+      // in which a sticky heading is visibly doing anything at all.
+      for (const name of ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf']) {
+        await fixture.addWorktree(name, { branch: `feature/${name}` })
+      }
+      // More branches than the sidebar is tall, so the Remote Branches
+      // heading can actually reach the top: a list that fits leaves the
+      // heading partway down the panel with nothing to swap.
+      for (const name of [
+        'hotel',
+        'india',
+        'juliet',
+        'kilo',
+        'lima',
+        'mike',
+        'november',
+        'oscar',
+        'papa',
+        'quebec',
+        'romeo',
+        'sierra'
+      ]) {
+        await fixture.commitFromElsewhere(`feature/${name}`, `Pushed ${name}`)
+      }
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Fetch' }).click()
+      await window.getByRole('button', { name: /origin\/feature\/sierra/ }).waitFor({
+        state: 'visible'
+      })
+      await shot('top')
+
+      await scrollSidebarToBottom(window)
+      await shot('scrolled')
+    }
+  },
+  {
     name: 'worktree-detail',
     description:
       'The worktree detail pane across its three tabs: Overview (with the ' +
@@ -355,11 +422,10 @@ export const scenarios: Scenario[] = [
   {
     name: 'recent-commits',
     description:
-      "The flat Recent Commits list — RemoteBranchDetail's own, for a " +
-      'remote branch with no local checkout, which stays a plain list ' +
-      "rather than a lane graph since there's only the one ref to show: " +
-      'cards with the shortstat line, and load more revealing the page ' +
-      'behind it.',
+      'Recent Commits on a remote branch with no local checkout: the same ' +
+      'lane graph the worktree Commit Graph tab draws (#81), load more ' +
+      'revealing the page behind it, and a row opening the commit ' +
+      'inspector beside it.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -384,12 +450,18 @@ export const scenarios: Scenario[] = [
       })
       await window.getByRole('button', { name: /origin\/feature-remote/ }).click()
       await window.getByTestId('remote-branch-detail').waitFor({ state: 'visible' })
-      await window.getByTestId('recent-commits').waitFor({ state: 'visible' })
+      await window.getByTestId('commit-graph-rows').waitFor({ state: 'visible' })
       await shot('list')
 
       await window.getByRole('button', { name: 'Load more' }).click()
       await window.getByRole('button', { name: 'Load more' }).waitFor({ state: 'detached' })
       await shot('loaded-more')
+
+      // #81: the rows are click-through now, into the same third panel the
+      // worktree graph opens.
+      await window.getByTestId('commit-graph-rows').getByRole('button').first().click()
+      await window.getByTestId('commit-files').waitFor({ state: 'visible' })
+      await shot('inspector')
     }
   },
   {
@@ -1571,6 +1643,49 @@ export const scenarios: Scenario[] = [
         .getByText('Your uncommitted changes came with you.')
         .waitFor({ state: 'visible' })
       await shot('clean-switch')
+    }
+  },
+  {
+    name: 'switch-branch-remote',
+    description:
+      'Switching to a branch that only exists on the remote (#86): the ' +
+      'picker listing remote branches above local ones, the plan line that ' +
+      'appears once one is picked — a local branch created from the remote ' +
+      'ref and tracking it, with no Base picker to answer, since the base is ' +
+      'already decided — and the worktree afterwards, on the new branch.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      // One branch on each side, so the picker has both groups to order.
+      await fixture.git(['branch', 'feature-local'])
+      await fixture.commitFromElsewhere('feature-remote', 'Pushed from elsewhere')
+      await fixture.git(['fetch', 'origin'])
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'Worktree actions' }).click()
+      await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
+      await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
+      await window.getByRole('combobox').first().click()
+      await window.getByRole('option', { name: 'origin/feature-remote' }).waitFor({
+        state: 'visible'
+      })
+      await shot('picker')
+
+      await window.getByRole('option', { name: 'origin/feature-remote' }).click()
+      await window.getByTestId('switch-branch-plan').waitFor({ state: 'visible' })
+      await shot('tracking')
+
+      await window.getByRole('button', { name: 'Create and switch' }).click()
+      await window
+        .getByTestId('worktree-detail')
+        .filter({ hasText: 'feature-remote' })
+        .waitFor({ state: 'visible' })
+      await shot('after')
     }
   },
   {

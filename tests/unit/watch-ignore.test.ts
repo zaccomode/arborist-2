@@ -1,6 +1,10 @@
 import { join, sep } from 'path'
 import { describe, it, expect } from 'vitest'
-import { buildIgnorePredicate, parseIgnoredDirectories } from '../../src/main/services/watch/ignore'
+import {
+  buildIgnorePredicate,
+  MAX_WATCHED_DIRECTORIES,
+  parseIgnoredDirectories
+} from '../../src/main/services/watch/ignore'
 
 describe('parseIgnoredDirectories', () => {
   it('splits the null-separated output and strips trailing slashes', () => {
@@ -64,6 +68,83 @@ describe('buildIgnorePredicate', () => {
     const ignored = buildIgnorePredicate(root, () => ['packages/legacy/build'])
     expect(ignored(path('packages', 'legacy', 'build', 'out.js'))).toBe(true)
     expect(ignored(path('packages', 'legacy', 'src', 'index.js'))).toBe(false)
+  })
+
+  /**
+   * #83. Chokidar opens one `fs.watch`, and so holds one file descriptor,
+   * per directory it watches. A monorepo has more directories than the
+   * process has descriptors, and the first thing to notice is whatever the
+   * user asked to spawn next — "Open in VS Code" failing with `spawn EBADF`.
+   */
+  describe('the directory budget', () => {
+    const dir = { isDirectory: () => true }
+    const file = { isDirectory: () => false }
+
+    it('admits directories up to the budget and refuses the ones past it', () => {
+      const ignored = buildIgnorePredicate(root, () => [], { max: 2 })
+
+      expect(ignored(path('a'), dir)).toBe(false)
+      expect(ignored(path('b'), dir)).toBe(false)
+      expect(ignored(path('c'), dir)).toBe(true)
+    })
+
+    it('spends the budget once per directory, however often chokidar re-reads it', () => {
+      const ignored = buildIgnorePredicate(root, () => [], { max: 2 })
+
+      expect(ignored(path('a'), dir)).toBe(false)
+      expect(ignored(path('a'), dir)).toBe(false)
+      expect(ignored(path('b'), dir)).toBe(false)
+    })
+
+    // A file costs no watch of its own: chokidar hears about it through the
+    // watch on the directory holding it.
+    it('never counts a file, and never refuses one on the budget', () => {
+      const ignored = buildIgnorePredicate(root, () => [], { max: 1 })
+
+      expect(ignored(path('a'), dir)).toBe(false)
+      expect(ignored(path('a', 'one.ts'), file)).toBe(false)
+      expect(ignored(path('b', 'two.ts'), file)).toBe(false)
+    })
+
+    // Chokidar asks about a path both with and without stats; only the call
+    // that says "this is a directory" is one this can act on.
+    it('leaves a call with no stats alone rather than guessing', () => {
+      const ignored = buildIgnorePredicate(root, () => [], { max: 0 })
+
+      expect(ignored(path('a'))).toBe(false)
+      expect(ignored(path('a'), dir)).toBe(true)
+    })
+
+    it('says so once, not once per directory it then refuses', () => {
+      let calls = 0
+      const ignored = buildIgnorePredicate(root, () => [], {
+        max: 1,
+        onExhausted: () => calls++
+      })
+
+      ignored(path('a'), dir)
+      ignored(path('b'), dir)
+      ignored(path('c'), dir)
+
+      expect(calls).toBe(1)
+    })
+
+    it('leaves every repository below the cap watched exactly as before', () => {
+      const ignored = buildIgnorePredicate(root, () => [], { max: MAX_WATCHED_DIRECTORIES })
+
+      for (let i = 0; i < MAX_WATCHED_DIRECTORIES; i++) {
+        expect(ignored(path('pkg', String(i)), dir)).toBe(false)
+      }
+    })
+
+    it('still ignores .git and the floor without spending any budget on them', () => {
+      const ignored = buildIgnorePredicate(root, () => [], { max: 1 })
+
+      expect(ignored(path('.git'), dir)).toBe(true)
+      expect(ignored(path('node_modules'), dir)).toBe(true)
+      expect(ignored(path('src'), dir)).toBe(false)
+      expect(ignored(path('lib'), dir)).toBe(true)
+    })
   })
 
   /**

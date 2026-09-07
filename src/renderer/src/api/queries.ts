@@ -78,6 +78,10 @@ export function useFetch(): UseMutationResult<void, Error, string> {
     onSuccess: (_result, repoPath) => {
       client.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
       client.invalidateQueries({ queryKey: queryKeys.remoteBranches(repoPath) })
+      // A fetch moves the remote-tracking refs, so every open commit query on
+      // this repository resets to page 0 — see `useCommitLog` on why resetting
+      // rather than patching a page is what keeps `--skip` paging safe.
+      client.invalidateQueries({ queryKey: ['commits', repoPath] })
     }
   })
 }

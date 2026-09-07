@@ -40,6 +40,7 @@ import { samePath } from '@/lib/paths'
 import { showErrorToast } from '@/lib/error-toast'
 import { useListSearchBox } from '@/state/list-search'
 import {
+  useRemoteBranchCommit,
   useSelection,
   useSelectedRemoteBranch,
   useSelectedWorktree,
@@ -130,6 +131,16 @@ function App(): React.JSX.Element | null {
     selected?.id ?? '',
     worktree?.path ?? ''
   )
+  // A remote branch's own commit graph (#81) opens the same inspector, keyed
+  // by branch name instead — the two selections are mutually exclusive, so at
+  // most one of these ever names a commit.
+  const [remoteBranchCommit, , closeRemoteBranchCommit] = useRemoteBranchCommit(
+    selected?.id ?? '',
+    selectedRemoteBranchName ?? ''
+  )
+  const inspectedCommit = inspector?.kind === 'commit' ? inspector.hash : remoteBranchCommit
+  const closeInspectedCommit =
+    inspector?.kind === 'commit' ? closeInspector : closeRemoteBranchCommit
   // Only for `origPath`, so a rename's diff keeps rename detection — the
   // Working Tree tab already has this data loaded, and React Query shares
   // the cache rather than firing a second request.
@@ -394,8 +405,15 @@ function App(): React.JSX.Element | null {
               <WorktreeDetail
                 worktree={worktree}
                 project={selected}
-                refreshing={worktrees.isFetching}
+                refreshing={worktrees.isFetching || fetchProject.isPending}
                 onRefresh={() => {
+                  // Asks the remote first (#82). The chips this refreshes are
+                  // mostly about the upstream — "↑2 ↓1 from origin/main" — and
+                  // re-reading them without fetching only ever re-reported
+                  // what the last fetch happened to have seen. A repository
+                  // with no remote fetches nothing and says nothing, so the
+                  // button still works locally.
+                  handleFetch(selected.path)
                   void worktrees.refetch()
                   // The watcher (#50) covers a change made outside Arborist
                   // automatically, but stays off in a screenshot/e2e run
@@ -423,12 +441,12 @@ function App(): React.JSX.Element | null {
           </>
         }
         inspector={
-          inspector?.kind === 'commit' && repoPath ? (
+          inspectedCommit && repoPath ? (
             <CommitInspector
-              key={inspector.hash}
+              key={inspectedCommit}
               repoPath={repoPath}
-              hash={inspector.hash}
-              onClose={closeInspector}
+              hash={inspectedCommit}
+              onClose={closeInspectedCommit}
             />
           ) : (
             diffRequest && (

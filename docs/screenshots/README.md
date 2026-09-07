@@ -8,10 +8,11 @@ Every capture below is deterministic: a scenario builds its own fixture reposito
 
 ## The shell
 
-| Scenario                                                                                       | Dark                            | Light                            |
-| ---------------------------------------------------------------------------------------------- | ------------------------------- | -------------------------------- |
-| `shell` — the two-pane shell as the app opens, with no project. Compare against `concept.png`. | ![](./shell-dark.png)           | ![](./shell-light.png)           |
-| `worktree-badges` — the sidebar over the full badge matrix.                                    | ![](./worktree-badges-dark.png) | ![](./worktree-badges-light.png) |
+| Scenario                                                                                       | Dark                                     | Light                                     |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------- | ----------------------------------------- |
+| `shell` — the two-pane shell as the app opens, with no project. Compare against `concept.png`. | ![](./shell-dark.png)                    | ![](./shell-light.png)                    |
+| `worktree-badges` — the sidebar over the full badge matrix.                                    | ![](./worktree-badges-dark.png)          | ![](./worktree-badges-light.png)          |
+| `sticky-headings` — Remote Branches pinned in place of Worktrees, scrolled                     | ![](./sticky-headings-scrolled-dark.png) | ![](./sticky-headings-scrolled-light.png) |
 
 ## Projects
 
@@ -24,16 +25,19 @@ Every capture below is deterministic: a scenario builds its own fixture reposito
 
 ## Worktrees
 
-| Scenario                                              | Dark                                     | Light                                     |
-| ----------------------------------------------------- | ---------------------------------------- | ----------------------------------------- |
-| `worktree-detail` — ahead and behind its upstream     | ![](./worktree-detail-tracking-dark.png) | ![](./worktree-detail-tracking-light.png) |
-| `worktree-detail` — with a note                       | ![](./worktree-detail-notes-dark.png)    | ![](./worktree-detail-notes-light.png)    |
-| `worktree-detail` — folder missing                    | ![](./worktree-detail-prunable-dark.png) | ![](./worktree-detail-prunable-light.png) |
-| `create-worktree` — before                            | ![](./create-worktree-before-dark.png)   | ![](./create-worktree-before-light.png)   |
-| `create-worktree` — reading a pasted checkout command | ![](./create-worktree-dialog-dark.png)   | ![](./create-worktree-dialog-light.png)   |
-| `create-worktree` — after                             | ![](./create-worktree-after-dark.png)    | ![](./create-worktree-after-light.png)    |
-| `delete-worktree` — the first confirmation            | ![](./delete-worktree-confirm-dark.png)  | ![](./delete-worktree-confirm-light.png)  |
-| `delete-worktree` — the force confirmation            | ![](./delete-worktree-force-dark.png)    | ![](./delete-worktree-force-light.png)    |
+| Scenario                                              | Dark                                          | Light                                          |
+| ----------------------------------------------------- | --------------------------------------------- | ---------------------------------------------- |
+| `worktree-detail` — ahead and behind its upstream     | ![](./worktree-detail-tracking-dark.png)      | ![](./worktree-detail-tracking-light.png)      |
+| `worktree-detail` — with a note                       | ![](./worktree-detail-notes-dark.png)         | ![](./worktree-detail-notes-light.png)         |
+| `worktree-detail` — folder missing                    | ![](./worktree-detail-prunable-dark.png)      | ![](./worktree-detail-prunable-light.png)      |
+| `create-worktree` — before                            | ![](./create-worktree-before-dark.png)        | ![](./create-worktree-before-light.png)        |
+| `create-worktree` — reading a pasted checkout command | ![](./create-worktree-dialog-dark.png)        | ![](./create-worktree-dialog-light.png)        |
+| `create-worktree` — after                             | ![](./create-worktree-after-dark.png)         | ![](./create-worktree-after-light.png)         |
+| `delete-worktree` — the first confirmation            | ![](./delete-worktree-confirm-dark.png)       | ![](./delete-worktree-confirm-light.png)       |
+| `delete-worktree` — the force confirmation            | ![](./delete-worktree-force-dark.png)         | ![](./delete-worktree-force-light.png)         |
+| `switch-branch-remote` — switching to a remote branch | ![](./switch-branch-remote-tracking-dark.png) | ![](./switch-branch-remote-tracking-light.png) |
+| `recent-commits` — a remote branch's commit graph     | ![](./recent-commits-list-dark.png)           | ![](./recent-commits-list-light.png)           |
+| `recent-commits` — a commit from it, in the inspector | ![](./recent-commits-inspector-dark.png)      | ![](./recent-commits-inspector-light.png)      |
 
 ## Automation and settings
 

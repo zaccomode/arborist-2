@@ -27,6 +27,14 @@ interface SelectionState {
    * Overview is for the tab.
    */
   inspectorByWorktree: Record<string, Inspector>
+  /**
+   * The commit the inspector is open on for a remote branch, keyed the same
+   * way but by branch name — also session-only. Its own map rather than a
+   * share of `inspectorByWorktree`: a remote branch has no worktree path to
+   * key by, no tabs to switch, and no file inspector to be one of two kinds
+   * of (#81).
+   */
+  commitByRemoteBranch: Record<string, string>
   /** Set once the persisted selection has been read back, so a fresh session's nulls don't overwrite it. */
   hydrated: boolean
   hydrate: (data: PersistedSelection) => void
@@ -37,6 +45,8 @@ interface SelectionState {
   /** Opening an inspector also sets the tab it belongs on; switching tabs leaves it alone. */
   openInspector: (repositoryId: string, worktreePath: string, inspector: Inspector) => void
   closeInspector: (repositoryId: string, worktreePath: string) => void
+  /** Null closes the remote branch's commit inspector. */
+  selectRemoteBranchCommit: (repositoryId: string, branchName: string, hash: string | null) => void
 }
 
 export const useSelection = create<SelectionState>((set) => ({
@@ -45,6 +55,7 @@ export const useSelection = create<SelectionState>((set) => ({
   remoteBranchByProject: {},
   tabByWorktree: {},
   inspectorByWorktree: {},
+  commitByRemoteBranch: {},
   hydrated: false,
   hydrate: (data) => set({ ...data, hydrated: true }),
   selectProject: (projectId) => set({ projectId }),
@@ -94,6 +105,14 @@ export const useSelection = create<SelectionState>((set) => ({
       const inspectorByWorktree = { ...state.inspectorByWorktree }
       delete inspectorByWorktree[key]
       return { inspectorByWorktree }
+    }),
+  selectRemoteBranchCommit: (repositoryId, branchName, hash) =>
+    set((state) => {
+      const key = worktreeNoteKey(repositoryId, branchName)
+      const commitByRemoteBranch = { ...state.commitByRemoteBranch }
+      if (hash) commitByRemoteBranch[key] = hash
+      else delete commitByRemoteBranch[key]
+      return { commitByRemoteBranch }
     })
 }))
 
@@ -145,5 +164,20 @@ export function useWorktreeInspector(
     inspector,
     (next) => open(repositoryId, worktreePath, next),
     () => close(repositoryId, worktreePath)
+  ]
+}
+
+/** A remote branch's open commit inspector, if any, plus its open/close actions. */
+export function useRemoteBranchCommit(
+  repositoryId: string,
+  branchName: string
+): [string | null, (hash: string) => void, () => void] {
+  const key = worktreeNoteKey(repositoryId, branchName)
+  const hash = useSelection((state) => state.commitByRemoteBranch[key] ?? null)
+  const select = useSelection((state) => state.selectRemoteBranchCommit)
+  return [
+    hash,
+    (next) => select(repositoryId, branchName, next),
+    () => select(repositoryId, branchName, null)
   ]
 }
