@@ -16,7 +16,6 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { CopyableError } from '@/components/copyable-error'
-import { IconTooltip } from '@/components/icon-button'
 import { FilePathCell } from '@/components/file-path-cell'
 import { PresetConsole, type PresetRun } from '@/components/preset-console'
 import { invoke } from '@/api/client'
@@ -63,18 +62,16 @@ function ConflictRow({
         Open in editor
       </Button>
       <DropdownMenu>
-        <IconTooltip label="More ways to resolve">
-          <DropdownMenuTrigger asChild>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              disabled={busy}
-              aria-label={`${file.path} conflict actions`}
-            >
-              <ChevronDown />
-            </Button>
-          </DropdownMenuTrigger>
-        </IconTooltip>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            disabled={busy}
+            aria-label={`${file.path} conflict actions`}
+          >
+            <ChevronDown />
+          </Button>
+        </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {otherPresets.map((preset) => (
             <DropdownMenuItem key={preset.id} onSelect={() => onOpen(preset.id)}>

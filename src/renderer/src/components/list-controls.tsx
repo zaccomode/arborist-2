@@ -12,7 +12,6 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { IconButton, IconTooltip } from '@/components/icon-button'
 import type { ListSearch } from '@/state/list-search'
 
 /**
@@ -58,24 +57,22 @@ export function ListControls({
 
   return (
     <>
-      <IconButton
+      <Button
         variant="ghost"
         size="icon-xs"
-        label={search.open ? `Hide ${label} search` : `Search ${label}`}
+        aria-label={search.open ? `Hide ${label} search` : `Search ${label}`}
         aria-pressed={search.open}
         disabled={disabled}
         onClick={() => search.setOpen(!search.open)}
       >
         {search.open ? <X /> : <Search />}
-      </IconButton>
+      </Button>
       <DropdownMenu>
-        <IconTooltip label={`Sort ${label}`}>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-xs" aria-label={`Sort ${label}`} disabled={disabled}>
-              <ArrowDownUp />
-            </Button>
-          </DropdownMenuTrigger>
-        </IconTooltip>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon-xs" aria-label={`Sort ${label}`} disabled={disabled}>
+            <ArrowDownUp />
+          </Button>
+        </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuRadioGroup
             value={sort}

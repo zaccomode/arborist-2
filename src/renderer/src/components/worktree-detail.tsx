@@ -14,7 +14,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Chip } from '@/components/chip'
 import { CommitGraph } from '@/components/commit-graph'
 import { CopyableError } from '@/components/copyable-error'
-import { IconButton } from '@/components/icon-button'
 import { NotesEditor } from '@/components/notes-editor'
 import { OpenInGrid } from '@/components/open-in-grid'
 import { SwitchBranchDialog } from '@/components/switch-branch-dialog'
@@ -73,15 +72,15 @@ export function WorktreeDetail({
             </button>
           </div>
           <SyncActions repoPath={project.path} worktree={worktree} />
-          <IconButton
+          <Button
             variant="ghost"
             size="icon-sm"
-            label="Fetch and refresh"
+            aria-label="Fetch and refresh"
             disabled={refreshing}
             onClick={onRefresh}
           >
             <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
-          </IconButton>
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" aria-label="Worktree actions">

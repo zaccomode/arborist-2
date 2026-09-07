@@ -29,19 +29,26 @@ export interface BaseRefOption {
  * doesn't exactly match an existing option — the switch-branch dialog's
  * create-a-new-branch flow (#69 review). The base-ref picker on
  * create-worktree leaves it unset: every base there has to already exist.
+ *
+ * `remoteFirst` puts the remote branches above the local ones, for the
+ * switch-branch picker, where the remote is what someone is usually reaching
+ * for (#86). The base-ref pickers leave it unset and keep local first, since
+ * a base is as often a local branch as a remote one.
  */
 export function BranchCombobox({
   value,
   onChange,
   options,
   loading,
-  allowCreate
+  allowCreate,
+  remoteFirst
 }: {
   value: string
   onChange: (value: string) => void
   options: BaseRefOption[]
   loading: boolean
   allowCreate?: boolean
+  remoteFirst?: boolean
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -55,8 +62,15 @@ export function BranchCombobox({
 
   const groups: { key: BaseRefOption['group']; heading: string }[] = [
     { key: 'head', heading: 'Start point' },
-    { key: 'local', heading: 'Local branches' },
-    { key: 'remote', heading: 'Remote branches' }
+    ...(remoteFirst
+      ? ([
+          { key: 'remote', heading: 'Remote branches' },
+          { key: 'local', heading: 'Local branches' }
+        ] as const)
+      : ([
+          { key: 'local', heading: 'Local branches' },
+          { key: 'remote', heading: 'Remote branches' }
+        ] as const))
   ]
 
   const triggerLabel = selected?.label ?? (value || (allowCreate ? 'Select a branch' : 'HEAD'))

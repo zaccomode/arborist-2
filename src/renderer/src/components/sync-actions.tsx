@@ -12,7 +12,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { IconTooltip } from '@/components/icon-button'
 import { invoke } from '@/api/client'
 import { queryKeys } from '@/api/queries'
 import { showErrorToast } from '@/lib/error-toast'
@@ -117,18 +116,16 @@ export function SyncActions({
             {pullLabel(behind)}
           </Button>
           <DropdownMenu>
-            <IconTooltip label="Pull options">
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  aria-label="Pull options"
-                  disabled={busy !== null}
-                >
-                  <ChevronDown />
-                </Button>
-              </DropdownMenuTrigger>
-            </IconTooltip>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                aria-label="Pull options"
+                disabled={busy !== null}
+              >
+                <ChevronDown />
+              </Button>
+            </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={() => void runPull('rebase')}>
                 {PULL_MODE_LABELS.rebase}

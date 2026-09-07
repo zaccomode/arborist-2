@@ -4,12 +4,12 @@ import type { CommitFileStat } from '@shared/domain'
 import type { DiffRequest } from '@shared/diff'
 import { formatCommitTimestamp } from '@shared/format'
 import { splitDisplayPath } from '@shared/working-tree'
+import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DiffPanel } from '@/components/diff-panel'
 import { FilePathCell } from '@/components/file-path-cell'
 import { CopyableError } from '@/components/copyable-error'
-import { IconButton } from '@/components/icon-button'
 import { invoke } from '@/api/client'
 import { useCommit, useCommitFiles } from '@/api/queries'
 
@@ -104,14 +104,14 @@ export function CommitInspector({
     return (
       <div className="flex h-full flex-col" data-testid="commit-inspector">
         <div className="flex shrink-0 items-center gap-1 border-b px-2 py-1">
-          <IconButton
+          <Button
             variant="ghost"
             size="icon-sm"
-            label="Back to commit"
+            aria-label="Back to commit"
             onClick={() => setSelectedFile(null)}
           >
             <ChevronLeft />
-          </IconButton>
+          </Button>
           <span className="truncate font-mono text-xs text-muted-foreground">
             {commit?.shortHash ?? hash.slice(0, 7)}
           </span>
@@ -159,9 +159,9 @@ export function CommitInspector({
             <CopyableError className="text-xs" message={(commitQuery.error as Error).message} />
           )}
         </div>
-        <IconButton variant="ghost" size="icon-sm" label="Close" onClick={onClose}>
+        <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}>
           <X />
-        </IconButton>
+        </Button>
       </div>
 
       <ScrollArea className="min-h-0 flex-1">

@@ -13,7 +13,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Textarea } from '@/components/ui/textarea'
 import { CopyableError } from '@/components/copyable-error'
-import { IconTooltip } from '@/components/icon-button'
 import { invoke } from '@/api/client'
 import { queryKeys, useCommitDraft, useHasIdentity } from '@/api/queries'
 import { showErrorToast } from '@/lib/error-toast'
@@ -174,18 +173,16 @@ export function CommitBox({
             {commitLabel}
           </Button>
           <DropdownMenu>
-            <IconTooltip label="Commit options">
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant={amend ? 'default' : 'outline'}
-                  size="icon"
-                  aria-label="Commit options"
-                  disabled={busy !== null}
-                >
-                  <ChevronDown />
-                </Button>
-              </DropdownMenuTrigger>
-            </IconTooltip>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant={amend ? 'default' : 'outline'}
+                size="icon"
+                aria-label="Commit options"
+                disabled={busy !== null}
+              >
+                <ChevronDown />
+              </Button>
+            </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuCheckboxItem
                 checked={amend}

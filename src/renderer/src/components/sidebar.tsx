@@ -2,7 +2,6 @@ import { Brush, Plus, RefreshCw, SlidersHorizontal } from 'lucide-react'
 import type { Repository } from '@shared/persisted'
 import { Button } from '@/components/ui/button'
 import { CopyableError } from '@/components/copyable-error'
-import { IconButton } from '@/components/icon-button'
 import { ListControls, ListSearchField, type ListViewControls } from '@/components/list-controls'
 import { ProjectSwitcher } from '@/components/project-switcher'
 
@@ -80,15 +79,15 @@ export function Sidebar({
                 Worktrees
               </p>
               <ListControls label="Worktrees" view={worktreeView} disabled={!selectedId} />
-              <IconButton
+              <Button
                 variant="ghost"
                 size="icon-xs"
-                label="New worktree"
+                aria-label="New worktree"
                 disabled={!selectedId}
                 onClick={onNewWorktree}
               >
                 <Plus />
-              </IconButton>
+              </Button>
             </div>
             {worktreeView.search.open && (
               <ListSearchField label="Worktrees" search={worktreeView.search} />
@@ -124,15 +123,15 @@ export function Sidebar({
                 view={remoteBranchView}
                 disabled={!selectedId}
               />
-              <IconButton
+              <Button
                 variant="ghost"
                 size="icon-xs"
-                label="Fetch remotes"
+                aria-label="Fetch remotes"
                 disabled={!selectedId || fetching}
                 onClick={onFetch}
               >
                 <RefreshCw className={fetching ? 'animate-spin' : undefined} />
-              </IconButton>
+              </Button>
             </div>
             {remoteBranchView.search.open && (
               <ListSearchField label="Remote Branches" search={remoteBranchView.search} />

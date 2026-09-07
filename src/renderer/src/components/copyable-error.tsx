@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { IconTooltip } from '@/components/icon-button'
 import { invoke } from '@/api/client'
 
 /**
@@ -29,23 +28,18 @@ export function CopyableError({
   return (
     <p data-testid={testId} className={cn('flex items-start gap-1.5 text-destructive', className)}>
       <span className="min-w-0 flex-1 select-text [overflow-wrap:anywhere]">{message}</span>
-      {/* A real tooltip rather than the browser's own `title` (#84): the
-          icon is the whole button, and `title` waits a second and then draws
-          nothing like the rest of the app. */}
-      <IconTooltip label={copied ? 'Copied' : 'Copy error message'}>
-        <button
-          type="button"
-          aria-label={copied ? 'Copied' : 'Copy error message'}
-          onClick={() => {
-            void invoke('system:copyText', message)
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1200)
-          }}
-          className="shrink-0 text-muted-foreground hover:text-foreground"
-        >
-          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-        </button>
-      </IconTooltip>
+      <button
+        type="button"
+        title={copied ? 'Copied' : 'Copy error message'}
+        onClick={() => {
+          void invoke('system:copyText', message)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1200)
+        }}
+        className="shrink-0 text-muted-foreground hover:text-foreground"
+      >
+        {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+      </button>
     </p>
   )
 }

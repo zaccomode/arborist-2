@@ -411,3 +411,38 @@ test("opens the commit inspector from a remote branch's commit graph", async () 
   await app.close()
   await rm(root, { recursive: true, force: true })
 })
+
+test('switches to a remote branch by creating a local branch that tracks it', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+  await fixture.commitFromElsewhere('feature-remote', 'Pushed from elsewhere')
+  await fixture.git(['fetch', 'origin'])
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+
+  await window.getByRole('button', { name: 'Worktree actions' }).click()
+  await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
+  await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
+  await window.getByRole('combobox').first().click()
+  // #86: the picker did not list this at all before — a remote branch was
+  // not something a worktree could switch to.
+  await window.getByRole('option', { name: 'origin/feature-remote' }).click()
+  await expect(window.getByTestId('switch-branch-plan')).toContainText('tracking it')
+  await window.getByRole('button', { name: 'Create and switch' }).click()
+
+  await expect(window.getByTestId('worktree-detail')).toContainText('feature-remote')
+
+  // Read off git rather than the UI: the local branch is what a remote ref
+  // resolves to, and it has to have the ref as its upstream — a branch that
+  // merely starts at the same commit would pass a screen-level check and be
+  // the wrong thing.
+  expect((await fixture.git(['rev-parse', '--abbrev-ref', 'HEAD'])).trim()).toBe('feature-remote')
+  const upstream = await fixture.git(['rev-parse', '--abbrev-ref', 'feature-remote@{upstream}'])
+  expect(upstream.trim()).toBe('origin/feature-remote')
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})

@@ -1,6 +1,6 @@
 import { chmod, mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
-import type { Locator, Page } from 'playwright'
+import type { Page } from 'playwright'
 // Node's native type stripping resolves ESM imports literally, so this needs
 // the real file extension rather than a bare specifier.
 import { GitFixture, makeBadgeMatrixIn } from '../../tests/integration/fixtures/git-fixture.ts'
@@ -104,25 +104,6 @@ async function expectLastWorktreeRow(window: Page, title: string): Promise<void>
     const rows = document.querySelectorAll('[data-testid="worktree-list"] > li')
     return (rows[rows.length - 1]?.textContent ?? '').startsWith(expected)
   }, title)
-}
-
-/**
- * Hovers `control` and waits for its own tooltip to be the one showing.
- *
- * Escape first, because a tooltip already open is what stops the next one
- * opening: moving the pointer straight from one tooltipped control to
- * another arrives as a single synthetic `pointermove`, and Radix spends it
- * closing the open tooltip rather than opening this control's — leaving a
- * capture with no tooltip in it at all. Dismissing first means the hover
- * that follows has only one thing to do. Harmless when nothing is open, so
- * this is right for the first hover in a scenario too.
- */
-async function hoverForTooltip(window: Page, control: Locator, label: string): Promise<void> {
-  const tooltip = window.locator('[data-slot="tooltip-content"]')
-  await window.keyboard.press('Escape')
-  await tooltip.waitFor({ state: 'detached' })
-  await control.hover()
-  await tooltip.filter({ hasText: label }).waitFor({ state: 'visible' })
 }
 
 /**
@@ -401,52 +382,6 @@ export const scenarios: Scenario[] = [
 
       await scrollSidebarToBottom(window)
       await shot('scrolled')
-    }
-  },
-  {
-    name: 'icon-tooltips',
-    description:
-      'Tooltips naming the icon-only buttons (#84): the sidebar list ' +
-      "headers' own, and the worktree header's Fetch and refresh — which now " +
-      'says so, since it asks the remote (#82). The three-dot "more" buttons ' +
-      'deliberately have none, which the last capture shows by opening one.',
-    // Every shot here is a hover state, so the pointer stays where `drive`
-    // left it rather than being parked in the corner.
-    keepPointer: true,
-    setup: async ({ workDir }) => {
-      const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
-      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
-    },
-    drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
-
-      // The exception first, while nothing is hovered and no tooltip could be
-      // left over from an earlier step: the three-dot menu has none, and
-      // clicking it is what says what is in it.
-      await window.getByRole('button', { name: 'Worktree actions' }).click()
-      await window.getByRole('menu').waitFor({ state: 'visible' })
-      await shot('more-menu')
-      // Escape returns focus to the trigger, so the two captures after this
-      // one carry a focus ring on the three-dot button. That is the real
-      // behaviour of dismissing a menu from the keyboard, not a stray state.
-      await window.keyboard.press('Escape')
-      await window.getByRole('menu').waitFor({ state: 'detached' })
-
-      await hoverForTooltip(
-        window,
-        window.getByRole('button', { name: 'New worktree' }),
-        'New worktree'
-      )
-      await shot('sidebar')
-
-      await hoverForTooltip(
-        window,
-        window.getByRole('button', { name: 'Fetch and refresh' }),
-        'Fetch and refresh'
-      )
-      await shot('detail-header')
     }
   },
   {
@@ -1708,6 +1643,49 @@ export const scenarios: Scenario[] = [
         .getByText('Your uncommitted changes came with you.')
         .waitFor({ state: 'visible' })
       await shot('clean-switch')
+    }
+  },
+  {
+    name: 'switch-branch-remote',
+    description:
+      'Switching to a branch that only exists on the remote (#86): the ' +
+      'picker listing remote branches above local ones, the plan line that ' +
+      'appears once one is picked — a local branch created from the remote ' +
+      'ref and tracking it, with no Base picker to answer, since the base is ' +
+      'already decided — and the worktree afterwards, on the new branch.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      // One branch on each side, so the picker has both groups to order.
+      await fixture.git(['branch', 'feature-local'])
+      await fixture.commitFromElsewhere('feature-remote', 'Pushed from elsewhere')
+      await fixture.git(['fetch', 'origin'])
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'Worktree actions' }).click()
+      await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
+      await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
+      await window.getByRole('combobox').first().click()
+      await window.getByRole('option', { name: 'origin/feature-remote' }).waitFor({
+        state: 'visible'
+      })
+      await shot('picker')
+
+      await window.getByRole('option', { name: 'origin/feature-remote' }).click()
+      await window.getByTestId('switch-branch-plan').waitFor({ state: 'visible' })
+      await shot('tracking')
+
+      await window.getByRole('button', { name: 'Create and switch' }).click()
+      await window
+        .getByTestId('worktree-detail')
+        .filter({ hasText: 'feature-remote' })
+        .waitFor({ state: 'visible' })
+      await shot('after')
     }
   },
   {
