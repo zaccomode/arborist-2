@@ -97,6 +97,16 @@ export async function discoverGit(
   return { ...notFound, overrideError }
 }
 
+/**
+ * Discovery answers "found" or "not found" and never throws, so a machine
+ * that could not start `which` at all (see `which`'s own doc comment, and
+ * #83) falls through to the known install locations rather than failing the
+ * whole lookup and leaving the app with no git screen to show.
+ */
+function whichOrNull(command: string): Promise<string | null> {
+  return which(command).catch(() => null)
+}
+
 async function probeVersion(path: string): Promise<string | null> {
   try {
     const { stdout, exitCode } = await execGitAt(path, ['--version'], { timeoutMs: 5_000 })
@@ -115,7 +125,7 @@ export function systemDiscoveryDeps(): DiscoveryDeps {
   return {
     platform: process.platform,
     env: process.env,
-    which: forceMissing ? async () => null : which,
+    which: forceMissing ? async () => null : whichOrNull,
     probe: forceMissing ? async () => null : probeVersion
   }
 }

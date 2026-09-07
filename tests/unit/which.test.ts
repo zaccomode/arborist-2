@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { pickExecutable } from '../../src/shared/which'
+import { which } from '../../src/main/services/system/which'
 
 describe('pickExecutable', () => {
   it('takes the first non-blank line on a non-Windows platform', () => {
@@ -50,5 +51,21 @@ describe('pickExecutable', () => {
     expect(pickExecutable(['', 'C:\\tools\\code', '', 'C:\\tools\\code.cmd'], 'win32')).toBe(
       'C:\\tools\\code.cmd'
     )
+  })
+})
+
+describe('which', () => {
+  it('resolves the absolute path of something that is on PATH', async () => {
+    // `node` is running this suite, so it is on PATH by definition.
+    await expect(which('node')).resolves.toContain('node')
+  })
+
+  /**
+   * #83 split "not on PATH" from "this machine could not start the lookup",
+   * which used to be the same null. The half that has to keep working is
+   * this one: a genuinely absent command is still an answer, not an error.
+   */
+  it('resolves null for a command that is not there, rather than rejecting', async () => {
+    await expect(which('definitely-not-a-real-command-xyz')).resolves.toBeNull()
   })
 })

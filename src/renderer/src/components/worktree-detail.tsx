@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { CircleAlert, GitBranch, Hash, House, MoreVertical, RefreshCw } from 'lucide-react'
 import type { Worktree, WorktreeTab } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
-import { syncSummary, worktreeTitle } from '@shared/format'
+import { commitGraphScopeLabel, commitGraphTips, syncSummary, worktreeTitle } from '@shared/format'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -14,13 +14,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Chip } from '@/components/chip'
 import { CommitGraph } from '@/components/commit-graph'
 import { CopyableError } from '@/components/copyable-error'
+import { IconButton } from '@/components/icon-button'
 import { NotesEditor } from '@/components/notes-editor'
 import { OpenInGrid } from '@/components/open-in-grid'
 import { SwitchBranchDialog } from '@/components/switch-branch-dialog'
 import { SyncActions } from '@/components/sync-actions'
 import { WorkingTreeTab } from '@/components/working-tree-tab'
 import { invoke } from '@/api/client'
-import { useWorktreeTab } from '@/state/selection'
+import { useWorktreeInspector, useWorktreeTab } from '@/state/selection'
 
 export function WorktreeDetail({
   worktree,
@@ -39,6 +40,7 @@ export function WorktreeDetail({
 }): React.JSX.Element {
   const hash = worktree.status?.lastCommit?.shortHash ?? worktree.head?.slice(0, 7) ?? null
   const [tab, setTab] = useWorktreeTab(project.id, worktree.path)
+  const [inspector, openInspector] = useWorktreeInspector(project.id, worktree.path)
   const [switchOpen, setSwitchOpen] = useState(false)
   // Bumped rather than a plain boolean, so a second "Commit first" while the
   // Working Tree tab is already open still refocuses the box — a boolean
@@ -71,15 +73,15 @@ export function WorktreeDetail({
             </button>
           </div>
           <SyncActions repoPath={project.path} worktree={worktree} />
-          <Button
+          <IconButton
             variant="ghost"
             size="icon-sm"
-            aria-label="Refresh"
+            label="Fetch and refresh"
             disabled={refreshing}
             onClick={onRefresh}
           >
             <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
-          </Button>
+          </IconButton>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" aria-label="Worktree actions">
@@ -190,9 +192,11 @@ export function WorktreeDetail({
         <TabsContent value="commit-graph" className="min-h-0 flex-1 overflow-y-auto p-6 pt-4">
           <CommitGraph
             key={`commit-graph:${project.id}:${worktree.path}`}
-            repositoryId={project.id}
             repoPath={project.path}
-            worktree={worktree}
+            tips={commitGraphTips(worktree)}
+            label={commitGraphScopeLabel(worktree)}
+            selectedHash={inspector?.kind === 'commit' ? inspector.hash : null}
+            onSelect={(hash) => openInspector({ kind: 'commit', hash })}
           />
         </TabsContent>
       </Tabs>

@@ -1,5 +1,6 @@
 import { execFile } from 'child_process'
 import { AppError } from '../../../shared/errors'
+import { isTransientSpawnCode, OUT_OF_RESOURCES_ADVICE, retryTransientSpawn } from '../system/spawn'
 
 export const DEFAULT_TIMEOUT_MS = 30_000
 export const FETCH_TIMEOUT_MS = 120_000
@@ -67,49 +68,16 @@ interface ExecFileError extends Error {
 }
 
 /**
- * Spawn failures that say "this machine could not start a process just now"
- * rather than "there is no git here": the file-descriptor and process-table
- * exhaustion errnos. Watching a large monorepo holds thousands of
- * descriptors open, and a refresh over it asks for a burst of git processes
- * on top, each needing three more pipes — enough, on a machine whose limit
- * is low enough, to run the app out mid-spawn.
- *
- * `EBADF` is the awkward one, and the reason this list exists at all (#75).
- * `ChildProcess.prototype.spawn` routes `EACCES`, `EAGAIN`, `EMFILE`,
- * `ENFILE` and `ENOENT` through an asynchronous error event, so those reach
- * `execFile`'s callback and get typed below like any other failure. Every
- * other errno — `EBADF` among them — is thrown *synchronously*, out of the
- * `execFile` call itself. Unwrapped, that escaped this promise's executor
- * entirely and surfaced in the renderer as a bare `spawn EBADF` with none of
- * this app's own framing, which is exactly what #75 reported.
+ * The code `execGitAt` throws for a transient spawn failure — see
+ * `isTransientSpawnCode`, which the preset launcher shares.
  */
-const TRANSIENT_SPAWN_CODES: readonly string[] = ['EBADF', 'EMFILE', 'ENFILE', 'EAGAIN']
-
-/** How long to wait before the single retry a transient spawn failure gets. */
-const SPAWN_RETRY_DELAY_MS = 150
-
-/** The code `execGitAt` throws for a `TRANSIENT_SPAWN_CODES` failure. */
 export const SPAWN_FAILED_CODE = 'git-spawn-failed'
-
-/**
- * Whether a spawn failure is one worth trying again. Exported for its own
- * test: the condition it describes is a machine-wide resource state, which
- * a test can't provoke on demand without also destabilising the runner.
- */
-export function isTransientSpawnCode(code: unknown): boolean {
-  return typeof code === 'string' && TRANSIENT_SPAWN_CODES.includes(code)
-}
 
 function spawnFailure(gitPath: string, error: ExecFileError): AppError {
   return new AppError(
-    `Could not start git at ${gitPath}: ${error.message}. This machine is out of ` +
-      'file descriptors or processes — close some applications and try again.',
+    `Could not start git at ${gitPath}: ${error.message}. ${OUT_OF_RESOURCES_ADVICE}`,
     SPAWN_FAILED_CODE
   )
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /**
@@ -119,25 +87,14 @@ function delay(ms: number): Promise<void> {
  * Resolves on a non-zero exit; only failing to run git at all, a timeout, or
  * an abort reject.
  *
- * A transient spawn failure (see `TRANSIENT_SPAWN_CODES`) is retried once,
- * after a short pause. One retry rather than a backoff loop: the burst that
- * exhausted the descriptors is the app's own refresh, so the pause is enough
- * for the sibling processes to exit and hand theirs back, and a machine that
- * still cannot spawn after that has a problem no amount of waiting here will
- * fix. The second failure propagates as a typed `AppError` and is reported.
+ * A transient spawn failure is retried once — see `retryTransientSpawn`.
  */
-export async function execGitAt(
+export function execGitAt(
   gitPath: string,
   args: readonly string[],
   options: ExecGitOptions = {}
 ): Promise<GitExecResult> {
-  try {
-    return await execGitOnce(gitPath, args, options)
-  } catch (error) {
-    if (!(error instanceof AppError) || error.code !== SPAWN_FAILED_CODE) throw error
-    await delay(SPAWN_RETRY_DELAY_MS)
-    return execGitOnce(gitPath, args, options)
-  }
+  return retryTransientSpawn(SPAWN_FAILED_CODE, () => execGitOnce(gitPath, args, options))
 }
 
 function execGitOnce(
@@ -202,7 +159,7 @@ function execGitOnce(
 
     // `execFile` itself throws for every spawn errno outside the handful
     // `ChildProcess.prototype.spawn` reports asynchronously — see
-    // `TRANSIENT_SPAWN_CODES`. Unwrapped, that throw leaves this executor
+    // `isTransientSpawnCode`. Unwrapped, that throw leaves this executor
     // rather than this promise, so nothing below ever runs and nothing above
     // ever types it.
     let child: ReturnType<typeof execFile>

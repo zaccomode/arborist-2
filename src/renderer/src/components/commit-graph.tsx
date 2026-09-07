@@ -1,13 +1,12 @@
 import { useMemo } from 'react'
 import { GitMerge } from 'lucide-react'
-import type { CommitLogEntry, Worktree } from '@shared/domain'
+import type { CommitLogEntry } from '@shared/domain'
 import { assignLanes, tailLanes, type GraphRow } from '@shared/commit-graph'
-import { commitGraphScopeLabel, commitGraphTips, formatCommitTimestamp } from '@shared/format'
+import { formatCommitTimestamp } from '@shared/format'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CopyableError } from '@/components/copyable-error'
 import { useCommitLog } from '@/api/queries'
-import { useWorktreeInspector } from '@/state/selection'
 
 /** Matches the SVG rail spec: `laneCount * 12` wide. */
 const LANE_WIDTH = 12
@@ -251,23 +250,34 @@ function CommitGraphRow({
 }
 
 /**
- * The Commit Graph tab: recent commits on a worktree's branch and its
- * upstream, as lanes rather than the flat list `RecentCommits` still shows
- * for a remote branch with no local checkout (see that component's own
- * doc comment for why it keeps its separate, simpler shape).
+ * Recent commits as lanes, with a click-through to the commit inspector.
+ *
+ * Two callers, one shape (#81): the worktree detail pane's Commit Graph tab,
+ * over the branch and its upstream, and a remote branch's detail pane, over
+ * the one remote ref. The remote branch used to get a flat list of its own
+ * on the grounds that one ref draws no interesting lanes — but a single
+ * straight rail with dots on it is still the same thing to read, and the
+ * flat list's rows opened nothing.
+ *
+ * `tips` is the refs to log — see `commitGraphTips` for a worktree's pair —
+ * and `label` heads the section with the scope those refs actually cover, so
+ * it reads as intentional rather than as a graph that lost some branches.
  */
 export function CommitGraph({
-  repositoryId,
   repoPath,
-  worktree
+  tips,
+  label,
+  selectedHash,
+  onSelect
 }: {
-  repositoryId: string
   repoPath: string
-  worktree: Worktree
+  tips: readonly string[]
+  label: string
+  /** The commit the inspector is open on, so its row reads as selected. */
+  selectedHash: string | null
+  onSelect: (hash: string) => void
 }): React.JSX.Element | null {
-  const tips = commitGraphTips(worktree)
   const query = useCommitLog(repoPath, tips.length > 0 ? tips : null)
-  const [inspector, openInspector] = useWorktreeInspector(repositoryId, worktree.path)
 
   // The fold has to run over every loaded page at once, never one page at a
   // time — a lane a fork opened three pages back has to still be "waiting"
@@ -281,7 +291,7 @@ export function CommitGraph({
 
   return (
     <section className="mt-6" data-testid="commit-graph">
-      <p className="text-xs font-medium text-muted-foreground">{commitGraphScopeLabel(worktree)}</p>
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
 
       {query.isPending && (
         <div className="mt-2 space-y-2">
@@ -301,8 +311,8 @@ export function CommitGraph({
             <CommitGraphRow
               key={row.commit.hash}
               row={row}
-              selected={inspector?.kind === 'commit' && inspector.hash === row.commit.hash}
-              onSelect={() => openInspector({ kind: 'commit', hash: row.commit.hash })}
+              selected={row.commit.hash === selectedHash}
+              onSelect={() => onSelect(row.commit.hash)}
             />
           ))}
         </ul>

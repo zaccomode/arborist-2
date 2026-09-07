@@ -18,6 +18,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CopyableError } from '@/components/copyable-error'
+import { IconButton } from '@/components/icon-button'
 import { invoke } from '@/api/client'
 import { queryKeys, useFileDiff } from '@/api/queries'
 import { showErrorToast } from '@/lib/error-toast'
@@ -316,9 +317,9 @@ export function DiffPanel({
             </p>
           )}
         </div>
-        <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}>
+        <IconButton variant="ghost" size="icon-sm" label="Close" onClick={onClose}>
           <X />
-        </Button>
+        </IconButton>
       </div>
 
       <ScrollArea className="min-h-0 flex-1">

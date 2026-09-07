@@ -2,6 +2,7 @@ import { Brush, Plus, RefreshCw, SlidersHorizontal } from 'lucide-react'
 import type { Repository } from '@shared/persisted'
 import { Button } from '@/components/ui/button'
 import { CopyableError } from '@/components/copyable-error'
+import { IconButton } from '@/components/icon-button'
 import { ListControls, ListSearchField, type ListViewControls } from '@/components/list-controls'
 import { ProjectSwitcher } from '@/components/project-switcher'
 
@@ -60,26 +61,39 @@ export function Sidebar({
         <CopyableError testId="add-project-error" className="px-1 text-xs" message={addError} />
       )}
 
-      <aside className="flex min-h-0 flex-1 flex-col rounded-lg border bg-sidebar">
-        <div className="flex items-center justify-between gap-1 py-2 pr-2 pl-3">
-          <p className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground">
-            Worktrees
-          </p>
-          <ListControls label="Worktrees" view={worktreeView} disabled={!selectedId} />
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label="New worktree"
-            disabled={!selectedId}
-            onClick={onNewWorktree}
-          >
-            <Plus />
-          </Button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-          {worktreeView.search.open && (
-            <ListSearchField label="Worktrees" search={worktreeView.search} />
-          )}
+      {/* `overflow-hidden` so the scroll container inside — and the sticky
+          heading pinned at its top — are clipped to this panel's own rounded
+          corners rather than painting square ones over them. */}
+      <aside className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-sidebar">
+        {/* Both headings scroll with the list they head and stick at the top
+            of the scroll area on the way past (#80). Two sticky blocks share
+            one offset, so as the Remote Branches heading arrives it comes to
+            rest over the Worktrees one and takes its place — the higher `z`
+            decides which is on top, and the opaque background is what makes
+            that read as a replacement rather than as two headings printed
+            over each other. Each heading carries its own search field, so a
+            field cannot scroll out from under the heading it belongs to. */}
+        <div data-testid="sidebar-scroll" className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          <div className="sticky top-0 z-10 bg-sidebar">
+            <div className="flex items-center justify-between gap-1 py-2 pl-1">
+              <p className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground">
+                Worktrees
+              </p>
+              <ListControls label="Worktrees" view={worktreeView} disabled={!selectedId} />
+              <IconButton
+                variant="ghost"
+                size="icon-xs"
+                label="New worktree"
+                disabled={!selectedId}
+                onClick={onNewWorktree}
+              >
+                <Plus />
+              </IconButton>
+            </div>
+            {worktreeView.search.open && (
+              <ListSearchField label="Worktrees" search={worktreeView.search} />
+            )}
+          </div>
           {children}
 
           {/* Under the rows it is about, and only when there is something to
@@ -100,24 +114,30 @@ export function Sidebar({
 
           {/* Directly below the worktrees rather than its own scrolling
               slice, so the two lists move together. */}
-          <div className="mt-4 flex items-center justify-between gap-1 py-2 pl-1">
-            <p className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground">
-              Remote Branches
-            </p>
-            <ListControls label="Remote Branches" view={remoteBranchView} disabled={!selectedId} />
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Fetch remotes"
-              disabled={!selectedId || fetching}
-              onClick={onFetch}
-            >
-              <RefreshCw className={fetching ? 'animate-spin' : undefined} />
-            </Button>
+          <div className="sticky top-0 z-20 mt-4 bg-sidebar">
+            <div className="flex items-center justify-between gap-1 py-2 pl-1">
+              <p className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground">
+                Remote Branches
+              </p>
+              <ListControls
+                label="Remote Branches"
+                view={remoteBranchView}
+                disabled={!selectedId}
+              />
+              <IconButton
+                variant="ghost"
+                size="icon-xs"
+                label="Fetch remotes"
+                disabled={!selectedId || fetching}
+                onClick={onFetch}
+              >
+                <RefreshCw className={fetching ? 'animate-spin' : undefined} />
+              </IconButton>
+            </div>
+            {remoteBranchView.search.open && (
+              <ListSearchField label="Remote Branches" search={remoteBranchView.search} />
+            )}
           </div>
-          {remoteBranchView.search.open && (
-            <ListSearchField label="Remote Branches" search={remoteBranchView.search} />
-          )}
           {remoteBranches}
         </div>
 

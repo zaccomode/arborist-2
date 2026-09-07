@@ -1,6 +1,6 @@
 import { chmod, mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
-import type { Page } from 'playwright'
+import type { Locator, Page } from 'playwright'
 // Node's native type stripping resolves ESM imports literally, so this needs
 // the real file extension rather than a bare specifier.
 import { GitFixture, makeBadgeMatrixIn } from '../../tests/integration/fixtures/git-fixture.ts'
@@ -104,6 +104,42 @@ async function expectLastWorktreeRow(window: Page, title: string): Promise<void>
     const rows = document.querySelectorAll('[data-testid="worktree-list"] > li')
     return (rows[rows.length - 1]?.textContent ?? '').startsWith(expected)
   }, title)
+}
+
+/**
+ * Hovers `control` and waits for its own tooltip to be the one showing.
+ *
+ * Escape first, because a tooltip already open is what stops the next one
+ * opening: moving the pointer straight from one tooltipped control to
+ * another arrives as a single synthetic `pointermove`, and Radix spends it
+ * closing the open tooltip rather than opening this control's — leaving a
+ * capture with no tooltip in it at all. Dismissing first means the hover
+ * that follows has only one thing to do. Harmless when nothing is open, so
+ * this is right for the first hover in a scenario too.
+ */
+async function hoverForTooltip(window: Page, control: Locator, label: string): Promise<void> {
+  const tooltip = window.locator('[data-slot="tooltip-content"]')
+  await window.keyboard.press('Escape')
+  await tooltip.waitFor({ state: 'detached' })
+  await control.hover()
+  await tooltip.filter({ hasText: label }).waitFor({ state: 'visible' })
+}
+
+/**
+ * Scrolls the sidebar's own list — the scroll container the two headings
+ * stick inside — to the bottom, and waits for it to be there. Waiting on the
+ * settled `scrollTop` rather than on the assignment returning is what keeps a
+ * capture of a pinned heading from racing the scroll it is showing.
+ */
+async function scrollSidebarToBottom(window: Page): Promise<void> {
+  const selector = '[data-testid="sidebar-scroll"]'
+  await window.locator(selector).evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+  })
+  await window.waitForFunction((sel) => {
+    const element = document.querySelector(sel)
+    return element !== null && element.scrollTop + element.clientHeight >= element.scrollHeight - 1
+  }, selector)
 }
 
 /**
@@ -318,6 +354,102 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'sticky-headings',
+    description:
+      'The two sidebar headings on the way past (#80). At the top, Worktrees ' +
+      'heads its own list as before; scrolled to the branches, the Remote ' +
+      'Branches heading has arrived over it and taken its place, rather than ' +
+      'a fixed "Worktrees" sitting above a list of branches.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      // Enough of each list to overflow the sidebar, which is the only state
+      // in which a sticky heading is visibly doing anything at all.
+      for (const name of ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf']) {
+        await fixture.addWorktree(name, { branch: `feature/${name}` })
+      }
+      // More branches than the sidebar is tall, so the Remote Branches
+      // heading can actually reach the top: a list that fits leaves the
+      // heading partway down the panel with nothing to swap.
+      for (const name of [
+        'hotel',
+        'india',
+        'juliet',
+        'kilo',
+        'lima',
+        'mike',
+        'november',
+        'oscar',
+        'papa',
+        'quebec',
+        'romeo',
+        'sierra'
+      ]) {
+        await fixture.commitFromElsewhere(`feature/${name}`, `Pushed ${name}`)
+      }
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Fetch' }).click()
+      await window.getByRole('button', { name: /origin\/feature\/sierra/ }).waitFor({
+        state: 'visible'
+      })
+      await shot('top')
+
+      await scrollSidebarToBottom(window)
+      await shot('scrolled')
+    }
+  },
+  {
+    name: 'icon-tooltips',
+    description:
+      'Tooltips naming the icon-only buttons (#84): the sidebar list ' +
+      "headers' own, and the worktree header's Fetch and refresh — which now " +
+      'says so, since it asks the remote (#82). The three-dot "more" buttons ' +
+      'deliberately have none, which the last capture shows by opening one.',
+    // Every shot here is a hover state, so the pointer stays where `drive`
+    // left it rather than being parked in the corner.
+    keepPointer: true,
+    setup: async ({ workDir }) => {
+      const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+
+      // The exception first, while nothing is hovered and no tooltip could be
+      // left over from an earlier step: the three-dot menu has none, and
+      // clicking it is what says what is in it.
+      await window.getByRole('button', { name: 'Worktree actions' }).click()
+      await window.getByRole('menu').waitFor({ state: 'visible' })
+      await shot('more-menu')
+      // Escape returns focus to the trigger, so the two captures after this
+      // one carry a focus ring on the three-dot button. That is the real
+      // behaviour of dismissing a menu from the keyboard, not a stray state.
+      await window.keyboard.press('Escape')
+      await window.getByRole('menu').waitFor({ state: 'detached' })
+
+      await hoverForTooltip(
+        window,
+        window.getByRole('button', { name: 'New worktree' }),
+        'New worktree'
+      )
+      await shot('sidebar')
+
+      await hoverForTooltip(
+        window,
+        window.getByRole('button', { name: 'Fetch and refresh' }),
+        'Fetch and refresh'
+      )
+      await shot('detail-header')
+    }
+  },
+  {
     name: 'worktree-detail',
     description:
       'The worktree detail pane across its three tabs: Overview (with the ' +
@@ -355,11 +487,10 @@ export const scenarios: Scenario[] = [
   {
     name: 'recent-commits',
     description:
-      "The flat Recent Commits list — RemoteBranchDetail's own, for a " +
-      'remote branch with no local checkout, which stays a plain list ' +
-      "rather than a lane graph since there's only the one ref to show: " +
-      'cards with the shortstat line, and load more revealing the page ' +
-      'behind it.',
+      'Recent Commits on a remote branch with no local checkout: the same ' +
+      'lane graph the worktree Commit Graph tab draws (#81), load more ' +
+      'revealing the page behind it, and a row opening the commit ' +
+      'inspector beside it.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -384,12 +515,18 @@ export const scenarios: Scenario[] = [
       })
       await window.getByRole('button', { name: /origin\/feature-remote/ }).click()
       await window.getByTestId('remote-branch-detail').waitFor({ state: 'visible' })
-      await window.getByTestId('recent-commits').waitFor({ state: 'visible' })
+      await window.getByTestId('commit-graph-rows').waitFor({ state: 'visible' })
       await shot('list')
 
       await window.getByRole('button', { name: 'Load more' }).click()
       await window.getByRole('button', { name: 'Load more' }).waitFor({ state: 'detached' })
       await shot('loaded-more')
+
+      // #81: the rows are click-through now, into the same third panel the
+      // worktree graph opens.
+      await window.getByTestId('commit-graph-rows').getByRole('button').first().click()
+      await window.getByTestId('commit-files').waitFor({ state: 'visible' })
+      await shot('inspector')
     }
   },
   {

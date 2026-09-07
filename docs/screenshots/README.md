@@ -8,10 +8,12 @@ Every capture below is deterministic: a scenario builds its own fixture reposito
 
 ## The shell
 
-| Scenario                                                                                       | Dark                            | Light                            |
-| ---------------------------------------------------------------------------------------------- | ------------------------------- | -------------------------------- |
-| `shell` — the two-pane shell as the app opens, with no project. Compare against `concept.png`. | ![](./shell-dark.png)           | ![](./shell-light.png)           |
-| `worktree-badges` — the sidebar over the full badge matrix.                                    | ![](./worktree-badges-dark.png) | ![](./worktree-badges-light.png) |
+| Scenario                                                                                       | Dark                                     | Light                                     |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------- | ----------------------------------------- |
+| `shell` — the two-pane shell as the app opens, with no project. Compare against `concept.png`. | ![](./shell-dark.png)                    | ![](./shell-light.png)                    |
+| `worktree-badges` — the sidebar over the full badge matrix.                                    | ![](./worktree-badges-dark.png)          | ![](./worktree-badges-light.png)          |
+| `sticky-headings` — Remote Branches pinned in place of Worktrees, scrolled                     | ![](./sticky-headings-scrolled-dark.png) | ![](./sticky-headings-scrolled-light.png) |
+| `icon-tooltips` — an icon-only button naming itself                                            | ![](./icon-tooltips-sidebar-dark.png)    | ![](./icon-tooltips-sidebar-light.png)    |
 
 ## Projects
 
@@ -34,6 +36,8 @@ Every capture below is deterministic: a scenario builds its own fixture reposito
 | `create-worktree` — after                             | ![](./create-worktree-after-dark.png)    | ![](./create-worktree-after-light.png)    |
 | `delete-worktree` — the first confirmation            | ![](./delete-worktree-confirm-dark.png)  | ![](./delete-worktree-confirm-light.png)  |
 | `delete-worktree` — the force confirmation            | ![](./delete-worktree-force-dark.png)    | ![](./delete-worktree-force-light.png)    |
+| `recent-commits` — a remote branch's commit graph     | ![](./recent-commits-list-dark.png)      | ![](./recent-commits-list-light.png)      |
+| `recent-commits` — a commit from it, in the inspector | ![](./recent-commits-inspector-dark.png) | ![](./recent-commits-inspector-light.png) |
 
 ## Automation and settings
 

@@ -17,6 +17,7 @@ import {
 import { substitute, type SubstitutionValues } from '../../shared/substitution'
 import type { Store } from './persistence/store'
 import type { GitRunner } from './git/git-runner'
+import { isTransientSpawnCode, OUT_OF_RESOURCES_ADVICE, retryTransientSpawn } from './system/spawn'
 import { which } from './system/which'
 
 /**
@@ -83,17 +84,53 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 /**
+ * The code a preset launch throws when the machine could not start a process
+ * at all, rather than when the app behind the preset is missing (#83). Kept
+ * distinct from `'preset-launch-failed'` so `retryTransientSpawn` retries
+ * only the failures a second attempt can actually clear.
+ */
+export const PRESET_SPAWN_FAILED_CODE = 'preset-spawn-failed'
+
+/**
+ * Types a raw spawn error, whether Node reported it asynchronously or threw
+ * it out of the `spawn`/`execFile` call. An untyped one reached the renderer
+ * as a bare `spawn EBADF` under a "Could not open" toast, which named neither
+ * what failed nor what to do about it — #83.
+ */
+function launchFailure(command: string, error: unknown): AppError {
+  const failure = error as NodeJS.ErrnoException
+  return isTransientSpawnCode(failure.code)
+    ? new AppError(
+        `Could not start ${command}: ${failure.message}. ${OUT_OF_RESOURCES_ADVICE}`,
+        PRESET_SPAWN_FAILED_CODE
+      )
+    : new AppError(`Could not run ${command}: ${failure.message}`, 'preset-launch-failed')
+}
+
+/**
  * Runs a command detached, so closing Arborist doesn't take the editor with
  * it, but waits long enough to know the process actually started. Nothing
  * pre-checks that a target is installed any more, so "the binary isn't there"
  * has to come back as an error rather than as nothing happening.
  */
 function launchDetached(command: string, args: string[], cwd?: string): Promise<void> {
+  return retryTransientSpawn(PRESET_SPAWN_FAILED_CODE, () => launchDetachedOnce(command, args, cwd))
+}
+
+function launchDetachedOnce(command: string, args: string[], cwd?: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { detached: true, stdio: 'ignore', cwd, windowsHide: false })
-    child.once('error', (error) =>
-      reject(new AppError(`Could not run ${command}: ${error.message}`, 'preset-launch-failed'))
-    )
+    // `spawn` throws, synchronously, for every errno outside the handful
+    // `ChildProcess.prototype.spawn` reports through an error event — see
+    // `isTransientSpawnCode`. That throw rejects this promise with the raw
+    // error rather than the typed one, so it needs catching here.
+    let child: ReturnType<typeof spawn>
+    try {
+      child = spawn(command, args, { detached: true, stdio: 'ignore', cwd, windowsHide: false })
+    } catch (error) {
+      reject(launchFailure(command, error))
+      return
+    }
+    child.once('error', (error) => reject(launchFailure(command, error)))
     child.once('spawn', () => {
       child.unref()
       resolve()
@@ -107,14 +144,32 @@ function launchDetached(command: string, args: string[], cwd?: string): Promise<
  * and says whether the app was there at all.
  */
 function openApp(app: string, path: string): Promise<void> {
+  return retryTransientSpawn(PRESET_SPAWN_FAILED_CODE, () => openAppOnce(app, path))
+}
+
+function openAppOnce(app: string, path: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    execFile('open', ['-a', app, path], (error, _stdout, stderr) => {
-      if (error) {
-        reject(new AppError(stderr.trim() || `Could not open ${app}.`, 'preset-launch-failed'))
-      } else {
+    const onSettled = (error: Error | null, _stdout: string, stderr: string): void => {
+      if (!error) {
         resolve()
+        return
       }
-    })
+      // A non-zero exit from `open` itself says the app was not there, and
+      // its own stderr says it better than this app could. Only a failure to
+      // start `open` at all is a spawn failure worth typing as one.
+      const failure = error as NodeJS.ErrnoException
+      if (typeof failure.code === 'number' || stderr.trim()) {
+        reject(new AppError(stderr.trim() || `Could not open ${app}.`, 'preset-launch-failed'))
+        return
+      }
+      reject(launchFailure('open', failure))
+    }
+
+    try {
+      execFile('open', ['-a', app, path], onSettled)
+    } catch (error) {
+      reject(launchFailure('open', error))
+    }
   })
 }
 

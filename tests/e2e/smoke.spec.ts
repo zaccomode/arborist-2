@@ -361,3 +361,53 @@ test('walks both confirmations to delete a dirty worktree', async () => {
   await app.close()
   await rm(root, { recursive: true, force: true })
 })
+
+test('the worktree refresh button asks the remote, not just the local repository', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+  await expect(window.getByTestId('worktree-detail')).toContainText('Up-to-date with origin/main')
+
+  // Pushed to the bare remote through a second clone, so the local
+  // repository's own refs do not move: nothing short of a fetch can notice
+  // it, which is what makes this a test of #82 rather than of a refetch.
+  await fixture.commitFromElsewhere('main', 'Pushed while nobody was looking')
+
+  await window.getByRole('button', { name: 'Fetch and refresh' }).click()
+  await expect(window.getByTestId('worktree-detail')).toContainText('behind origin/main')
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})
+
+test("opens the commit inspector from a remote branch's commit graph", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+  await fixture.commitFromElsewhere('feature-x', 'Pushed while nobody was fetching')
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+
+  await window.getByRole('button', { name: 'Fetch remotes' }).click()
+  await window.getByRole('button', { name: /origin\/feature-x/ }).click()
+  await expect(window.getByTestId('remote-branch-detail')).toBeVisible()
+
+  // #81: the flat list this pane used to show had nothing to click. Its rows
+  // are the same lane-graph rows the worktree tab draws, and they open the
+  // same third panel.
+  const rows = window.getByTestId('commit-graph-rows').getByRole('button')
+  await expect(rows.first()).toContainText('Pushed while nobody was fetching')
+  await rows.first().click()
+
+  await expect(window.getByTestId('commit-inspector')).toBeVisible()
+  await expect(window.getByTestId('commit-files')).toContainText('feature-x.txt')
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})
