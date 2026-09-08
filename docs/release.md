@@ -170,6 +170,57 @@ first use. The result carries 16 through 1024 including the retina variants for
 `ico` so the escape hatch above stays current, even though the mac build no
 longer reads it.
 
+## How macOS Signing Is Set Up
+
+The workflow imports the certificate into a keychain of its own and points
+electron-builder at it with `CSC_KEYCHAIN`, rather than handing it `CSC_LINK`
+and letting it manage a keychain itself. That is a workaround, and it is worth
+knowing what it works around, because the shape of the failure is memorable: a
+release that had worked for months failed with
+
+```
+security: SecKeychainUnlock: The user name or passphrase you entered is not correct.
+```
+
+on a commit where nothing relevant had changed — same electron-builder, same
+lockfile, same workflow, same pinned `macos-26` label.
+
+electron-builder passes the **certificate** password to
+`security set-key-partition-list -k`, where that flag takes the **keychain**
+password (app-builder-lib 26.15.3, `codeSign/macCodeSign.js`; the keychain's
+real password is a random string generated thirty lines earlier). The argument
+has always been wrong. It never mattered, because the keychain had just been
+unlocked and `security` therefore never had cause to check it. What changed was
+the runner: the `macos-26` image went from macOS 25.5.0 at v3.0.1 to 25.6.0 at
+v3.0.2, the keychain is locked by the time that call is made, the wrong password
+is finally consulted, and signing stops there.
+
+Pinning the label did not help, and could not: a label pins the major version,
+not the image. The `os=` field in electron-builder's first log line is the
+number that moves, and the first thing to compare against a release that worked
+when a mac build starts behaving differently for no reason.
+
+With `CSC_LINK` absent from the environment, electron-builder does not create a
+keychain at all and signs against whatever `CSC_KEYCHAIN` names, so the broken
+call is never reached. `CSC_LINK` has to be genuinely absent: an empty string
+still counts as set.
+
+Two things to keep in mind if this is ever revisited:
+
+- **The "Assert the macOS build is signed" step is what makes this safe to
+  change.** electron-builder skips signing rather than failing when it cannot
+  find an identity, so a mistake here would otherwise ship an unsigned build
+  through a green job. That step fails the build instead.
+- **The certificate is deliberately not given to the Windows job.** It used to
+  be: `CSC_LINK` was set for the whole matrix, so `signtool` signed every
+  Windows binary with the Apple Developer ID `.p12` — visible in the release
+  logs up to and including v3.0.2 as `signing … certificateFile=…\1.p12`. An
+  Apple certificate chains to nothing Windows trusts, so this bought nothing; it
+  simply used the Apple signing key for something it was never issued for.
+  Windows builds are now unsigned, which is what `electron-builder.yml` and the
+  README have said all along. Signing them properly remains a matter of adding
+  Windows credentials, not of undoing this.
+
 ## Secrets the Workflow Needs
 
 These belong to a **deployment environment**, not to the repository. Create it
@@ -183,6 +234,11 @@ the secrets there. `GH_TOKEN` is the built-in `GITHUB_TOKEN` and needs no setup.
 | `APPLE_ID`                    | The Apple ID that owns the certificate                  |
 | `APPLE_APP_SPECIFIC_PASSWORD` | An app-specific password for that Apple ID              |
 | `APPLE_TEAM_ID`               | The team the certificate belongs to                     |
+
+The first two reach only the macOS job's own "Import the signing certificate"
+step. The section above says why they are not handed to electron-builder as
+`CSC_LINK` and `CSC_KEY_PASSWORD`, and why they are not handed to the Windows
+job at all.
 
 Give the environment one protection rule: under **Deployment branches and
 tags**, select **Selected branches and tags**, add a rule of type **tag** with
