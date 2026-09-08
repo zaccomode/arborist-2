@@ -122,15 +122,101 @@ jobs:
       - name: Unit and integration tests
         run: npm test
 
+      # The certificate goes into a keychain this workflow builds, rather than
+      # one electron-builder builds from CSC_LINK.
+      #
+      # electron-builder hands `security set-key-partition-list` the
+      # *certificate* password, where that flag takes the *keychain* password
+      # (app-builder-lib 26.15.3, codeSign/macCodeSign.js — the keychain's real
+      # password is a random string it generates thirty lines earlier). That
+      # argument has always been wrong and never mattered, because the keychain
+      # it had just created was still unlocked and `security` therefore never
+      # consulted it. The macos-26 image moved from macOS 25.5.0 to 25.6.0
+      # between v3.0.1 and v3.0.2, the keychain is locked by the time that call
+      # runs, the wrong password is finally read, and signing dies on
+      # "SecKeychainUnlock: The user name or passphrase you entered is not
+      # correct" — with nothing in this repository having changed.
+      #
+      # With no CSC_LINK in the environment electron-builder skips its own
+      # keychain handling and signs against CSC_KEYCHAIN as given (see
+      # MacPackager's codeSigningInfo), so the broken call never runs. CSC_LINK
+      # has to be *absent* rather than empty: an empty string still counts as
+      # set and goes straight back down that path.
+      - name: Import the signing certificate into a keychain of our own
+        if: runner.os == 'macOS'
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MAC_CSC_LINK }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          keychain="$RUNNER_TEMP/arborist-signing.keychain-db"
+          certificate="$RUNNER_TEMP/certificate.p12"
+          # This protects a keychain that is created here and deleted at the end
+          # of the job, so it is generated rather than stored: it is not a
+          # secret anybody needs to hold, and it never leaves this step.
+          password="$(openssl rand -base64 24)"
+
+          # A base64 .p12 — see the secrets table in docs/release.md. Anything
+          # else reaches `security import` as rubbish and is rejected there.
+          printf '%s' "$CERTIFICATE_BASE64" | base64 --decode > "$certificate"
+
+          security create-keychain -p "$password" "$keychain"
+          # macOS appends `-db` to a keychain name that does not already end in
+          # it, so take whichever path actually appeared rather than assuming
+          # which convention this version follows.
+          if [ ! -f "$keychain" ] && [ -f "$keychain-db" ]; then
+            keychain="$keychain-db"
+          fi
+          if [ ! -f "$keychain" ]; then
+            echo "::error::security create-keychain produced no file at $keychain." \
+                 "Signing cannot continue."
+            exit 1
+          fi
+          # No timeout and no lock on sleep. A keychain that locks itself
+          # partway through signing is the entire failure this step replaces.
+          security set-keychain-settings "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+
+          security import "$certificate" -k "$keychain" -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/productbuild
+          rm -f "$certificate"
+
+          # `-k` is the keychain password, which is the argument electron-builder
+          # gets wrong. Without this, codesign asks for permission to use the key
+          # and waits for a click nobody is there to give.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "$password" "$keychain" > /dev/null
+
+          # "Note that filename will not be searched to resolve the signing
+          # identity's certificate chain unless it is also on the user's keychain
+          # search list." `list-keychains` has no add, only a wholesale set, so
+          # the existing entries are read back and passed through — and saved,
+          # so the cleanup step can put them back exactly as they were.
+          security list-keychains -d user | tr -d '"' | xargs > "$RUNNER_TEMP/keychains-before"
+          # Word splitting is deliberate: each entry is a separate argument, and
+          # a runner's keychain paths contain no spaces.
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$keychain" $(cat "$RUNNER_TEMP/keychains-before")
+
+          echo "CSC_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+
       - name: Build, sign and publish a draft release
         run: npm run ${{ matrix.script }} -- --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS signing and notarisation. Absent, electron-builder skips
-          # both and produces an unsigned build that Gatekeeper will block —
-          # so these are what make a mac release a release. See docs/release.md.
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # No CSC_LINK here, on either platform, and that is load-bearing twice
+          # over. On macOS the step above has already put the certificate in a
+          # keychain and named it in CSC_KEYCHAIN, which is what electron-builder
+          # signs against when CSC_LINK is absent; setting it would send this
+          # back down the broken path. On Windows it was never wanted at all —
+          # a matrix-wide CSC_LINK handed the Apple certificate to `signtool`,
+          # which signed every Windows binary with it, contradicting both
+          # electron-builder.yml and the README. See docs/release.md.
+          #
+          # Notarisation still reads these, and is skipped along with signing
+          # when no identity is found — which is what keeps a local
+          # `npm run build:mac` working.
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -171,6 +257,26 @@ jobs:
             echo "::error::No .app found under dist/ to check."
             exit 1
           fi
+
+      # The runner is destroyed after this, so this is hygiene rather than a
+      # control — but it is the difference between the certificate living for
+      # one job and living in a keychain that outlives it, which matters the day
+      # any of this runs somewhere self-hosted. `always()` so a failed build
+      # still cleans up after itself.
+      - name: Remove the signing keychain
+        if: always() && runner.os == 'macOS'
+        run: |
+          # CSC_KEYCHAIN rather than the path spelled out a second time: the
+          # import step resolves which name macOS actually gave the file, so
+          # this deletes the keychain that was really used or nothing at all.
+          if [ -n "${CSC_KEYCHAIN:-}" ]; then
+            security delete-keychain "$CSC_KEYCHAIN" || true
+          fi
+          if [ -f "$RUNNER_TEMP/keychains-before" ]; then
+            # shellcheck disable=SC2046
+            security list-keychains -d user -s $(cat "$RUNNER_TEMP/keychains-before") || true
+          fi
+          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/keychains-before"
 
       - name: Upload artifacts for the smoke check
         uses: actions/upload-artifact@v4
