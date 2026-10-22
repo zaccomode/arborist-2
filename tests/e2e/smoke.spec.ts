@@ -260,6 +260,9 @@ test('creates a new branch from a base ref picked on the create-worktree dialog'
   await window.getByRole('combobox').click()
   await window.getByPlaceholder('Search branches…').fill('origin/main')
   await window.getByRole('option', { name: 'origin/main' }).click()
+  // The list animates out, and until it has gone its search box is a second
+  // combobox for the assertion below to trip over.
+  await window.getByPlaceholder('Search branches…').waitFor({ state: 'detached' })
   await expect(window.getByRole('combobox')).toHaveText('origin/main')
   await expect(window.getByTestId('branch-existence')).toContainText('created from origin/main')
 
