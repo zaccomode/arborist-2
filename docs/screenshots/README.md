@@ -27,8 +27,7 @@ Every capture below is deterministic: a scenario builds its own fixture reposito
 
 | Scenario                                              | Dark                                          | Light                                          |
 | ----------------------------------------------------- | --------------------------------------------- | ---------------------------------------------- |
-| `worktree-detail` — ahead and behind its upstream     | ![](./worktree-detail-tracking-dark.png)      | ![](./worktree-detail-tracking-light.png)      |
-| `worktree-detail` — with a note                       | ![](./worktree-detail-notes-dark.png)         | ![](./worktree-detail-notes-light.png)         |
+| `worktree-detail` — ahead and behind, with a note     | ![](./worktree-detail-overview-dark.png)      | ![](./worktree-detail-overview-light.png)      |
 | `worktree-detail` — folder missing                    | ![](./worktree-detail-prunable-dark.png)      | ![](./worktree-detail-prunable-light.png)      |
 | `create-worktree` — before                            | ![](./create-worktree-before-dark.png)        | ![](./create-worktree-before-light.png)        |
 | `create-worktree` — reading a pasted checkout command | ![](./create-worktree-dialog-dark.png)        | ![](./create-worktree-dialog-light.png)        |
