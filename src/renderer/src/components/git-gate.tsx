@@ -74,7 +74,7 @@ function GitNotFound({
     >
       <div className="w-full max-w-md">
         <AlertTriangle className="size-8 text-destructive" />
-        <h1 className="mt-4 text-xl font-semibold">Git not found</h1>
+        <h1 className="mt-4 font-heading text-xl font-semibold">Git not found</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Arborist runs your installed copy of git, and could not find one. Install git, or point
           Arborist at it directly.

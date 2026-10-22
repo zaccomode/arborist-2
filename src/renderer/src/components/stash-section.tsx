@@ -78,7 +78,7 @@ function StashRow({
             <MoreVertical />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-auto">
           <DropdownMenuItem onSelect={() => void run('pop')}>Pop</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => void run('apply')}>Apply</DropdownMenuItem>
           <DropdownMenuItem variant="destructive" onSelect={() => void run('drop')}>

@@ -88,7 +88,7 @@ export function NewStashMenu({
             <MoreVertical />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-auto">
           <DropdownMenuItem onSelect={() => setOpen(true)}>
             {scoped
               ? `Stash ${selected.length} selected file${selected.length === 1 ? '' : 's'}…`

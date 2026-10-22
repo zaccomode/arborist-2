@@ -61,7 +61,9 @@ export function WorktreeDetail({
             <GitBranch className="mt-1.5 size-6 shrink-0 text-muted-foreground" />
           )}
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-2xl font-semibold">{worktreeTitle(worktree)}</h1>
+            <h1 className="truncate font-heading text-2xl font-semibold">
+              {worktreeTitle(worktree)}
+            </h1>
             <button
               type="button"
               title="Copy path"
@@ -87,7 +89,7 @@ export function WorktreeDetail({
                 <MoreVertical />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="w-auto">
               <DropdownMenuItem disabled={worktree.prunable} onSelect={onRunSetup}>
                 Run setup
               </DropdownMenuItem>

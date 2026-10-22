@@ -15,20 +15,19 @@ Then run `npx prettier --write` on the generated files (the CLI emits its own st
 Plumbing that makes the CLI work here (don't break it):
 
 - `components.json` at the root is hand-authored because `shadcn init` can't detect electron-vite's split config.
+- `shadcn apply` (a preset change) runs `init` underneath, which stops at "We could not detect a supported framework" for the same reason. Run it with a throwaway `vite.config.ts` (`export default {}`) at the root, and delete that file afterwards. `shadcn add` doesn't need it.
 - The root `tsconfig.json` carries `baseUrl`/`paths` purely so the CLI can resolve the `@/` alias — it compiles nothing (`files: []`). Keep its paths in sync with `tsconfig.web.json`. **Symptom of breakage:** the CLI reports success but writes into a literal `./@/` directory at the repo root.
 
 If the CLI misbehaves, diagnose and fix the plumbing — don't fall back to hand-copying component source.
 
-**One exception, for blocked containers.** Some cloud containers deny `ui.shadcn.com`, where the CLI fetches its registry, and the failure reads as `Request was cancelled`. Confirm it is the network rather than the plumbing (`curl -sS -o /dev/null -w '%{http_code}' https://ui.shadcn.com/r/styles/new-york-v4/input.json` returns `000`), then take the CLI's own payload from the upstream source tree, which is served from a host that is usually reachable:
+**One exception, for blocked containers.** Some cloud containers deny `ui.shadcn.com`, where the CLI fetches its registry, and the failure reads as `Request was cancelled`. Confirm it is the network rather than the plumbing (`curl -sS -o /dev/null -w '%{http_code}' https://ui.shadcn.com/r/styles/radix-mira/input.json` returns `000`), then run the CLI through `scripts/shadcn-offline.ts`, with the same arguments you would give it:
 
 ```bash
-curl -sS "https://raw.githubusercontent.com/shadcn-ui/ui/main/apps/v4/registry/new-york-v4/ui/<component>.tsx" \
-  | sed 's#@/registry/new-york-v4/ui/#@/components/ui/#g' \
-  > src/renderer/src/components/ui/<component>.tsx
-npx prettier --write src/renderer/src/components/ui/<component>.tsx
+node scripts/shadcn-offline.ts add <component> --overwrite --yes
+npx prettier --write src/renderer/src/components/ui
 ```
 
-The result is what `shadcn add` writes, so a later `--overwrite` from a machine with access is a no-op. Install the component's npm dependencies by hand, since nothing reads the registry's dependency list — check its imports.
+Copying a component's source file by hand no longer works. The project uses the `radix-mira` style (#89), and the site generates each style's components from shared sources by applying that style's tokens. The script does the same build from the upstream source tree on GitHub, which is usually reachable, using the installed `shadcn` package's own transforms. It then serves the result locally and points the CLI at it through `REGISTRY_URL`. The CLI does all the writing, npm dependencies included, so a later `--overwrite` from a machine with access is a no-op. It builds from `main`, as the site does; pass `--ref <git ref>` to pin another. It does not cover `shadcn apply`, which also needs the site's per-preset `/init` response.
 
 ## Before opening a pull request
 

@@ -13,17 +13,27 @@ const LANE_WIDTH = 12
 /** Fixed so the rail can be one small `<svg>` per row rather than one tall one spanning the whole list. */
 const ROW_HEIGHT = 72
 
+// Lane colours of the graph's own, rather than the theme's chart colours: the
+// preset from #89 makes those five shades of grey, and a lane is only worth
+// colouring if it can be told from its neighbour.
+//
 // Literal class names, not built from a template string: Tailwind's content
 // scanner has to find the whole class name as text in a scanned file, and a
-// computed `stroke-chart-${n}` never matches that scan.
+// computed `stroke-graph-lane-${n}` never matches that scan.
 const LANE_STROKE = [
-  'stroke-chart-1',
-  'stroke-chart-2',
-  'stroke-chart-3',
-  'stroke-chart-4',
-  'stroke-chart-5'
+  'stroke-graph-lane-1',
+  'stroke-graph-lane-2',
+  'stroke-graph-lane-3',
+  'stroke-graph-lane-4',
+  'stroke-graph-lane-5'
 ]
-const LANE_FILL = ['fill-chart-1', 'fill-chart-2', 'fill-chart-3', 'fill-chart-4', 'fill-chart-5']
+const LANE_FILL = [
+  'fill-graph-lane-1',
+  'fill-graph-lane-2',
+  'fill-graph-lane-3',
+  'fill-graph-lane-4',
+  'fill-graph-lane-5'
+]
 
 function laneStroke(lane: number): string {
   return LANE_STROKE[lane % LANE_STROKE.length]

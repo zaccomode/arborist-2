@@ -686,6 +686,9 @@ export const scenarios: Scenario[] = [
       await shot('filtered')
 
       await window.getByRole('option', { name: 'release/1.0' }).click()
+      // The list animates out, and until it has gone its search box is a
+      // second combobox for the click below to trip over.
+      await window.getByPlaceholder('Search branches…').waitFor({ state: 'detached' })
       await window.getByLabel('Branch', { exact: true }).fill('feature-x')
       await window.getByRole('combobox').click()
       await window.getByPlaceholder('Search branches…').fill('origin/feature-x')

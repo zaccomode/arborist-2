@@ -72,7 +72,7 @@ function ConflictRow({
             <ChevronDown />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-auto">
           {otherPresets.map((preset) => (
             <DropdownMenuItem key={preset.id} onSelect={() => onOpen(preset.id)}>
               Open in {preset.name}
