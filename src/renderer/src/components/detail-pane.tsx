@@ -5,7 +5,7 @@ export function NoProjects({ onAddProject }: { onAddProject: () => void }): Reac
   return (
     <div className="flex h-full flex-col items-center justify-center" data-testid="no-projects">
       <TreePine className="size-10 text-muted-foreground" />
-      <h1 className="mt-4 text-2xl font-semibold">Arborist</h1>
+      <h1 className="mt-4 font-heading text-2xl font-semibold">Arborist</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Add a git repository to see and manage its worktrees.
       </p>
@@ -32,7 +32,7 @@ export function NoWorktreeSelected({
       data-testid="no-worktree-selected"
     >
       <GitBranch className="size-10 text-muted-foreground" />
-      <h1 className="mt-4 text-lg font-semibold">No worktree selected</h1>
+      <h1 className="mt-4 font-heading text-lg font-semibold">No worktree selected</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Pick one from the list, or start a new one.
       </p>

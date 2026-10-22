@@ -73,7 +73,7 @@ export function ListControls({
             <ArrowDownUp />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-auto">
           <DropdownMenuRadioGroup
             value={sort}
             onValueChange={(value) => onSortChange(value as ListSort)}

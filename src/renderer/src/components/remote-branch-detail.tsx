@@ -28,7 +28,7 @@ export function RemoteBranchDetail({
       <div className="flex items-start gap-3">
         <Cloud className="mt-1.5 size-6 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-semibold">{branch.name}</h1>
+          <h1 className="truncate font-heading text-2xl font-semibold">{branch.name}</h1>
           <p className="text-sm text-muted-foreground">No local worktree yet.</p>
         </div>
       </div>

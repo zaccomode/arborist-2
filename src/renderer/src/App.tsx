@@ -9,6 +9,7 @@ import {
   sortWorktrees
 } from '@shared/list-view'
 import { splitDisplayPath } from '@shared/working-tree'
+import { worktreeTitle } from '@shared/format'
 import { useQueryClient } from '@tanstack/react-query'
 import { Shell } from '@/components/shell'
 import { Sidebar } from '@/components/sidebar'
@@ -20,7 +21,8 @@ import { RemoteBranchDetail } from '@/components/remote-branch-detail'
 import { CreateWorktreeDialog } from '@/components/create-worktree-dialog'
 import { DeleteWorktreeDialogs } from '@/components/delete-worktree'
 import { ProjectSettingsDialog } from '@/components/project-settings-dialog'
-import { AutomationConsole, type AutomationTarget } from '@/components/automation-console'
+import { AutomationConsole } from '@/components/automation-console'
+import { SetupToasts } from '@/components/setup-toasts'
 import { SettingsDialog } from '@/components/settings/settings-dialog'
 import { CommitInspector } from '@/components/commit-inspector'
 import { DiffPanel } from '@/components/diff-panel'
@@ -46,6 +48,7 @@ import {
   useSelectedWorktree,
   useWorktreeInspector
 } from '@/state/selection'
+import { runSetup, type AutomationTarget } from '@/state/setup-runs'
 
 /**
  * Matches the strip main/index.ts reserves for the OS's traffic lights or
@@ -59,6 +62,7 @@ function automationTarget(project: Repository, worktree: Worktree): AutomationTa
   return {
     repositoryId: project.id,
     worktreePath: worktree.path,
+    label: worktreeTitle(worktree),
     values: {
       path: worktree.path,
       branch: worktree.branch,
@@ -83,7 +87,6 @@ function App(): React.JSX.Element | null {
   const [trackingRemote, setTrackingRemote] = useState<RemoteBranch | null>(null)
   const [deletingWorktree, setDeletingWorktree] = useState(false)
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false)
-  const [automation, setAutomation] = useState<AutomationTarget | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   const { projectId, selectProject, selectWorktree, selectRemoteBranch, hydrated } = useSelection()
@@ -425,7 +428,7 @@ function App(): React.JSX.Element | null {
                   })
                 }}
                 onDelete={() => setDeletingWorktree(true)}
-                onRunSetup={() => setAutomation(automationTarget(selected, worktree))}
+                onRunSetup={() => runSetup(automationTarget(selected, worktree))}
               />
             )}
             {selected && !worktree && remoteBranch && (
@@ -482,7 +485,8 @@ function App(): React.JSX.Element | null {
         />
       )}
 
-      <AutomationConsole target={automation} onClose={() => setAutomation(null)} />
+      <AutomationConsole />
+      <SetupToasts />
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
@@ -508,7 +512,7 @@ function App(): React.JSX.Element | null {
             // written for, without anyone having to remember to.
             const script = await invoke('automation:script', selected.id)
             const created = data?.find((entry) => samePath(entry.path, worktreePath))
-            if (script.trim() && created) setAutomation(automationTarget(selected, created))
+            if (script.trim() && created) runSetup(automationTarget(selected, created))
           }}
         />
       )}

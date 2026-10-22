@@ -183,7 +183,7 @@ export function CommitBox({
                 <ChevronDown />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="w-auto">
               <DropdownMenuCheckboxItem
                 checked={amend}
                 disabled={!canAmend}

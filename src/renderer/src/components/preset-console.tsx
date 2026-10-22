@@ -8,7 +8,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { ConsoleOutput } from '@/components/console-output'
-import { useAutomationRun } from '@/state/automation-run'
+import { forgetAutomationRun, useAutomationRun } from '@/state/automation-run'
 import { invoke } from '@/api/client'
 
 export interface PresetRun {
@@ -33,6 +33,10 @@ export function PresetConsole({
 
   if (!run) return null
 
+  const close = (): void => {
+    forgetAutomationRun(run.runId)
+    onClose()
+  }
   const running = status === 'running'
   const heading =
     status === 'running'
@@ -47,7 +51,7 @@ export function PresetConsole({
     <Dialog
       open
       onOpenChange={(next) => {
-        if (!next && !running) onClose()
+        if (!next && !running) close()
       }}
     >
       <DialogContent
@@ -71,7 +75,7 @@ export function PresetConsole({
               Cancel
             </Button>
           ) : (
-            <Button onClick={onClose}>Close</Button>
+            <Button onClick={close}>Close</Button>
           )}
         </DialogFooter>
       </DialogContent>

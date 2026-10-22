@@ -126,7 +126,7 @@ export function SyncActions({
                 <ChevronDown />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="w-auto">
               <DropdownMenuItem onSelect={() => void runPull('rebase')}>
                 {PULL_MODE_LABELS.rebase}
               </DropdownMenuItem>

@@ -45,6 +45,8 @@ Every capture below is deterministic: a scenario builds its own fixture reposito
 | ------------------------------------------------ | ---------------------------------------- | ----------------------------------------- |
 | `setup-automation` — the script editor           | ![](./setup-automation-editor-dark.png)  | ![](./setup-automation-editor-light.png)  |
 | `setup-automation` — the console mid-run         | ![](./setup-automation-console-dark.png) | ![](./setup-automation-console-light.png) |
+| `setup-background` — running in the background   | ![](./setup-background-running-dark.png) | ![](./setup-background-running-light.png) |
+| `setup-background` — failed in the background    | ![](./setup-background-failed-dark.png)  | ![](./setup-background-failed-light.png)  |
 | `project-settings` — script and preset overrides | ![](./project-settings-dark.png)         | ![](./project-settings-light.png)         |
 | `settings` — General                             | ![](./settings-general-dark.png)         | ![](./settings-general-light.png)         |
 | `settings` — Presets                             | ![](./settings-presets-dark.png)         | ![](./settings-presets-light.png)         |
