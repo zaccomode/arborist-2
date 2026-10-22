@@ -390,7 +390,8 @@ export const scenarios: Scenario[] = [
       'The worktree detail pane across its three tabs: Overview (with the ' +
       'branch/commit/path information block and notes), Working Tree over ' +
       'a dirty worktree so a row exists, Working Tree over a clean one for ' +
-      'its empty state, and Commit Graph.',
+      'its empty state, and Commit Graph. Then a worktree whose folder has ' +
+      'gone missing, with the banner that offers to prune it.',
     setup: async ({ workDir }) => {
       const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
@@ -417,6 +418,10 @@ export const scenarios: Scenario[] = [
       await window.getByRole('tab', { name: 'Commit Graph' }).click()
       await window.getByTestId('commit-graph-rows').waitFor({ state: 'visible' })
       await shot('commit-graph')
+
+      await window.getByRole('button', { name: /feature\/prunable/ }).click()
+      await window.getByTestId('prunable-banner').waitFor({ state: 'visible' })
+      await shot('prunable')
     }
   },
   {
