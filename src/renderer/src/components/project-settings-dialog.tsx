@@ -117,7 +117,10 @@ export function ProjectSettingsDialog({
             <TabsTrigger value="danger">Danger zone</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="automation" className="min-h-0 flex-1 space-y-2 overflow-y-auto pt-4">
+          <TabsContent
+            value="automation"
+            className="min-h-0 flex-1 space-y-2 overflow-x-hidden overflow-y-auto pt-4"
+          >
             <Label htmlFor="automation-script">Setup automation</Label>
             <Textarea
               id="automation-script"
@@ -168,17 +171,26 @@ export function ProjectSettingsDialog({
             )}
           </TabsContent>
 
-          <TabsContent value="worktrees" className="min-h-0 flex-1 overflow-y-auto pt-4">
+          <TabsContent
+            value="worktrees"
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pt-4"
+          >
             <ProjectWorktreeLocation projectId={project.id} />
           </TabsContent>
 
-          <TabsContent value="presets" className="min-h-0 flex-1 space-y-6 overflow-y-auto pt-4">
+          <TabsContent
+            value="presets"
+            className="min-h-0 flex-1 space-y-6 overflow-x-hidden overflow-y-auto pt-4"
+          >
             <ProjectConflictEditor projectId={project.id} />
             <ProjectPresetOverrides projectId={project.id} />
             <ProjectPresets projectId={project.id} />
           </TabsContent>
 
-          <TabsContent value="notes" className="min-h-0 flex-1 overflow-y-auto pt-4">
+          <TabsContent
+            value="notes"
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pt-4"
+          >
             {/* The project's own note. The worktree pane keeps per-worktree
                 ones; this is the only place a note about the project itself
                 belongs now that the pane behind it is an empty state. */}
@@ -190,7 +202,10 @@ export function ProjectSettingsDialog({
             />
           </TabsContent>
 
-          <TabsContent value="danger" className="min-h-0 flex-1 overflow-y-auto pt-4">
+          <TabsContent
+            value="danger"
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pt-4"
+          >
             {/* Removing the project is a project setting, and the last one
                 anyone reaches for — so it lives behind a confirmation, rather
                 than one slip away in the switcher's menu. */}

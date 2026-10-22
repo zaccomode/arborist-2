@@ -63,7 +63,10 @@ export function SettingsDialog({
             <TabsTrigger value="developer">Developer</TabsTrigger>
             <TabsTrigger value="about">About</TabsTrigger>
           </TabsList>
-          <TabsContent value="general" className="min-h-0 flex-1 overflow-y-auto pt-4">
+          <TabsContent
+            value="general"
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pt-4"
+          >
             {settings.data && (
               <GeneralSettings
                 settings={settings.data}
@@ -71,10 +74,16 @@ export function SettingsDialog({
               />
             )}
           </TabsContent>
-          <TabsContent value="presets" className="min-h-0 flex-1 overflow-y-auto pt-4">
+          <TabsContent
+            value="presets"
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pt-4"
+          >
             <PresetSettings />
           </TabsContent>
-          <TabsContent value="developer" className="min-h-0 flex-1 overflow-y-auto pt-4">
+          <TabsContent
+            value="developer"
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pt-4"
+          >
             {settings.data && (
               <DeveloperSettings
                 settings={settings.data}
@@ -82,7 +91,10 @@ export function SettingsDialog({
               />
             )}
           </TabsContent>
-          <TabsContent value="about" className="min-h-0 flex-1 overflow-y-auto pt-4">
+          <TabsContent
+            value="about"
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pt-4"
+          >
             <AboutSettings />
           </TabsContent>
         </Tabs>
