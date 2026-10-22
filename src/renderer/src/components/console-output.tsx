@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { CheckCircle2, CircleDashed, CircleX, Loader2 } from 'lucide-react'
-import type { CommandState } from '@/state/automation-run'
+import type { CommandState } from '@shared/automation'
 
 /** The command list and its streamed output, scrolled to whatever is newest. */
 export function ConsoleOutput({

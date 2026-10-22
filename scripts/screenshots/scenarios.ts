@@ -1,4 +1,4 @@
-import { chmod, mkdir, writeFile } from 'fs/promises'
+import { chmod, mkdir, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import type { Page } from 'playwright'
 // Node's native type stripping resolves ESM imports literally, so this needs
@@ -836,6 +836,81 @@ export const scenarios: Scenario[] = [
       await shot('console')
     }
   },
+  (() => {
+    // The script's second line waits for `release` to appear beside the
+    // repository, and its third fails if `fail` is there, so `drive` decides
+    // when each run ends and how, without sleeping on the clock. Beside it
+    // rather than in it, so they never show up as untracked changes.
+    let workDir = ''
+    const gate = (name: string): string => join(workDir, name)
+    return {
+      name: 'setup-background',
+      description:
+        'Setup sent to the background (#88): the toast that follows the run, ' +
+        'the toasts for a run that finished and one that failed out of sight, ' +
+        'and the console a failure toast reopens.',
+      setup: async (context) => {
+        workDir = context.workDir
+        const fixture = new GitFixture(workDir, 'Arborist')
+        await fixture.init()
+        return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+      },
+      drive: async (window, shot) => {
+        await window.getByTestId('project-switcher').click()
+        await window.getByRole('menuitem', { name: 'Add project…' }).click()
+
+        await window.getByRole('button', { name: 'Project settings' }).click()
+        await window
+          .getByTestId('automation-script')
+          .fill(
+            'echo "Installing into {{path}}"\n' +
+              'until [ -e ../release ]; do sleep 0.1; done\n' +
+              'test ! -e ../fail'
+          )
+        await window.getByRole('button', { name: 'Save' }).click()
+
+        const toast = window.getByTestId('setup-toast')
+        const runSetup = async (): Promise<void> => {
+          await window.getByRole('button', { name: 'Worktree actions' }).click()
+          await window.getByRole('menuitem', { name: 'Run setup' }).click()
+          await window
+            .getByTestId('automation-status')
+            .filter({ hasText: 'Running 2 of 3' })
+            .waitFor()
+        }
+
+        await window.getByRole('button', { name: /main/ }).first().click()
+        await runSetup()
+        await shot('console')
+        await window.getByRole('button', { name: 'Run in background' }).click()
+        await window.getByTestId('automation-console').waitFor({ state: 'hidden' })
+        await toast.filter({ hasText: 'Running 2 of 3' }).waitFor({ state: 'visible' })
+        await shot('running')
+
+        await writeFile(gate('release'), '')
+        await toast.filter({ hasText: 'Setup finished on main' }).waitFor({ state: 'visible' })
+        await shot('completed')
+
+        // A second run, closed from the dialog's own X this time, that fails.
+        await rm(gate('release'))
+        await writeFile(gate('fail'), '')
+        await runSetup()
+        await window.getByRole('button', { name: 'Close' }).click()
+        await toast.filter({ hasText: 'Running 2 of 3' }).waitFor({ state: 'visible' })
+        await writeFile(gate('release'), '')
+        await toast.filter({ hasText: 'Failed at command 3' }).waitFor({ state: 'visible' })
+        await shot('failed')
+
+        await toast.getByRole('button', { name: /Setup failed on main/ }).click()
+        await window
+          .getByTestId('automation-status')
+          .filter({ hasText: 'Failed at command 3' })
+          .waitFor()
+        await toast.waitFor({ state: 'detached' })
+        await shot('reopened')
+      }
+    } satisfies Scenario
+  })(),
   {
     name: 'fetch',
     description:
