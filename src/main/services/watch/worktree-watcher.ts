@@ -52,6 +52,30 @@ export function metaWatchOptions(platform: NodeJS.Platform): { usePolling?: true
 
 const META_WATCH_OPTIONS = metaWatchOptions(process.platform)
 
+/**
+ * Whether `index` and `HEAD` are also polled as literal files, on top of the
+ * native directory watches. Windows needs it for the reason
+ * `metaWatchOptions` gives. macOS needs it too, for a different one: the
+ * native watch there *sees* the rename, but can lose it. `git add` first
+ * reads the old index, which on macOS can surface as an access-time-only
+ * event. chokidar ignores that event, but it opens a 5ms per-file throttle
+ * with no trailing call, and `git add` on a small repository renames the
+ * new index over the old one inside that window. The directory watch is
+ * the only backup, and on macOS it is FSEvents, which starts
+ * asynchronously and can miss an event that lands just after `watch()`
+ * resolves. `macos-latest` CI missed the `index` event this way, on both
+ * the main worktree and a linked one. A poll compares modification times,
+ * so neither timing matters to it.
+ *
+ * Linux stays native: inotify reports the rename synchronously, and the
+ * same tests have never missed it there.
+ */
+export function pollsMetaFiles(platform: NodeJS.Platform): boolean {
+  return platform === 'win32' || platform === 'darwin'
+}
+
+const POLL_META_FILES = pollsMetaFiles(process.platform)
+
 async function pathExists(path: string): Promise<boolean> {
   try {
     await fs.stat(path)
@@ -333,7 +357,8 @@ export class WorktreeWatcher {
       if (!isCurrent()) return
     }
 
-    // Windows only, layered on top of the directory watches above: `index`
+    // Windows and macOS (see `pollsMetaFiles`), layered on top of the
+    // directory watches above: `index`
     // and `HEAD` watched a second time, as the literal file paths, with
     // polling. Two attempts already tried to fix the linked-worktree case
     // on `windows-latest` by adjusting the *directory* watch (usePolling on
@@ -360,7 +385,7 @@ export class WorktreeWatcher {
     // isn't part of the rename-swap pattern this targets (nothing renames
     // onto it on every commit the way `index`/`HEAD` do), and the directory
     // watch above already covers its (rarer) appearance.
-    if (META_WATCH_OPTIONS.usePolling) {
+    if (POLL_META_FILES) {
       for (const file of [gitPaths.index, gitPaths.head]) {
         const fileWatcher = watchPaths(file, {
           ignoreInitial: true,

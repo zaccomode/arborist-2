@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { metaWatchOptions } from '../../src/main/services/watch/worktree-watcher'
+import { metaWatchOptions, pollsMetaFiles } from '../../src/main/services/watch/worktree-watcher'
 
 /**
  * `metaWatchOptions` is the one piece of the linked-worktree Windows fix
@@ -22,5 +22,22 @@ describe('metaWatchOptions', () => {
 
   it('leaves Linux on native fs.watch', () => {
     expect(metaWatchOptions('linux')).toEqual({})
+  })
+})
+
+/**
+ * Whether `index` and `HEAD` are also polled as literal files. macOS joins
+ * Windows here for its own reason (see `pollsMetaFiles`): its native watch
+ * can lose the rename `git add` makes over `index`, which `macos-latest`
+ * CI caught as a missed `index` event.
+ */
+describe('pollsMetaFiles', () => {
+  it('polls the literal files on win32 and macOS', () => {
+    expect(pollsMetaFiles('win32')).toBe(true)
+    expect(pollsMetaFiles('darwin')).toBe(true)
+  })
+
+  it('leaves Linux on native watches alone', () => {
+    expect(pollsMetaFiles('linux')).toBe(false)
   })
 })
