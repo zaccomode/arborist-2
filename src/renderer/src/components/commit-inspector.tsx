@@ -106,7 +106,8 @@ export function CommitInspector({
         <div className="flex shrink-0 items-center gap-1 border-b px-2 py-1">
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
+            className="hover:bg-accent dark:hover:bg-accent"
             aria-label="Back to commit"
             onClick={() => setSelectedFile(null)}
           >
@@ -159,7 +160,13 @@ export function CommitInspector({
             <CopyableError className="text-xs" message={(commitQuery.error as Error).message} />
           )}
         </div>
-        <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="hover:bg-accent dark:hover:bg-accent"
+          aria-label="Close"
+          onClick={onClose}
+        >
           <X />
         </Button>
       </div>

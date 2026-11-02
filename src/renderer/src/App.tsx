@@ -8,6 +8,7 @@ import {
   sortRemoteBranches,
   sortWorktrees
 } from '@shared/list-view'
+import { shouldAutoFetch } from '@shared/auto-refresh'
 import { splitDisplayPath } from '@shared/working-tree'
 import { worktreeTitle } from '@shared/format'
 import { useQueryClient } from '@tanstack/react-query'
@@ -291,6 +292,23 @@ function App(): React.JSX.Element | null {
     })
   }
   const fetchMutate = fetchProject.mutate
+
+  // #94: selecting a repository, and regaining focus, fetch its remotes so
+  // ahead/behind is current without pressing Fetch. Throttled per repository,
+  // and silent on failure: being offline when tabbing back in is not an error
+  // worth a toast on every focus.
+  const lastAutoFetch = useRef(new Map<string, number>())
+  useEffect(() => {
+    if (!repoPath) return
+    const autoFetch = (): void => {
+      const now = Date.now()
+      if (!shouldAutoFetch(lastAutoFetch.current.get(repoPath), now)) return
+      lastAutoFetch.current.set(repoPath, now)
+      fetchMutate(repoPath)
+    }
+    autoFetch()
+    return window.arborist.subscribe('app:focus', autoFetch)
+  }, [repoPath, fetchMutate])
 
   const intervalMinutes = settings.data?.autoFetchIntervalMinutes ?? 0
   useEffect(() => {

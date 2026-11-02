@@ -76,7 +76,8 @@ export function WorktreeDetail({
           <SyncActions repoPath={project.path} worktree={worktree} />
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
+            className="hover:bg-accent dark:hover:bg-accent"
             aria-label="Fetch and refresh"
             disabled={refreshing}
             onClick={onRefresh}
@@ -85,7 +86,12 @@ export function WorktreeDetail({
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" aria-label="Worktree actions">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="hover:bg-accent dark:hover:bg-accent"
+                aria-label="Worktree actions"
+              >
                 <MoreVertical />
               </Button>
             </DropdownMenuTrigger>

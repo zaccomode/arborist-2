@@ -81,8 +81,8 @@ export function NewStashMenu({
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            size="icon-sm"
-            className="ml-auto"
+            size="icon"
+            className="ml-auto hover:bg-accent dark:hover:bg-accent"
             aria-label="Changed files actions"
           >
             <MoreVertical />
