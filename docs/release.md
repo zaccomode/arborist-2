@@ -6,19 +6,41 @@ release workflow needs.
 
 ## Cutting a Release
 
-1. Bump `version` in `package.json` and commit it on `main`.
-2. Tag that commit with the same version, prefixed with `v`, and push the tag:
-   ```bash
-   git tag v1.2.0 && git push origin v1.2.0
-   ```
-3. `.github/workflows/release.yml` checks the tag against `package.json` and
-   fails immediately if they disagree, then builds macOS and Windows in
-   parallel and uploads a **draft** release.
+1. Open a pull request that bumps `version` in `package.json`, and merge it
+   into `main`. Merging is the decision to release, so nothing else needs to
+   happen until the draft appears.
+2. Once CI passes on the merge, `.github/workflows/tag-release.yml` sees that
+   the version changed, tags that commit `v` plus the version, and starts
+   `.github/workflows/release.yml` on the tag.
+3. `release.yml` checks the tag against `package.json`, then builds macOS and
+   Windows in parallel and uploads a **draft** release.
 4. Download the artifacts from the draft and install one on each platform.
    `docs/manual-checklist.md` is the pass to run.
 5. Publish the release in the GitHub UI. Tick **Set as a pre-release** for
    anything with a prerelease version, so it never becomes the release that
    stable installs update to.
+
+Nothing in the first three steps needs `git tag`, which matters for agents: the
+cloud sandboxes they run in can push their own branch but not a tag. An agent
+can do the first step completely, and a human merging its pull request is the
+approval.
+
+The tag is created only when the commit CI ran on changes the version, compared
+with its first parent, which for a merge is `main` as it was beforehand. A
+version bump buried in the middle of a direct push of several commits is
+therefore missed. In that case run **Actions → Tag release → Run workflow** on
+`main`, which tags `main`'s current head. That path does not wait for CI, so
+check that the head is green first.
+
+Pushing the tag by hand still works, and is the fallback if `tag-release.yml`
+ever fails:
+
+```bash
+git tag v1.2.0 && git push origin v1.2.0
+```
+
+When the hand-pushed tag gets there first, `tag-release.yml` finds it and does
+nothing, so the two cannot both start a build.
 
 There should be exactly **one** draft per tag, holding both platforms' artifacts
 and both `*.yml` manifests. Publishing a half-filled one ships an update that
@@ -40,11 +62,26 @@ A release published automatically is a release auto-installed onto everyone
 before anyone has opened it. Building automatically and publishing by hand keeps
 the part a human is good at.
 
-Tagging without bumping `package.json` first is the mistake this is easiest to
-make, which is why the workflow asserts on it rather than trusting. The version
-in the About panel and the version `electron-updater` compares against both come
-from `package.json`, so a mismatched tag ships a build that lies about what it
-is.
+Tagging without bumping `package.json` first used to be the easiest mistake to
+make, and it still is for a tag pushed by hand, which is why the workflow
+asserts on it rather than trusting. The version in the About panel and the
+version `electron-updater` compares against both come from `package.json`, so a
+mismatched tag ships a build that lies about what it is. A tag made by
+`tag-release.yml` is read from `package.json`, so it cannot disagree.
+
+### Why the Tag Starts the Build Explicitly
+
+`tag-release.yml` creates the tag with the built-in `GITHUB_TOKEN`, and GitHub
+does not start workflows from events that token causes, so the new tag does not
+fire `release.yml`'s `push` trigger. `workflow_dispatch` is the exception to
+that rule, so `tag-release.yml` dispatches `release.yml` on the tag ref
+instead. The run happens on the tag rather than on `main`, which is what lets
+it reach the signing environment below.
+
+If the tagging is ever moved to an App token or a personal access token, the
+tag _will_ fire `push`, and the dispatch must be removed. Otherwise two release
+runs start at once, both find no draft, and both create one — the split release
+the `verify` job exists to prevent.
 
 ## Rehearsing a Release
 
@@ -58,7 +95,9 @@ quarantine attribute, and Gatekeeper only does its full check on a quarantined
 file — a `curl`ed dmg opens cleanly whether or not notarisation worked, which
 makes it a test that always passes.
 
-**A tag whose release is still a draft breaks the updater.** The releases Atom
+**A tag whose release is still a draft breaks the updater.** The tag now exists
+from the moment CI passes on the version bump, so this window opens when the
+pull request merges, not when someone pushes a tag. The releases Atom
 feed lists bare tags as well as releases, so `electron-updater` sees a tag the
 moment it is pushed, takes it as the newest version, and then asks for a
 manifest under a release that does not exist yet. The result is a 404 on
@@ -120,6 +159,10 @@ a matter of making an older release the latest again.
    ```bash
    git push --delete origin v1.2.0 && git tag -d v1.2.0
    ```
+   Later merges will not put it back. `tag-release.yml` only tags a commit
+   that changes the version, so the tag is recreated only if someone runs it by
+   hand while `package.json` still says `1.2.0`. The fix in step 3 bumps past
+   it anyway.
 
 ## The Icons
 
@@ -306,9 +349,9 @@ The certificate expires after five years and the release job will start failing
 on the day it does, with an error about no identity being found. Worth a
 calendar entry.
 
-### Checking the Certificate Before Pushing a Tag
+### Checking the Certificate Before Cutting a Release
 
-Every mistake in this section costs a tag, a build, and the wait for two
+Every mistake in this section costs a version bump, a tag, a build, and the wait for two
 notarisation submissions before it tells you about itself. Both of the things
 that go wrong can be checked locally in a second.
 

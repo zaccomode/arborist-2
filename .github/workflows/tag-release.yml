@@ -1,0 +1,107 @@
+name: Tag release
+
+# The version in package.json is the decision; the tag is bookkeeping. When a
+# commit lands on main that changes the version, and CI has passed on it, this
+# tags that commit and starts the release build from the tag. Cutting a release
+# is therefore a pull request that bumps package.json, which anyone can open —
+# including an agent whose git cannot push tags — and merging it is the
+# approval. Publishing the draft that comes out the other end stays manual; see
+# docs/release.md.
+#
+# The tag is taken from package.json rather than typed by anyone, so the
+# mismatch `verify` in release.yml guards against cannot arise on this path.
+# That check stays, for tags pushed by hand.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # For a version bump that this missed: one buried mid-way through a push of
+  # several commits, where the commit CI ran on did not itself change the
+  # version. Run it from main. It tags main's current head, and unlike the
+  # automatic path it does not wait for CI, so check the head is green first.
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the tag
+  actions: write # dispatch release.yml
+
+# Two pushes to main finishing CI together must not both decide the tag is
+# missing and both start a build.
+concurrency:
+  group: tag-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    # `event == 'push'` because CI also runs on pull requests, and a pull
+    # request whose head branch happens to be called main would otherwise pass
+    # the branch filter above.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The commit CI actually passed on, not whatever main has moved to
+          # since. Depth 2 so the parent's package.json can be read.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 2
+
+      - name: Tag the commit if it bumps the version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "::error::Run this from main, not ${{ github.ref_name }}. It tags the" \
+                 "commit it runs on, and releases come from main."
+            exit 1
+          fi
+
+          sha="$(git rev-parse HEAD)"
+          version="$(node -p "require('./package.json').version")"
+          tag="v$version"
+
+          # A commit that leaves the version alone is an ordinary merge, not a
+          # release. Checking for the change, rather than only for a missing
+          # tag, is what lets a bad release's tag be deleted (see "Rolling Back"
+          # in docs/release.md) without the next unrelated merge re-creating it
+          # on a different commit. The first parent is main as it was before
+          # this commit, merge commit or not.
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            previous="$(git show HEAD^1:package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")"
+            if [ "$previous" = "$version" ]; then
+              echo "package.json is still at $version; nothing to release."
+              exit 0
+            fi
+            echo "package.json moved from $previous to $version."
+          fi
+
+          # Someone may have pushed the tag by hand out of habit, in which case
+          # release.yml is already running from that push.
+          if gh api "repos/$REPO/git/ref/tags/$tag" > /dev/null 2>&1; then
+            echo "$tag already exists, so its release has already been started."
+            exit 0
+          fi
+
+          gh api "repos/$REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$sha" > /dev/null
+          echo "Tagged $sha as $tag."
+
+          # A ref created with GITHUB_TOKEN does not fire `push: tags`, so the
+          # release has to be started explicitly; workflow_dispatch is the one
+          # event that token is allowed to trigger. Dispatching on the tag ref,
+          # rather than on main with the tag as an input, is what lets the build
+          # job reach the signing environment, whose policy admits only v* tags.
+          #
+          # If this ever moves to an App token or a PAT, the tag above *will*
+          # fire `push: tags`, and this line must go: two release runs at once
+          # both find no draft and both create one, which is the split release
+          # `verify` exists to prevent.
+          gh workflow run release.yml --repo "$REPO" --ref "$tag"
+          echo "Started the release workflow for $tag. It will leave a draft to check and publish."

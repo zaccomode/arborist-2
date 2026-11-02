@@ -1,19 +1,24 @@
 name: Release
 
-# Tagging is the trigger, and the tag has to agree with package.json — the
+# A v* tag is the trigger, and the tag has to agree with package.json — the
 # version in the app's About panel and the version electron-updater compares
 # against both come from package.json, so a mismatched tag ships a build that
 # lies about what it is.
+#
+# Ordinarily nobody pushes that tag by hand: tag-release.yml creates it when a
+# version bump lands on main, then dispatches this workflow on it. A tag pushed
+# by hand still starts a release through `push` below.
 on:
   push:
     tags: ['v*']
-  # Available by hand so a release can be re-cut without moving a tag, which
-  # would leave everyone who already downloaded the old one stranded. Choose
-  # the tag in the ref picker rather than passing it as an input: the signing
-  # environment's tag policy is matched against the run's own ref, so a run
-  # dispatched from a branch cannot reach the certificate however it is
-  # parameterised. `verify` says so outright rather than leaving that to
-  # surface as an environment error two jobs later.
+  # How tag-release.yml starts this, because a tag created with GITHUB_TOKEN
+  # does not fire `push`. Also available by hand so a release can be re-cut
+  # without moving a tag, which would leave everyone who already downloaded the
+  # old one stranded. Either way the run is on the tag ref rather than given the
+  # tag as an input: the signing environment's tag policy is matched against
+  # the run's own ref, so a run dispatched from a branch cannot reach the
+  # certificate however it is parameterised. `verify` says so outright rather
+  # than leaving that to surface as an environment error two jobs later.
   workflow_dispatch:
 
 permissions:
