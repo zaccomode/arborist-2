@@ -71,7 +71,8 @@ function StashRow({
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
+            className="hover:bg-accent dark:hover:bg-accent"
             aria-label={`${entry.message} actions`}
             disabled={busy}
           >

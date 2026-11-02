@@ -59,7 +59,8 @@ export function ListControls({
     <>
       <Button
         variant="ghost"
-        size="icon-xs"
+        size="icon"
+        className="hover:bg-accent dark:hover:bg-accent"
         aria-label={search.open ? `Hide ${label} search` : `Search ${label}`}
         aria-pressed={search.open}
         disabled={disabled}
@@ -69,7 +70,13 @@ export function ListControls({
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-xs" aria-label={`Sort ${label}`} disabled={disabled}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hover:bg-accent dark:hover:bg-accent"
+            aria-label={`Sort ${label}`}
+            disabled={disabled}
+          >
             <ArrowDownUp />
           </Button>
         </DropdownMenuTrigger>

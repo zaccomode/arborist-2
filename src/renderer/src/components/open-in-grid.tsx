@@ -61,7 +61,7 @@ export function OpenInGrid({
               // for any of these to open.
               disabled={worktree.prunable}
               onClick={() => void run(preset.id)}
-              className="h-[76px] max-w-[220px] min-w-[120px] flex-1 flex-col gap-2 rounded-lg"
+              className="h-[76px] max-w-[220px] min-w-[120px] flex-1 flex-col gap-2 rounded-lg hover:bg-accent dark:hover:bg-accent"
             >
               <PresetIcon name={preset.icon} className="size-5 text-muted-foreground" />
               {preset.name}

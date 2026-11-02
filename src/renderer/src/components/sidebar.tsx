@@ -81,7 +81,8 @@ export function Sidebar({
               <ListControls label="Worktrees" view={worktreeView} disabled={!selectedId} />
               <Button
                 variant="ghost"
-                size="icon-xs"
+                size="icon"
+                className="hover:bg-accent dark:hover:bg-accent"
                 aria-label="New worktree"
                 disabled={!selectedId}
                 onClick={onNewWorktree}
@@ -125,7 +126,8 @@ export function Sidebar({
               />
               <Button
                 variant="ghost"
-                size="icon-xs"
+                size="icon"
+                className="hover:bg-accent dark:hover:bg-accent"
                 aria-label="Fetch remotes"
                 disabled={!selectedId || fetching}
                 onClick={onFetch}
@@ -143,8 +145,7 @@ export function Sidebar({
         <div className="border-t p-2">
           <Button
             variant="ghost"
-            size="sm"
-            className="w-full justify-start font-normal text-muted-foreground"
+            className="h-7 w-full justify-start gap-2 px-2 font-normal text-muted-foreground hover:bg-accent dark:hover:bg-accent [&_svg]:size-3.5"
             disabled={!selectedId}
             onClick={onOpenProjectSettings}
           >

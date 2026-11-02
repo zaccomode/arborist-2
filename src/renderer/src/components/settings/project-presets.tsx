@@ -70,7 +70,8 @@ export function ProjectPresets({ projectId }: { projectId: string }): React.JSX.
               <PresetIcon name={preset.icon} className="size-4 text-muted-foreground" />
               <span className="flex-1 truncate text-sm">{preset.name}</span>
               <Button
-                size="icon-xs"
+                size="icon"
+                className="hover:bg-accent dark:hover:bg-accent"
                 variant="ghost"
                 aria-label={`Move ${preset.name} up`}
                 disabled={index === 0}
@@ -79,7 +80,8 @@ export function ProjectPresets({ projectId }: { projectId: string }): React.JSX.
                 <ChevronUp />
               </Button>
               <Button
-                size="icon-xs"
+                size="icon"
+                className="hover:bg-accent dark:hover:bg-accent"
                 variant="ghost"
                 aria-label={`Move ${preset.name} down`}
                 disabled={index === ordered.length - 1}
@@ -88,7 +90,8 @@ export function ProjectPresets({ projectId }: { projectId: string }): React.JSX.
                 <ChevronDown />
               </Button>
               <Button
-                size="icon-xs"
+                size="icon"
+                className="hover:bg-accent dark:hover:bg-accent"
                 variant="ghost"
                 aria-label={`Edit ${preset.name}`}
                 onClick={() => setEditing(preset)}
@@ -96,7 +99,8 @@ export function ProjectPresets({ projectId }: { projectId: string }): React.JSX.
                 <Pencil />
               </Button>
               <Button
-                size="icon-xs"
+                size="icon"
+                className="hover:bg-accent dark:hover:bg-accent"
                 variant="ghost"
                 aria-label={`Delete ${preset.name}`}
                 onClick={async () => {

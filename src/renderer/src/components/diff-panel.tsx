@@ -316,7 +316,13 @@ export function DiffPanel({
             </p>
           )}
         </div>
-        <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="hover:bg-accent dark:hover:bg-accent"
+          aria-label="Close"
+          onClick={onClose}
+        >
           <X />
         </Button>
       </div>

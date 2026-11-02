@@ -64,7 +64,8 @@ function ConflictRow({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            size="icon-sm"
+            size="icon"
+            className="hover:bg-accent dark:hover:bg-accent"
             variant="ghost"
             disabled={busy}
             aria-label={`${file.path} conflict actions`}

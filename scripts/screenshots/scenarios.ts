@@ -730,16 +730,15 @@ export const scenarios: Scenario[] = [
   {
     name: 'remote-branches',
     description:
-      'The Remote Branches section: empty until a fetch reveals a branch ' +
+      'The Remote Branches section: a branch pushed elsewhere appears via the automatic fetch on selecting the project ' +
       'pushed elsewhere, its detail pane, and creating a tracking worktree ' +
       'from it — which is what turns it back into an ordinary worktree.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
       // Pushed to the bare remote before the app ever opens, so the local
-      // repo has not fetched it yet: the section starts empty, and only the
-      // in-app fetch action (not a refresh of anything already known)
-      // reveals it.
+      // repo has not fetched it yet: only the fetch the app runs on selecting
+      // the project (#94) reveals it.
       await fixture.commitFromElsewhere('feature-x', 'Pushed while nobody was fetching')
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
@@ -747,13 +746,10 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
-      await window.getByText('No remote branches without worktrees.').waitFor({ state: 'visible' })
-      await shot('empty')
-
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Fetch' }).click()
+      // Selecting the project fetches it (#94), so the branch pushed while
+      // nobody was looking appears without anyone pressing Fetch.
       await window.getByRole('button', { name: /origin\/feature-x/ }).waitFor({ state: 'visible' })
-      await shot('fetched')
+      await shot('auto-fetched')
 
       await window.getByRole('button', { name: /origin\/feature-x/ }).click()
       await window.getByTestId('remote-branch-detail').waitFor({ state: 'visible' })
@@ -791,8 +787,6 @@ export const scenarios: Scenario[] = [
     drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Fetch' }).click()
       await window.getByRole('button', { name: /origin\/feature-y/ }).waitFor({ state: 'visible' })
       await shot('before')
 
