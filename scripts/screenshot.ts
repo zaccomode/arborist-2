@@ -11,20 +11,24 @@
  *   xvfb-run -a npm run screenshot            # every scenario
  *   xvfb-run -a npm run screenshot -- shell   # just the named ones
  *   xvfb-run -a npm run screenshot -- --out /tmp/shots
+ *
+ * Only scenarios marked `committed` write into docs/screenshots; the rest go
+ * to the gitignored .screenshots/. `--out` sends everything to one place.
  */
 import { mkdir, mkdtemp, rm } from 'fs/promises'
 import { tmpdir } from 'os'
-import { join, resolve } from 'path'
+import { join } from 'path'
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright'
 // Node's native type stripping resolves ESM imports literally, so this needs
 // the real file extension rather than a bare specifier.
 import { scenarios, type Scenario } from './screenshots/scenarios.ts'
+import { resolveOutDir } from './screenshots/output.ts'
 
 const THEMES = ['dark', 'light'] as const
 
-function parseArgs(argv: string[]): { outDir: string; names: string[] } {
+function parseArgs(argv: string[]): { outDir: string | undefined; names: string[] } {
   const names: string[] = []
-  let outDir = 'docs/screenshots'
+  let outDir: string | undefined
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--out') {
@@ -36,7 +40,7 @@ function parseArgs(argv: string[]): { outDir: string; names: string[] } {
     }
   }
 
-  return { outDir: resolve(outDir), names }
+  return { outDir, names }
 }
 
 async function launch(
@@ -207,11 +211,11 @@ async function main(): Promise<void> {
       })
     : scenarios
 
-  await mkdir(outDir, { recursive: true })
-
   // Electron apps get one instance at a time, so these can't overlap.
   for (const scenario of selected) {
-    await capture(scenario, outDir)
+    const dir = resolveOutDir(scenario, outDir)
+    await mkdir(dir, { recursive: true })
+    await capture(scenario, dir)
   }
 }
 

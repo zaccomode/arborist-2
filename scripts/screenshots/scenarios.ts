@@ -51,6 +51,12 @@ export interface Scenario {
    * Set this only to capture a hover state, and hover as the last step.
    */
   keepPointer?: boolean
+  /**
+   * Write this scenario's PNGs into the tracked `docs/screenshots`. Reserve it
+   * for the few key screens; everything else is written to the gitignored
+   * `.screenshots/` so a regeneration doesn't churn the repo (#99).
+   */
+  committed?: boolean
 }
 
 /**
@@ -167,6 +173,7 @@ let stashListFixture: GitFixture | null = null
 export const scenarios: Scenario[] = [
   {
     name: 'shell',
+    committed: true,
     description:
       'The two-pane shell as the app opens, with no project selected. This is ' +
       'the capture to compare against concept.png.'
@@ -266,6 +273,7 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'worktree-badges',
+    committed: true,
     description:
       'The sidebar over the full badge matrix: ahead/behind, dirty, locked, ' +
       'a missing folder, a deleted upstream, and a detached checkout. The ' +
@@ -386,6 +394,7 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'worktree-detail',
+    committed: true,
     description:
       'The worktree detail pane across its three tabs: Overview (with the ' +
       'branch/commit/path information block and notes), Working Tree over ' +
@@ -627,6 +636,7 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'create-worktree',
+    committed: true,
     description:
       'The create dialog reading a pasted checkout command, and the worktree ' +
       'list either side of creating one.',
@@ -943,6 +953,7 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'settings',
+    committed: true,
     description:
       'Settings: the General tab with the detected git binary and the theme, ' +
       'the Presets tab with the built-in switches, the preset editor over it, ' +
@@ -1097,6 +1108,7 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'project-settings',
+    committed: true,
     description:
       'Project settings, opened from the button under the worktree list, now ' +
       'tabbed like app settings: the automation script with its parsed ' +
@@ -1180,6 +1192,7 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'git-not-found',
+    committed: true,
     description:
       'The blocking screen shown when no git binary can be found, with the ' +
       'manual path field. Every other screen assumes a working git, so this ' +

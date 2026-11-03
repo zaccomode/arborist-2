@@ -147,3 +147,6 @@ vite.config.ts.timestamp-*
 # Playwright
 test-results/
 playwright-report/
+
+# Local screenshot captures (only key screens are committed, in docs/screenshots)
+.screenshots/

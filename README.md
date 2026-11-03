@@ -35,7 +35,7 @@ npm run lint        # ESLint
 npm run typecheck   # tsc for node + web configs
 npm test            # Vitest unit and integration tests
 npm run test:e2e    # builds, then runs the Playwright smoke test
-npm run screenshot  # builds, then captures every UI scenario into docs/screenshots
+npm run screenshot  # builds, then captures every UI scenario (key screens into docs/screenshots, the rest into .screenshots)
 ```
 
 CI runs the first four on macOS and Windows for every push and pull request.
