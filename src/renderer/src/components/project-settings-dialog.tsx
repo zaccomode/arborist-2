@@ -108,7 +108,7 @@ export function ProjectSettingsDialog({
         <Tabs defaultValue="automation" className="flex min-h-0 flex-1 flex-col gap-0">
           <TabsList
             variant="line"
-            className="-mx-6 w-[calc(100%+3rem)] shrink-0 rounded-none border-b px-6"
+            className="-mx-4 w-[calc(100%+2rem)] shrink-0 rounded-none border-b px-4"
           >
             <TabsTrigger value="automation">Automation</TabsTrigger>
             <TabsTrigger value="worktrees">Worktrees</TabsTrigger>

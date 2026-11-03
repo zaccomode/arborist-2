@@ -47,6 +47,16 @@ test('adds a git repository as a project', async () => {
   await window.getByRole('button', { name: 'Project settings' }).click()
   await expect(window.getByTestId('project-settings-dialog')).toContainText(fixture.repoPath)
 
+  // The tab row must sit inside the dialog, not spill past its edges (#100).
+  // Measured once the open animation has stopped scaling the dialog.
+  await window.getByTestId('project-settings-dialog').evaluate(async (el) => {
+    await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => undefined)))
+  })
+  const dialogBox = await window.getByTestId('project-settings-dialog').boundingBox()
+  const tabsBox = await window.getByRole('tablist').boundingBox()
+  expect(tabsBox!.x).toBeGreaterThanOrEqual(dialogBox!.x - 0.5)
+  expect(tabsBox!.x + tabsBox!.width).toBeLessThanOrEqual(dialogBox!.x + dialogBox!.width + 0.5)
+
   await app.close()
   await rm(root, { recursive: true, force: true })
 })
