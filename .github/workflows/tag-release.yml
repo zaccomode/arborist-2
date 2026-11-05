@@ -43,7 +43,7 @@ jobs:
        github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The commit CI actually passed on, not whatever main has moved to
           # since. Depth 2 so the parent's package.json can be read.
