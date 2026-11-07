@@ -182,9 +182,9 @@ export function registerIpcHandlers({
     })
   })
 
-  handle('system:copyText', (text) => {
-    clipboard.writeText(text)
-  })
+  // Asynchronous since Electron 44, so a failed write has to be awaited to
+  // reach the renderer as an error rather than an unhandled rejection.
+  handle('system:copyText', (text) => clipboard.writeText(text))
 
   handle(
     'automation:script',
