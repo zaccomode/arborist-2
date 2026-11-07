@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
 import type { IpcEventChannel, IpcEventContract } from '../shared/ipc-contract'
 import type { UpdateStatus } from '../shared/updates'
+import { updateErrorMessage } from '../shared/updates'
 import icon from '../../resources/icon.png?asset'
 import { registerIpcHandlers } from './ipc/register'
 import { buildAppMenu } from './menu'
@@ -61,8 +62,39 @@ function scriptedUpdateStatus(): UpdateStatus | undefined {
     case 'up-to-date':
       // Fixed, because a real timestamp would change the pixels every run.
       return { phase: 'up-to-date', checkedAt: '2026-08-21T09:00:00Z', manual: true }
+    // Both error fakes are put through `updateErrorMessage` over a raw error
+    // of the shape electron-updater really throws, rather than carrying the
+    // finished sentence. A capture is only worth having if it shows what a
+    // user would actually see, and a hand-written message would keep looking
+    // right after the mapping stopped being.
     case 'error':
-      return { phase: 'error', message: 'net::ERR_INTERNET_DISCONNECTED', manual: true }
+      return {
+        phase: 'error',
+        message: updateErrorMessage(
+          Object.assign(new Error('net::ERR_INTERNET_DISCONNECTED'), {
+            code: 'ERR_INTERNET_DISCONNECTED'
+          })
+        ),
+        manual: true
+      }
+    // The v3.4.0 incident: the release published without its `latest-mac.yml`,
+    // so every check 404ed and the raw dump below was what the toast showed.
+    case 'error-manifest':
+      return {
+        phase: 'error',
+        message: updateErrorMessage(
+          Object.assign(
+            new Error(
+              'Unable to find latest version on GitHub (https://github.com/zaccomode/arborist-2/releases.atom), ' +
+                'please ensure a production release exists: HttpError: 404 Not Found\n' +
+                '"method: GET url: https://github.com/zaccomode/arborist-2/releases/download/v3.4.0/latest-mac.yml"\n' +
+                'Headers: {"server":"Varnish","content-type":"text/plain; charset=utf-8"}'
+            ),
+            { code: 'ERR_UPDATER_LATEST_VERSION_NOT_FOUND' }
+          )
+        ),
+        manual: true
+      }
     default:
       return undefined
   }
