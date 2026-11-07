@@ -1029,7 +1029,11 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'settings-about-error',
-    description: 'The About tab (#65) when the last check failed.',
+    description:
+      'The About tab (#65) when the last check failed on the network — the ' +
+      'common case, and the one that reads as something the user can act ' +
+      'on. The line used to be whatever electron-updater threw; it is now ' +
+      'one sentence from `updateErrorMessage`.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -1043,6 +1047,34 @@ export const scenarios: Scenario[] = [
       await window.getByRole('menuitem', { name: 'App settings…' }).click()
       await window.getByRole('tab', { name: 'About' }).click()
       await window.getByTestId('update-status').filter({ hasText: 'Could not check' }).waitFor()
+      await shot('error')
+    }
+  },
+  {
+    name: 'settings-about-missing-manifest',
+    description:
+      'The About tab when the release itself is missing its update ' +
+      'information — the v3.4.0 failure, where `latest-mac.yml` never ' +
+      'uploaded. Before this, the line here was the whole HttpError: a 404 ' +
+      'status, the request URL, the response headers and a note about ' +
+      'authentication tokens that had nothing to do with it. The point of ' +
+      'the capture is that it now says which of the two parties is broken.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath, ARBORIST_FAKE_UPDATE: 'error-manifest' }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'App settings…' }).click()
+      await window.getByRole('tab', { name: 'About' }).click()
+      await window
+        .getByTestId('update-status')
+        .filter({ hasText: 'missing its update information' })
+        .waitFor()
       await shot('error')
     }
   },
@@ -1246,6 +1278,31 @@ export const scenarios: Scenario[] = [
     setup: async () => ({ ARBORIST_FAKE_UPDATE: 'up-to-date' }),
     drive: async (window) => {
       await window.getByText("You're up to date").waitFor({ state: 'visible' })
+    }
+  },
+  {
+    name: 'update-error',
+    description:
+      'The toast a failed manual check raises, on the ordinary cause: the ' +
+      'machine is offline. Only a check the user asked for surfaces at all, ' +
+      'since a six-hourly one failing on a flaky connection is not news ' +
+      'worth a toast. The Copy action is #64, for pasting into a bug report.',
+    setup: async () => ({ ARBORIST_FAKE_UPDATE: 'error' }),
+    drive: async (window) => {
+      await window.getByText('could not reach GitHub').waitFor({ state: 'visible' })
+    }
+  },
+  {
+    name: 'update-error-missing-manifest',
+    description:
+      'The same toast for the v3.4.0 failure, and the capture this change ' +
+      'is really about: a release published without its `latest-mac.yml` ' +
+      'used to put a raw `HttpError: 404` in here — headers, request URL ' +
+      'and stack — which is several times the height of this toast and ' +
+      'told the user nothing they could use.',
+    setup: async () => ({ ARBORIST_FAKE_UPDATE: 'error-manifest' }),
+    drive: async (window) => {
+      await window.getByText('missing its update information').waitFor({ state: 'visible' })
     }
   },
   {

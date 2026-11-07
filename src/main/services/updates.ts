@@ -1,5 +1,6 @@
 import type { AppUpdater } from 'electron-updater'
 import type { UpdateStatus, UpdateSupport } from '../../shared/updates'
+import { updateErrorMessage } from '../../shared/updates'
 
 /** Six hours: often enough to catch a release the same day, rarely enough to ignore. */
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
@@ -17,6 +18,13 @@ export interface UpdateServiceDeps {
   supported: boolean
   now?: () => Date
   setInterval?: (handler: () => void, ms: number) => unknown
+  /**
+   * Where the full text of a failure goes. The renderer only ever sees the
+   * sentence `updateErrorMessage` produces, so this is the only place the
+   * request URL, the response headers and the stack survive — which is what
+   * makes it worth keeping rather than dropping.
+   */
+  log?: (message: string, error: unknown) => void
   /**
    * Starts the service in a state it would otherwise take a real release to
    * reach. Screenshot scenarios and e2e tests need the update toasts, and the
@@ -63,6 +71,21 @@ export class UpdateService {
     this.#deps.emit(status)
   }
 
+  /**
+   * The one way a failure reaches the UI: the full error to the log, a single
+   * sentence to the renderer.
+   *
+   * Both callers used to pass `error.message` straight through, which is how
+   * an `HttpError` 404 on a missing `latest-mac.yml` ended up in a toast as
+   * several lines of HTTP headers and a stack trace. The log is the right
+   * place for that; the toast is not.
+   */
+  #fail(error: unknown, manual: boolean): void {
+    const log = this.#deps.log ?? ((message, detail) => console.error(message, detail))
+    log('[updates] check failed:', error)
+    this.#set({ phase: 'error', message: updateErrorMessage(error), manual })
+  }
+
   #wire(): void {
     const { updater } = this.#deps
     // The toast is the notification; electron-updater's own dialog would be a
@@ -92,7 +115,7 @@ export class UpdateService {
       // A failed check is not worth interrupting anyone over — the network
       // being down is the usual cause — so only a check they asked for
       // surfaces. The renderer decides that from `manual`.
-      this.#set({ phase: 'error', message: error.message, manual: this.#manual })
+      this.#fail(error, this.#manual)
       this.#manual = false
     })
   }
@@ -123,7 +146,7 @@ export class UpdateService {
     try {
       await this.#deps.updater.checkForUpdates()
     } catch (error) {
-      this.#set({ phase: 'error', message: (error as Error).message, manual })
+      this.#fail(error, manual)
       this.#manual = false
     }
     return this.#status

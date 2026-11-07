@@ -16,9 +16,12 @@ release workflow needs.
    Windows in parallel and uploads a **draft** release.
 4. Download the artifacts from the draft and install one on each platform.
    `docs/manual-checklist.md` is the pass to run.
-5. Publish the release in the GitHub UI. Tick **Set as a pre-release** for
-   anything with a prerelease version, so it never becomes the release that
-   stable installs update to.
+5. Publish the release in the GitHub UI, **once the workflow run is green**.
+   A red run leaves a draft behind that looks publishable and is not; the
+   `assert-complete` and `mark-incomplete-draft` jobs below are what make that
+   visible from the Releases list. Tick **Set as a pre-release** for anything
+   with a prerelease version, so it never becomes the release that stable
+   installs update to.
 
 Nothing in the first three steps needs `git tag`, which matters for agents: the
 cloud sandboxes they run in can push their own branch but not a tag. An agent
@@ -43,9 +46,29 @@ When the hand-pushed tag gets there first, `tag-release.yml` finds it and does
 nothing, so the two cannot both start a build.
 
 There should be exactly **one** draft per tag, holding both platforms' artifacts
-and both `*.yml` manifests. Publishing a half-filled one ships an update that
-some users cannot install, so it is worth opening the assets list and counting
-before pressing publish.
+and both `*.yml` manifests — twelve assets in all. Publishing a half-filled one
+ships an update that some users cannot install.
+
+Two jobs now stand between a bad build and a published release, and both exist
+because v3.4.0 got past a human who was looking:
+
+- **`assert-complete`** runs after both builds and asks GitHub what the release
+  actually carries. It derives the expected names from `electron-builder.yml`
+  and the version, checks every asset's `state` is `uploaded`, and checks the
+  sizes in `latest-mac.yml` and `latest.yml` against the uploaded assets they
+  point at — a manifest that disagrees with its binaries is as broken as a
+  missing one. `scripts/release/assert-release-complete.ts` is the check, and
+  it runs by hand against any release:
+
+  ```bash
+  node scripts/release/assert-release-complete.ts --tag v3.4.0 --repo zaccomode/arborist-2
+  ```
+
+- **`mark-incomplete-draft`** renames the draft to
+  `v3.4.0 — INCOMPLETE, DO NOT PUBLISH` whenever anything in the chain failed.
+  **A draft whose title says that must not be published**, whatever its assets
+  list looks like. A re-run that passes `assert-complete` puts the plain tag
+  back as the title, so the marker is only ever as stale as the last run.
 
 The `verify` job creates that draft before either build starts, and fails if it
 finds more than one for the tag. Both exist because electron-builder creates a
@@ -163,6 +186,47 @@ a matter of making an older release the latest again.
    that changes the version, so the tag is recreated only if someone runs it by
    hand while `package.json` still says `1.2.0`. The fix in step 3 bumps past
    it anyway.
+
+### Re-cutting a Release That Has Already Been Published
+
+**Re-running `release.yml` on the tag does not work while the release is
+published. The run goes green having uploaded nothing.**
+
+This is worth knowing before it costs an afternoon, because every signal says
+it worked: the builds pass, the signing assertions pass, the smoke-check
+artifacts appear, the job summary is clean. The only trace is one `warn` line
+buried in the build log — `GitHub release not created`, with
+`reason: existing type not compatible with publishing type`.
+
+The cause is in `electron-publish`. `getOrCreateRelease`
+(`node_modules/electron-publish/out/gitHubPublisher.js`) looks for a release
+matching the tag; if it finds one that is **not** a draft while
+`releaseType` is `draft` — which is what `electron-builder.yml` sets, and
+deliberately — it logs that warning and returns `null`. Every upload after
+that is skipped, and nothing treats it as an error. The relevant upstream
+issues are linked in the source: electron-builder#1197 and #2072.
+
+So the order matters. Convert the release back to a draft **first**:
+
+```bash
+gh release edit v3.4.0 --draft=true
+```
+
+Then re-run **Actions → Release → Run workflow** on the tag.
+
+Un-publishing has a second effect worth having on purpose: it takes the release
+out of the update feed immediately, which restores the previous release as
+Latest and stops whatever the broken one was doing to installed copies. During
+the v3.4.0 incident that one command was what ended the 404s users were seeing
+on every update check — before anything was rebuilt.
+
+Two things to check once the re-run finishes:
+
+- `assert-complete` passed, and the draft's title is the bare tag again rather
+  than the `INCOMPLETE, DO NOT PUBLISH` marker.
+- The assets are the new ones. electron-builder overwrites an asset of the same
+  name, but an asset left over from a _differently_ named target would survive,
+  and `assert-complete` only asserts that what should be there is there.
 
 ## The Icons
 

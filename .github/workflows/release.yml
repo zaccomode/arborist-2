@@ -299,3 +299,92 @@ jobs:
             dist/*.blockmap
             dist/*.yml
           if-no-files-found: error
+
+  # The gate the v3.4.0 incident went straight through. GitHub's upload
+  # endpoint 500ed on five of that release's twelve assets, electron-publish
+  # exhausted its four retries, and because the build task died before
+  # electron-builder reached the last thing it uploads, neither update
+  # manifest was ever written. The draft still looked publishable, so it was
+  # published: every user's update check started 404ing, there was no Apple
+  # Silicon download at all, and the Windows installer was missing with only
+  # its blockmap present.
+  #
+  # Nothing in a green build proves the release is whole — the assets live on
+  # GitHub, not in the job — so this asks GitHub.
+  assert-complete:
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    # No `environment: release`: this reads a release and needs no signing
+    # certificate, so there is no reason to let it near one.
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      # `--ignore-scripts` because the only dependency this job uses is the
+      # YAML parser, and the postinstall it skips downloads an Electron
+      # binary that nothing here runs.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Assert the release carries every expected asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release/assert-release-complete.ts --tag "${{ github.ref_name }}"
+
+      # Only once the release is known to be whole, so a re-run that fixes a
+      # flagged draft takes the warning off it, and a re-run that fails
+      # leaves it on.
+      - name: Clear any "DO NOT PUBLISH" marker from the draft title
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          current=$(gh release view "$tag" --json name --jq '.name // ""')
+          if [ "$current" != "$tag" ]; then
+            echo "Resetting the release title from \"$current\" to \"$tag\"."
+            gh release edit "$tag" --title "$tag"
+          fi
+
+  # What would actually have prevented the incident. A failed run leaves a
+  # draft behind that is indistinguishable, in the Releases list, from a good
+  # one — same tag, same notes, a plausible pile of assets — and the only
+  # evidence against it is a red tick on a workflow page nobody is looking at
+  # while they press Publish. So the draft is made to say so itself.
+  #
+  # `failure()` covers the whole chain: a build leg that died, and a build
+  # that went green over an incomplete release, which `assert-complete`
+  # catches and which leaves that job failed and this one still due to run.
+  mark-incomplete-draft:
+    needs: [verify, build, assert-complete]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rename the draft so it cannot be published by accident
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          # `verify` can fail before the draft exists, and it fails outright
+          # when a tag has collected two releases. Neither is worth turning
+          # into a second failure on top of the real one, so say what was
+          # found and stop.
+          if ! gh release view "$tag" --json name > /dev/null 2>&1; then
+            echo "::warning::No release exists for $tag yet, so there is no draft to flag."
+            exit 0
+          fi
+          if gh release view "$tag" --json isDraft --jq '.isDraft' | grep -qx false; then
+            echo "::warning::The release for $tag is already published, so its title is left" \
+                 "alone. Roll it back first — docs/release.md, \"Rolling Back a Bad Release\"."
+            exit 0
+          fi
+          title="$tag — INCOMPLETE, DO NOT PUBLISH"
+          gh release edit "$tag" --title "$title"
+          echo "::warning::This run did not produce a complete release. Its draft is now titled" \
+               "\"$title\" and must not be published. Fix the cause and re-run this workflow on" \
+               "the tag; a successful re-run takes the marker off again."
