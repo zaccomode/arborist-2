@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
 
+# CI only reads the repository. `pull_request` runs it on forks, so the
+# default token scope is narrowed to what the jobs actually need rather
+# than left at whatever the repository default happens to be.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
