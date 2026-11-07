@@ -1,0 +1,43 @@
+# Routine version updates. The security side — alerts, and the pull requests
+# that fix them — is a repository setting rather than anything in this file,
+# and is on.
+#
+# What this file is really deciding is how reviewable the stream is. A bump
+# whose changelog someone has to read gets its own pull request; a bump whose
+# changelog nobody was ever going to read gets batched with its neighbours.
+# Majors are therefore deliberately left out of every group below.
+version: 2
+updates:
+  # checkout and setup-node, which CI, tag-release and release all share.
+  # Grouped: they move together, and CI either passes on the set or it doesn't.
+  # Worth keeping current for its own sake and not only for features — these
+  # run with the repository's credentials, and release.yml hands them a signing
+  # environment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+
+  # One package.json at the root: this is a single Electron app, not a
+  # workspace, so there is nothing to spread across directories.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # Split by whether the dependency ships. A bad devDependency breaks the
+    # build in front of whoever opened the PR; a bad dependency goes out in a
+    # signed release and auto-updates onto people's machines, so the two
+    # halves deserve separate looks even when both are only patch bumps.
+    # Electron, React and Vite majors are migrations rather than bumps, and
+    # arrive on their own by virtue of being excluded here.
+    groups:
+      dev-minor-patch:
+        dependency-type: development
+        update-types: [minor, patch]
+      prod-minor-patch:
+        dependency-type: production
+        update-types: [minor, patch]
