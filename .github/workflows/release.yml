@@ -341,13 +341,14 @@ jobs:
       - name: Clear any "DO NOT PUBLISH" marker from the draft title
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           tag="${{ github.ref_name }}"
-          current=$(gh release view "$tag" --json name --jq '.name // ""')
+          current=$(gh release view "$tag" --repo "$GH_REPO" --json name --jq '.name // ""')
           if [ "$current" != "$tag" ]; then
             echo "Resetting the release title from \"$current\" to \"$tag\"."
-            gh release edit "$tag" --title "$tag"
+            gh release edit "$tag" --repo "$GH_REPO" --title "$tag"
           fi
 
   # What would actually have prevented the incident. A failed run leaves a
@@ -367,6 +368,10 @@ jobs:
       - name: Rename the draft so it cannot be published by accident
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Named explicitly because this job has no checkout for `gh` to
+          # infer a repository from: it touches a release, nothing in the
+          # tree, and cloning to rename something would be odd.
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           tag="${{ github.ref_name }}"
@@ -374,17 +379,17 @@ jobs:
           # when a tag has collected two releases. Neither is worth turning
           # into a second failure on top of the real one, so say what was
           # found and stop.
-          if ! gh release view "$tag" --json name > /dev/null 2>&1; then
+          if ! gh release view "$tag" --repo "$GH_REPO" --json name > /dev/null 2>&1; then
             echo "::warning::No release exists for $tag yet, so there is no draft to flag."
             exit 0
           fi
-          if gh release view "$tag" --json isDraft --jq '.isDraft' | grep -qx false; then
+          if gh release view "$tag" --repo "$GH_REPO" --json isDraft --jq '.isDraft' | grep -qx false; then
             echo "::warning::The release for $tag is already published, so its title is left" \
                  "alone. Roll it back first — docs/release.md, \"Rolling Back a Bad Release\"."
             exit 0
           fi
           title="$tag — INCOMPLETE, DO NOT PUBLISH"
-          gh release edit "$tag" --title "$title"
+          gh release edit "$tag" --repo "$GH_REPO" --title "$title"
           echo "::warning::This run did not produce a complete release. Its draft is now titled" \
                "\"$title\" and must not be published. Fix the cause and re-run this workflow on" \
                "the tag; a successful re-run takes the marker off again."
