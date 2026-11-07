@@ -8,32 +8,55 @@ import {
 } from '@shared/format'
 import type { Worktree } from '@shared/domain'
 
-const now = new Date('2026-08-20T14:00:00Z')
+/**
+ * Local time, deliberately, rather than a `...Z` instant.
+ *
+ * `formatRelativeDate` decides Today and Yesterday from the *local* calendar
+ * day, which is the right behaviour for a UI — but it means a fixture
+ * written in UTC lands on a different day depending on where the machine
+ * is. `2026-08-20T02:00:00Z` is Today in London and Yesterday in Los
+ * Angeles, so these assertions used to pass only on a machine running in
+ * UTC, which in practice meant CI and nowhere else. Building the fixtures
+ * with the local `Date` constructor pins the *relationship* between them,
+ * which is what the behaviour is actually about.
+ */
+const now = new Date(2026, 7, 20, 14, 0)
 
-function at(iso: string): string {
-  return formatRelativeDate(iso, now)
+function at(when: Date | string): string {
+  return formatRelativeDate(typeof when === 'string' ? when : when.toISOString(), now)
+}
+
+/**
+ * The same local wall-clock time, `days` calendar days before `now`. The
+ * default hour is mid-morning so an hour of DST either way cannot move a
+ * fixture across the midnight the day count is measured from.
+ */
+function daysBefore(days: number, hour = 9): Date {
+  return new Date(2026, 7, 20 - days, hour)
 }
 
 describe('formatRelativeDate', () => {
   it('reads recent times in minutes', () => {
-    expect(at('2026-08-20T13:59:40Z')).toBe('Just now')
-    expect(at('2026-08-20T13:59:00Z')).toBe('1 minute ago')
-    expect(at('2026-08-20T13:30:00Z')).toBe('30 minutes ago')
+    expect(at(new Date(2026, 7, 20, 13, 59, 40))).toBe('Just now')
+    expect(at(new Date(2026, 7, 20, 13, 59))).toBe('1 minute ago')
+    expect(at(new Date(2026, 7, 20, 13, 30))).toBe('30 minutes ago')
   })
 
   it('says Today and Yesterday by calendar day, not by elapsed hours', () => {
-    expect(at('2026-08-20T02:00:00Z')).toBe('Today')
-    expect(at('2026-08-19T23:00:00Z')).toBe('Yesterday')
+    // Twelve hours back but the same calendar day, then three hours further
+    // back and therefore the day before: the distinction is the point.
+    expect(at(daysBefore(0, 2))).toBe('Today')
+    expect(at(daysBefore(1, 23))).toBe('Yesterday')
   })
 
   it('counts days, then weeks', () => {
-    expect(at('2026-08-17T09:00:00Z')).toBe('3 days ago')
-    expect(at('2026-08-10T09:00:00Z')).toBe('1 week ago')
-    expect(at('2026-08-01T09:00:00Z')).toBe('2 weeks ago')
+    expect(at(daysBefore(3))).toBe('3 days ago')
+    expect(at(daysBefore(10))).toBe('1 week ago')
+    expect(at(daysBefore(19))).toBe('2 weeks ago')
   })
 
   it('falls back to a date once the count stops meaning anything', () => {
-    expect(at('2026-01-05T09:00:00Z')).toMatch(/2026/)
+    expect(at(new Date(2026, 0, 5, 9))).toMatch(/2026/)
   })
 
   it('returns nothing for an unparseable date', () => {
