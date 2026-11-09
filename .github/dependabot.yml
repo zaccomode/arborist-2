@@ -28,6 +28,28 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # @types/node describes the Node inside Electron, and the Electron major
+      # decides which that is — not DefinitelyTyped. A newer types major would
+      # typecheck main-process calls against a runtime this app does not ship,
+      # and that lands as a runtime error on someone's machine rather than a
+      # red CI run. It moves when Electron moves.
+      - dependency-name: "@types/node"
+        update-types:
+          - version-update:semver-major
+
+      # Types follow their package; they do not lead it. A @types/js-yaml
+      # major is only right once js-yaml itself has moved, and may want
+      # deleting rather than bumping if js-yaml starts shipping its own, so it
+      # belongs to that migration instead of arriving as a bump of its own.
+      - dependency-name: "@types/js-yaml"
+        update-types:
+          - version-update:semver-major
+
+      # Both scoped to majors rather than ignoring the names outright: ignore
+      # conditions suppress security pull requests too, and the note at the
+      # top of this file is only true while that path stays open.
+
     # Split by whether the dependency ships. A bad devDependency breaks the
     # build in front of whoever opened the PR; a bad dependency goes out in a
     # signed release and auto-updates onto people's machines, so the two
