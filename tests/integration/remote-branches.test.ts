@@ -143,7 +143,11 @@ describe('switch-branch palette data (#96)', () => {
     expect(branches.map((branch) => branch.name)).toContain('v1')
   }, 30_000)
 
-  it("reports origin/HEAD once it's set, and null before", async () => {
+  it("reports origin/HEAD once it's set, and null when it isn't", async () => {
+    // Deleted explicitly rather than assumed absent: git 2.48+ creates
+    // origin/HEAD on fetch by itself (remote.<name>.followRemoteHEAD), so
+    // whether the fixture starts with one depends on the git version.
+    await fixture.git(['remote', 'set-head', 'origin', '--delete'])
     expect(await service.remoteHead(fixture.repoPath)).toBeNull()
     await fixture.git(['remote', 'set-head', 'origin', 'main'])
     expect(await service.remoteHead(fixture.repoPath)).toBe('origin/main')
