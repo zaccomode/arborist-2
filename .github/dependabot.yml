@@ -38,17 +38,12 @@ updates:
         update-types:
           - version-update:semver-major
 
-      # Types follow their package; they do not lead it. A @types/js-yaml
-      # major is only right once js-yaml itself has moved, and may want
-      # deleting rather than bumping if js-yaml starts shipping its own, so it
-      # belongs to that migration instead of arriving as a bump of its own.
-      - dependency-name: "@types/js-yaml"
-        update-types:
-          - version-update:semver-major
-
-      # Both scoped to majors rather than ignoring the names outright: ignore
+      # Scoped to majors rather than ignoring the name outright: ignore
       # conditions suppress security pull requests too, and the note at the
       # top of this file is only true while that path stays open.
+      #
+      # (@types/js-yaml used to be held back here too, until js-yaml moved.
+      # js-yaml 5 ships its own types, so it was deleted rather than bumped.)
 
     # Split by whether the dependency ships. A bad devDependency breaks the
     # build in front of whoever opened the PR; a bad dependency goes out in a
