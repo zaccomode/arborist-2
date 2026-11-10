@@ -49,6 +49,18 @@ export interface BranchInfo {
   current: boolean
 }
 
+/**
+ * A local branch with enough attached to tell it apart from its neighbours
+ * in the switch-branch picker (#96): what it tracks and where its tip is.
+ */
+export interface LocalBranch {
+  name: string
+  /** The upstream's short name, e.g. `origin/feature-x`, or null when none is set. */
+  upstream: string | null
+  /** Null only for a branch git printed without a readable tip. */
+  lastCommit: CommitSummary | null
+}
+
 export interface AheadBehind {
   ahead: number
   behind: number

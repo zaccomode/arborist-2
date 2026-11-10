@@ -92,6 +92,8 @@ export function registerIpcHandlers({
   handle('branches:exists', (repoPath, branch) => gitService.branchExists(repoPath, branch))
   handle('branches:list', (repoPath) => gitService.listLocalBranches(repoPath))
   handle('branches:remote', (repoPath) => gitService.listRemoteBranches(repoPath))
+  handle('branches:localDetails', (repoPath) => gitService.listLocalBranchDetails(repoPath))
+  handle('branches:remoteHead', (repoPath) => gitService.remoteHead(repoPath))
   handle('worktrees:suggestPath', (repoPath, branch, projectId) => {
     const location = resolveWorktreeLocation(
       store.data.settings,

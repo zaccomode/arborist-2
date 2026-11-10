@@ -1,6 +1,6 @@
 import { chmod, mkdir, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
-import type { Page } from 'playwright'
+import type { Locator, Page } from 'playwright'
 // Node's native type stripping resolves ESM imports literally, so this needs
 // the real file extension rather than a bare specifier.
 import { GitFixture, makeBadgeMatrixIn } from '../../tests/integration/fixtures/git-fixture.ts'
@@ -1722,19 +1722,21 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'switch-branch',
+    committed: true,
     description:
-      "Switching a worktree's branch (#51): the picker open, the " +
-      'conflicting-dirt AlertDialog offering to stash or commit first, the ' +
-      'inline refusal when the target is already checked out in another ' +
-      "worktree, and a clean switch whose uncommitted change — the branch's " +
-      'own dirty edit didn’t conflict with — carries straight over, toast ' +
-      'and all.',
+      "Switching a worktree's branch (#51), in the top-pinned palette (#96): " +
+      'every branch listed the moment it opens, with the one checked out in ' +
+      'another worktree greyed out and saying where; the list narrowed by ' +
+      'typing, top match focused; the conflicting-dirt AlertDialog offering ' +
+      'to stash or commit first; a clean switch whose uncommitted change ' +
+      'carries straight over; and the palette reopened from that branch, ' +
+      'with the default branch pinned to the top.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
 
-      // feature-elsewhere: checked out in a second worktree, so switching
-      // onto it from main hits the branch-in-use refusal.
+      // feature-elsewhere: checked out in a second worktree, so the palette
+      // lists it as unavailable.
       await fixture.addWorktree('elsewhere', { branch: 'feature-elsewhere' })
 
       // feature-clean: nothing here overlaps the uncommitted edit below, so
@@ -1755,55 +1757,56 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
+      const option = (name: string): Locator => window.getByRole('option').filter({ hasText: name })
+      const openPalette = async (): Promise<void> => {
+        await window.getByRole('button', { name: 'Worktree actions' }).click()
+        await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
+        await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
+      }
+
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Add project…' }).click()
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
 
-      await window.getByRole('button', { name: 'Worktree actions' }).click()
-      await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
-      await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
-      await window.getByRole('combobox').click()
-      await window.getByRole('option', { name: 'feature-conflict' }).waitFor({ state: 'visible' })
+      await openPalette()
+      await option('feature-elsewhere').waitFor({ state: 'visible' })
       await shot('picker')
 
-      await window.getByRole('option', { name: 'feature-conflict' }).click()
-      await window.getByRole('button', { name: 'Switch', exact: true }).click()
+      // 'conf' isn't a branch name, so the create rows join the one match.
+      await window.keyboard.type('conf')
+      await option('feature-clean').waitFor({ state: 'detached' })
+      await shot('search')
+
+      await window.keyboard.press('Enter')
       await window.getByTestId('switch-branch-conflict-dialog').waitFor({ state: 'visible' })
       await shot('conflict')
 
       await window.getByRole('button', { name: 'Cancel' }).click()
       await window.getByTestId('switch-branch-conflict-dialog').waitFor({ state: 'detached' })
 
-      await window.getByRole('button', { name: 'Worktree actions' }).click()
-      await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
-      await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
-      await window.getByRole('combobox').click()
-      await window.getByRole('option', { name: 'feature-elsewhere' }).click()
-      await window.getByRole('button', { name: 'Switch', exact: true }).click()
-      await window.getByTestId('switch-branch-error').waitFor({ state: 'visible' })
-      await shot('in-use')
-
-      await window.getByRole('combobox').click()
-      await window.getByRole('option', { name: 'feature-clean' }).click()
-      await window.getByRole('button', { name: 'Switch', exact: true }).click()
+      await openPalette()
+      await option('feature-clean').click()
       await window
         .getByText('Your uncommitted changes came with you.')
         .waitFor({ state: 'visible' })
       await shot('clean-switch')
+
+      await openPalette()
+      await option('default').waitFor({ state: 'visible' })
+      await shot('default-first')
     }
   },
   {
     name: 'switch-branch-remote',
     description:
-      'Switching to a branch that only exists on the remote (#86): the ' +
-      'picker listing remote branches above local ones, the plan line that ' +
-      'appears once one is picked — a local branch created from the remote ' +
-      'ref and tracking it, with no Base picker to answer, since the base is ' +
-      'already decided — and the worktree afterwards, on the new branch.',
+      'Switching to a branch that only exists on the remote (#86), from the ' +
+      'palette (#96): local and remote branches in one list, by recency, ' +
+      'each marked with what it is; and the worktree afterwards, on a new ' +
+      'local branch tracking the remote one — picked with a single click.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
-      // One branch on each side, so the picker has both groups to order.
+      // One branch on each side, so the picker has both kinds to show.
       await fixture.git(['branch', 'feature-local'])
       await fixture.commitFromElsewhere('feature-remote', 'Pushed from elsewhere')
       await fixture.git(['fetch', 'origin'])
@@ -1817,17 +1820,11 @@ export const scenarios: Scenario[] = [
       await window.getByRole('button', { name: 'Worktree actions' }).click()
       await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
       await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
-      await window.getByRole('combobox').first().click()
-      await window.getByRole('option', { name: 'origin/feature-remote' }).waitFor({
-        state: 'visible'
-      })
+      const remoteRow = window.getByRole('option').filter({ hasText: 'origin/feature-remote' })
+      await remoteRow.waitFor({ state: 'visible' })
       await shot('picker')
 
-      await window.getByRole('option', { name: 'origin/feature-remote' }).click()
-      await window.getByTestId('switch-branch-plan').waitFor({ state: 'visible' })
-      await shot('tracking')
-
-      await window.getByRole('button', { name: 'Create and switch' }).click()
+      await remoteRow.click()
       await window
         .getByTestId('worktree-detail')
         .filter({ hasText: 'feature-remote' })
@@ -1838,16 +1835,15 @@ export const scenarios: Scenario[] = [
   {
     name: 'switch-branch-create',
     description:
-      'Creating a new branch from the switch-branch picker (#69 review): ' +
-      "the empty state's hint text before anything is typed — this fixture " +
-      'has no other local branches to pick, so that empty state is what ' +
-      'greets the picker — the "Create branch" row that then appears once ' +
-      'a typed name matches no existing branch, the Base picker it reveals ' +
-      '(defaulting to HEAD), and the worktree afterwards, now checked out ' +
-      'on the branch that was just created.',
+      'Creating a new branch from the switch palette (#69 review, #96): the ' +
+      '"Create branch" and "Create branch … from…" rows that appear once a ' +
+      'typed name matches no branch, a typed name git would refuse, the ' +
+      'start-point step that "from…" swaps the list for, and the worktree ' +
+      'afterwards, checked out on the branch that was just created.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
+      await fixture.git(['branch', 'feature-base'])
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
@@ -1858,25 +1854,23 @@ export const scenarios: Scenario[] = [
       await window.getByRole('button', { name: 'Worktree actions' }).click()
       await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
       await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
-      await window.getByRole('combobox').first().click()
-      await window
-        .getByText('No matching branch. Type a name to create one.')
-        .waitFor({ state: 'visible' })
-      await shot('empty')
+      const input = window.getByRole('combobox', { name: 'Search branches' })
 
-      await window.getByPlaceholder('Search branches…').fill('feature/new-thing')
-      await window.getByText('Create branch “feature/new-thing”').waitFor({
-        state: 'visible'
-      })
+      await input.fill('feature..bad')
+      await window.getByTestId('switch-branch-plan').waitFor({ state: 'visible' })
+      await shot('invalid-name')
+
+      await input.fill('feature/new-thing')
+      await window.getByText('From HEAD (main)').waitFor({ state: 'visible' })
       await shot('create-option')
 
-      await window.getByText('Create branch “feature/new-thing”').click()
-      await window.getByText('New branch — created from HEAD (main).').waitFor({
-        state: 'visible'
-      })
-      await shot('form')
+      await window.getByRole('option').filter({ hasText: 'from…' }).click()
+      await window
+        .getByRole('combobox', { name: 'Search start points' })
+        .waitFor({ state: 'visible' })
+      await shot('base')
 
-      await window.getByRole('button', { name: 'Create and switch' }).click()
+      await window.getByRole('option').filter({ hasText: 'feature-base' }).click()
       await window
         .getByText('Created feature/new-thing and switched to it.')
         .waitFor({ state: 'visible' })

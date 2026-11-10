@@ -12,6 +12,7 @@ import type {
   CommitFileStat,
   CommitLogEntry,
   GitDiscoveryResult,
+  LocalBranch,
   RemoteBranch,
   StashEntry,
   StoreStatus,
@@ -43,6 +44,10 @@ export interface IpcInvokeContract {
   'branches:list': { args: [repoPath: string]; result: BranchInfo[] }
   /** Remote branches with no local worktree of their own, tip commit included. */
   'branches:remote': { args: [repoPath: string]; result: RemoteBranch[] }
+  /** Every local branch with its upstream and tip commit, for the switch-branch picker (#96). */
+  'branches:localDetails': { args: [repoPath: string]; result: LocalBranch[] }
+  /** Where `origin/HEAD` points, e.g. `origin/main`, or null when it isn't set. */
+  'branches:remoteHead': { args: [repoPath: string]; result: string | null }
   /**
    * The default folder for a new worktree, already de-duplicated. Main
    * resolves the worktree location from the store and `projectId` — beside
@@ -343,6 +348,8 @@ const CHANNELS: Record<IpcChannel, true> = {
   'branches:exists': true,
   'branches:list': true,
   'branches:remote': true,
+  'branches:localDetails': true,
+  'branches:remoteHead': true,
   'worktrees:suggestPath': true,
   'worktrees:create': true,
   'worktrees:isDirty': true,
