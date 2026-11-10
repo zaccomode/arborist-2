@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/tabs'
 import { Chip } from '@/components/chip'
 import { CommitGraph } from '@/components/commit-graph'
 import { CopyableError } from '@/components/copyable-error'
