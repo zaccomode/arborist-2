@@ -1722,6 +1722,7 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'switch-branch',
+    committed: true,
     description:
       "Switching a worktree's branch (#51), in the top-pinned palette (#96): " +
       'every branch listed the moment it opens, with the one checked out in ' +
