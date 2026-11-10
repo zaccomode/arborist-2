@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/tabs'
 import { useSettings } from '@/api/queries'
 import { invoke } from '@/api/client'
 import { AboutSettings } from '@/components/settings/about-settings'
