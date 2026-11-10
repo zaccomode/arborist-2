@@ -459,3 +459,39 @@ test('switches to a remote branch by creating a local branch that tracks it', as
   await app.close()
   await rm(root, { recursive: true, force: true })
 })
+
+test('a clicked tab takes focus without the keyboard focus ring', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+
+  const focusVisible = (tab: string): Promise<boolean> =>
+    window.getByRole('tab', { name: tab }).evaluate((el) => el.matches(':focus-visible'))
+
+  // radix-ui 1.8 focuses a tab from script on mousedown, and Chromium draws
+  // the ring for script focus whenever the previous focus had it, which a
+  // dialog opening sets up. The settings dialog is the case that showed it.
+  await window.getByTestId('project-switcher').click()
+  await window.getByRole('menuitem', { name: 'App settings…' }).click()
+  await window.getByRole('tab', { name: 'About' }).click()
+  await expect(window.getByRole('tab', { name: 'About' })).toBeFocused()
+  expect(await focusVisible('About')).toBe(false)
+
+  // The keyboard still gets it: roving focus moves with the arrow keys.
+  await window.keyboard.press('ArrowLeft')
+  await expect(window.getByRole('tab', { name: 'Developer' })).toBeFocused()
+  expect(await focusVisible('Developer')).toBe(true)
+
+  // And the worktree's own tabs, once the dialog has handed focus back.
+  await window.keyboard.press('Escape')
+  await window.getByRole('tab', { name: 'Commit Graph' }).click()
+  await expect(window.getByRole('tab', { name: 'Commit Graph' })).toBeFocused()
+  expect(await focusVisible('Commit Graph')).toBe(false)
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})

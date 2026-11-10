@@ -22,7 +22,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { invoke } from '@/api/client'
 import { CopyableError } from '@/components/copyable-error'
