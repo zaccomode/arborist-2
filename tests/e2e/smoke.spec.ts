@@ -484,8 +484,10 @@ test('the switch palette puts the default branch first and narrows as you type',
   await expect(first).toContainText('default')
   await expect(first).toHaveAttribute('aria-selected', 'true')
 
+  // Narrowed to the one branch — the create rows below it aside, since
+  // `maint` isn't itself a branch name.
   await window.keyboard.type('maint')
-  await expect(window.getByRole('option')).toHaveCount(1)
+  await expect(window.getByRole('option').filter({ hasText: 'default' })).toHaveCount(0)
   await expect(first).toContainText('maintenance')
   await expect(first).toHaveAttribute('aria-selected', 'true')
 
