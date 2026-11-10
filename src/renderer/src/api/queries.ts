@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-query'
 import type {
   BranchInfo,
+  LocalBranch,
   CommitFileStat,
   CommitLogEntry,
   RemoteBranch,
@@ -43,6 +44,9 @@ export const queryKeys = {
   hasIdentity: (worktreePath: string) => ['has-identity', worktreePath] as const,
   remoteBranches: (repoPath: string) => ['remote-branches', repoPath] as const,
   localBranches: (repoPath: string) => ['local-branches', repoPath] as const,
+  // Under `localBranches`, so invalidating that prefix-matches this too.
+  localBranchDetails: (repoPath: string) => ['local-branches', repoPath, 'details'] as const,
+  remoteHead: (repoPath: string) => ['remote-head', repoPath] as const,
   stashes: (worktreePath: string) => ['stashes', worktreePath] as const
 }
 
@@ -102,6 +106,26 @@ export function useLocalBranches(
   return useQuery({
     queryKey: queryKeys.localBranches(repoPath ?? ''),
     queryFn: () => invoke('branches:list', repoPath!),
+    enabled: repoPath !== null
+  })
+}
+
+/** Local branches with upstream and tip commit, for the switch-branch picker (#96). */
+export function useLocalBranchDetails(
+  repoPath: string | null
+): ReturnType<typeof useQuery<LocalBranch[]>> {
+  return useQuery({
+    queryKey: queryKeys.localBranchDetails(repoPath ?? ''),
+    queryFn: () => invoke('branches:localDetails', repoPath!),
+    enabled: repoPath !== null
+  })
+}
+
+/** Where `origin/HEAD` points, for picking out the default branch (#96). */
+export function useRemoteHead(repoPath: string | null): ReturnType<typeof useQuery<string | null>> {
+  return useQuery({
+    queryKey: queryKeys.remoteHead(repoPath ?? ''),
+    queryFn: () => invoke('branches:remoteHead', repoPath!),
     enabled: repoPath !== null
   })
 }

@@ -5,6 +5,7 @@ import {
   LOG_RECORD_SEPARATOR,
   parseAheadBehind,
   parseBranchList,
+  parseLocalBranches,
   parseBranchUpstreams,
   parseCommit,
   parseCommitLog,
@@ -141,6 +142,42 @@ describe('parseBranchList', () => {
 
   it('ignores blank lines', () => {
     expect(parseBranchList('\n\nmain\n\n')).toEqual([{ name: 'main', current: false }])
+  })
+})
+
+describe('parseLocalBranches', () => {
+  it('reads name, upstream and tip commit, with an empty upstream as null', () => {
+    const output =
+      'main\u0000origin/main\u0000abc123\u0000abc1\u0000Ada\u00002026-01-02T03:04:05+00:00\u0000Initial commit\n' +
+      'feature/x\u0000\u0000def456\u0000def4\u0000Bob\u00002026-02-03T04:05:06+00:00\u0000Add a thing\n'
+    expect(parseLocalBranches(output)).toEqual([
+      {
+        name: 'main',
+        upstream: 'origin/main',
+        lastCommit: {
+          hash: 'abc123',
+          shortHash: 'abc1',
+          author: 'Ada',
+          date: '2026-01-02T03:04:05+00:00',
+          subject: 'Initial commit'
+        }
+      },
+      {
+        name: 'feature/x',
+        upstream: null,
+        lastCommit: {
+          hash: 'def456',
+          shortHash: 'def4',
+          author: 'Bob',
+          date: '2026-02-03T04:05:06+00:00',
+          subject: 'Add a thing'
+        }
+      }
+    ])
+  })
+
+  it('ignores blank lines', () => {
+    expect(parseLocalBranches('\n\n')).toEqual([])
   })
 })
 

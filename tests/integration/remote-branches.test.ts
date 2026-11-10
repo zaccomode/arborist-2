@@ -120,3 +120,32 @@ describe('listRemoteBranches, against a bare-remote fixture', () => {
     expect(upstream.trim()).toBe('origin/feature-z')
   }, 30_000)
 })
+
+describe('switch-branch palette data (#96)', () => {
+  it('lists local branches with their upstream and tip commit', async () => {
+    await fixture.git(['branch', 'feature-local'])
+
+    const branches = await service.listLocalBranchDetails(fixture.repoPath)
+
+    expect(branches.map((branch) => branch.name).sort()).toEqual(['feature-local', 'main'])
+    const main = branches.find((branch) => branch.name === 'main')!
+    expect(main.upstream).toBe('origin/main')
+    expect(main.lastCommit?.subject).toBeTruthy()
+    expect(branches.find((branch) => branch.name === 'feature-local')!.upstream).toBeNull()
+  }, 30_000)
+
+  it('reads a branch named like a tag by its branch name, not heads/<name>', async () => {
+    await fixture.git(['branch', 'v1'])
+    await fixture.git(['tag', 'v1'])
+
+    const branches = await service.listLocalBranchDetails(fixture.repoPath)
+
+    expect(branches.map((branch) => branch.name)).toContain('v1')
+  }, 30_000)
+
+  it("reports origin/HEAD once it's set, and null before", async () => {
+    expect(await service.remoteHead(fixture.repoPath)).toBeNull()
+    await fixture.git(['remote', 'set-head', 'origin', 'main'])
+    expect(await service.remoteHead(fixture.repoPath)).toBe('origin/main')
+  }, 30_000)
+})

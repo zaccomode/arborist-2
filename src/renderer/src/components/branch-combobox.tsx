@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, ChevronsUpDown, Plus } from 'lucide-react'
+import { Check, ChevronsUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -20,60 +20,34 @@ export interface BaseRefOption {
 }
 
 /**
- * A searchable picker for `worktrees:create`'s `baseRef`, and for the
- * switch-branch picker: HEAD, local branches, and remote branches, in that
- * order. A real repository has dozens of branches, which is what the search
- * is for — cmdk filters the list against whatever is typed.
- *
- * `allowCreate` adds a "Create branch “x”" row whenever the typed search
- * doesn't exactly match an existing option — the switch-branch dialog's
- * create-a-new-branch flow (#69 review). The base-ref picker on
- * create-worktree leaves it unset: every base there has to already exist.
- *
- * `remoteFirst` puts the remote branches above the local ones, for the
- * switch-branch picker, where the remote is what someone is usually reaching
- * for (#86). The base-ref pickers leave it unset and keep local first, since
- * a base is as often a local branch as a remote one.
+ * A searchable picker for `worktrees:create`'s `baseRef`: HEAD, local
+ * branches, and remote branches, in that order. A real repository has dozens
+ * of branches, which is what the search is for — cmdk filters the list
+ * against whatever is typed. The switch-branch palette (#96) has its own
+ * list and matching, in `src/shared/branch-picker.ts`.
  */
 export function BranchCombobox({
   value,
   onChange,
   options,
-  loading,
-  allowCreate,
-  remoteFirst
+  loading
 }: {
   value: string
   onChange: (value: string) => void
   options: BaseRefOption[]
   loading: boolean
-  allowCreate?: boolean
-  remoteFirst?: boolean
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const selected = options.find((option) => option.value === value)
 
-  const trimmedSearch = search.trim()
-  const showCreate =
-    allowCreate &&
-    trimmedSearch.length > 0 &&
-    !options.some((option) => option.value === trimmedSearch)
-
   const groups: { key: BaseRefOption['group']; heading: string }[] = [
     { key: 'head', heading: 'Start point' },
-    ...(remoteFirst
-      ? ([
-          { key: 'remote', heading: 'Remote branches' },
-          { key: 'local', heading: 'Local branches' }
-        ] as const)
-      : ([
-          { key: 'local', heading: 'Local branches' },
-          { key: 'remote', heading: 'Remote branches' }
-        ] as const))
+    { key: 'local', heading: 'Local branches' },
+    { key: 'remote', heading: 'Remote branches' }
   ]
 
-  const triggerLabel = selected?.label ?? (value || (allowCreate ? 'Select a branch' : 'HEAD'))
+  const triggerLabel = selected?.label ?? (value || 'HEAD')
 
   return (
     <Popover
@@ -108,27 +82,7 @@ export function BranchCombobox({
         <Command>
           <CommandInput placeholder="Search branches…" value={search} onValueChange={setSearch} />
           <CommandList>
-            <CommandEmpty>
-              {loading
-                ? 'Loading…'
-                : allowCreate && trimmedSearch.length === 0
-                  ? 'No matching branch. Type a name to create one.'
-                  : 'No matching branch.'}
-            </CommandEmpty>
-            {showCreate && (
-              <CommandGroup heading="Create">
-                <CommandItem
-                  value={`create ${trimmedSearch}`}
-                  onSelect={() => {
-                    onChange(trimmedSearch)
-                    setOpen(false)
-                  }}
-                >
-                  <Plus />
-                  <span className="truncate">Create branch “{trimmedSearch}”</span>
-                </CommandItem>
-              </CommandGroup>
-            )}
+            <CommandEmpty>{loading ? 'Loading…' : 'No matching branch.'}</CommandEmpty>
             {groups.map(({ key, heading }) => {
               const entries = options.filter((option) => option.group === key)
               if (entries.length === 0) return null

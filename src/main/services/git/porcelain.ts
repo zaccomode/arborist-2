@@ -14,6 +14,7 @@ import type {
   CommitFileStat,
   CommitLogEntry,
   CommitSummary,
+  LocalBranch,
   StashEntry,
   StatusBranch,
   UnmergedCode,
@@ -234,6 +235,22 @@ export const REMOTE_BRANCH_FORMAT = [
 ].join('%00')
 
 /**
+ * Every local branch with its upstream and tip commit, for the switch-branch
+ * picker (#96) — one `for-each-ref` rather than a `git log -1` per branch.
+ * `lstrip=2` rather than `:short`, which disambiguates a branch sharing its
+ * name with a tag as `heads/<name>` — not a name `git switch` would accept.
+ */
+export const LOCAL_BRANCH_FORMAT = [
+  '%(refname:lstrip=2)',
+  '%(upstream:short)',
+  '%(objectname)',
+  '%(objectname:short)',
+  '%(authorname)',
+  '%(authordate:iso-strict)',
+  '%(contents:subject)'
+].join('%00')
+
+/**
  * A local branch's upstream, divergence and tip commit, in the one
  * `for-each-ref` the refresh pipeline runs per worktree. Folds what used to
  * be a separate `git log -1` into the call that was already asking about the
@@ -284,6 +301,23 @@ export function parseBranchState(output: string): {
     track: parseUpstreamTrack(fields[1] ?? ''),
     lastCommit: parseCommit(fields.slice(2).join(FIELD_SEPARATOR))
   }
+}
+
+/** Parses `git for-each-ref --format=${LOCAL_BRANCH_FORMAT} refs/heads`. */
+export function parseLocalBranches(output: string): LocalBranch[] {
+  const branches: LocalBranch[] = []
+  for (const line of splitLines(output)) {
+    const fields = line.split(FIELD_SEPARATOR)
+    const name = (fields[0] ?? '').trim()
+    if (!name) continue
+    const upstream = (fields[1] ?? '').trim()
+    branches.push({
+      name,
+      upstream: upstream.length > 0 ? upstream : null,
+      lastCommit: parseCommit(fields.slice(2).join(FIELD_SEPARATOR))
+    })
+  }
+  return branches
 }
 
 /**

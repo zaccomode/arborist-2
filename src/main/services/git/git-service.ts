@@ -4,6 +4,7 @@ import { AppError } from '../../../shared/errors'
 import { mapWithConcurrency } from '../../../shared/concurrency'
 import type {
   BranchInfo,
+  LocalBranch,
   CommitFileStat,
   CommitLogEntry,
   RemoteBranch,
@@ -50,6 +51,7 @@ import {
 import {
   BRANCH_STATE_FORMAT,
   COMMIT_FORMAT,
+  LOCAL_BRANCH_FORMAT,
   LOG_FORMAT,
   LOG_RECORD_SEPARATOR,
   REMOTE_BRANCH_FORMAT,
@@ -60,6 +62,7 @@ import {
   parseCommit,
   parseCommitLog,
   parseCommitNumstat,
+  parseLocalBranches,
   parseRemoteBranchRefs,
   parseStashList,
   parseStatus,
@@ -235,6 +238,31 @@ export class GitService {
       { repoPath }
     )
     return parseBranchList(stdout)
+  }
+
+  /** Local branches with upstream and tip commit, for the switch-branch picker (#96). */
+  async listLocalBranchDetails(repoPath: string): Promise<LocalBranch[]> {
+    const { stdout } = await this.#git.runOrThrow(
+      ['for-each-ref', `--format=${LOCAL_BRANCH_FORMAT}`, 'refs/heads'],
+      { repoPath }
+    )
+    return parseLocalBranches(stdout)
+  }
+
+  /**
+   * What `origin/HEAD` points at, e.g. `origin/main` — the remote's own idea
+   * of its default branch, set by `git clone` (or `git remote set-head`).
+   * Null when it was never set, which is common for a repository that was
+   * `git init`-ed and had a remote added later; `resolveDefaultBranch` falls
+   * back to names in that case.
+   */
+  async remoteHead(repoPath: string): Promise<string | null> {
+    const { exitCode, stdout } = await this.#git.run(
+      ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'],
+      { repoPath }
+    )
+    const ref = stdout.trim()
+    return exitCode === 0 && ref.length > 0 ? ref : null
   }
 
   /**

@@ -439,12 +439,14 @@ test('switches to a remote branch by creating a local branch that tracks it', as
   await window.getByRole('button', { name: 'Worktree actions' }).click()
   await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
   await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
-  await window.getByRole('combobox').first().click()
+  // #96: the search field has focus the moment the palette opens, and the
+  // top row is the one Enter picks — so typing and pressing Enter is enough.
+  await expect(window.getByRole('combobox', { name: 'Search branches' })).toBeFocused()
   // #86: the picker did not list this at all before — a remote branch was
   // not something a worktree could switch to.
-  await window.getByRole('option', { name: 'origin/feature-remote' }).click()
-  await expect(window.getByTestId('switch-branch-plan')).toContainText('tracking it')
-  await window.getByRole('button', { name: 'Create and switch' }).click()
+  await window.keyboard.type('feature-remote')
+  await expect(window.getByRole('option').first()).toContainText('origin/feature-remote')
+  await window.keyboard.press('Enter')
 
   await expect(window.getByTestId('worktree-detail')).toContainText('feature-remote')
 
@@ -455,6 +457,41 @@ test('switches to a remote branch by creating a local branch that tracks it', as
   expect((await fixture.git(['rev-parse', '--abbrev-ref', 'HEAD'])).trim()).toBe('feature-remote')
   const upstream = await fixture.git(['rev-parse', '--abbrev-ref', 'feature-remote@{upstream}'])
   expect(upstream.trim()).toBe('origin/feature-remote')
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})
+
+test('the switch palette puts the default branch first and narrows as you type', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+  await fixture.git(['checkout', '-b', 'feature-a'])
+  await fixture.commit('Newer work', { 'a.txt': 'a\n' })
+  await fixture.git(['branch', 'maintenance'])
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+
+  await window.getByRole('button', { name: 'Worktree actions' }).click()
+  await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
+  await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
+
+  // #96: main is older than maintenance, but it's the default branch.
+  const first = window.getByRole('option').first()
+  await expect(first).toContainText('main')
+  await expect(first).toContainText('default')
+  await expect(first).toHaveAttribute('aria-selected', 'true')
+
+  await window.keyboard.type('maint')
+  await expect(window.getByRole('option')).toHaveCount(1)
+  await expect(first).toContainText('maintenance')
+  await expect(first).toHaveAttribute('aria-selected', 'true')
+
+  await window.keyboard.press('Enter')
+  await expect(window.getByTestId('worktree-detail')).toContainText('maintenance')
+  expect((await fixture.git(['rev-parse', '--abbrev-ref', 'HEAD'])).trim()).toBe('maintenance')
 
   await app.close()
   await rm(root, { recursive: true, force: true })
