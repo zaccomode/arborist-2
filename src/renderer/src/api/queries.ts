@@ -6,7 +6,6 @@ import {
   type UseMutationResult
 } from '@tanstack/react-query'
 import type {
-  BranchInfo,
   LocalBranch,
   CommitFileStat,
   CommitLogEntry,
@@ -100,17 +99,10 @@ export function useRemoteBranches(
   })
 }
 
-export function useLocalBranches(
-  repoPath: string | null
-): ReturnType<typeof useQuery<BranchInfo[]>> {
-  return useQuery({
-    queryKey: queryKeys.localBranches(repoPath ?? ''),
-    queryFn: () => invoke('branches:list', repoPath!),
-    enabled: repoPath !== null
-  })
-}
-
-/** Local branches with upstream and tip commit, for the switch-branch picker (#96). */
+/**
+ * Local branches with upstream and tip commit, for the switch-branch picker
+ * (#96) and create-worktree's base-ref picker.
+ */
 export function useLocalBranchDetails(
   repoPath: string | null
 ): ReturnType<typeof useQuery<LocalBranch[]>> {

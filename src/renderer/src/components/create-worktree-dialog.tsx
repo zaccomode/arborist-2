@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { BranchCombobox, type BaseRefOption } from '@/components/branch-combobox'
 import { CopyableError } from '@/components/copyable-error'
-import { useLocalBranches, useRemoteBranches } from '@/api/queries'
+import { useLocalBranchDetails, useRemoteBranches } from '@/api/queries'
 import { invoke } from '@/api/client'
 
 const EXISTENCE_DEBOUNCE_MS = 250
@@ -60,7 +60,7 @@ export function CreateWorktreeDialog({
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
-  const localBranches = useLocalBranches(open ? repoPath : null)
+  const localBranches = useLocalBranchDetails(open ? repoPath : null)
   const remoteBranches = useRemoteBranches(open ? repoPath : null)
 
   const branch = parseBranchInput(raw)

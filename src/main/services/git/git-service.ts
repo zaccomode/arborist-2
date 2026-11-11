@@ -3,7 +3,6 @@ import { join } from 'path'
 import { AppError } from '../../../shared/errors'
 import { mapWithConcurrency } from '../../../shared/concurrency'
 import type {
-  BranchInfo,
   LocalBranch,
   CommitFileStat,
   CommitLogEntry,
@@ -56,7 +55,6 @@ import {
   LOG_RECORD_SEPARATOR,
   REMOTE_BRANCH_FORMAT,
   parseAheadBehind,
-  parseBranchList,
   parseBranchState,
   parseBranchUpstreams,
   parseCommit,
@@ -231,16 +229,11 @@ export class GitService {
     return exitCode === 0
   }
 
-  /** Local branches, for the base-ref picker on create-worktree. */
-  async listLocalBranches(repoPath: string): Promise<BranchInfo[]> {
-    const { stdout } = await this.#git.runOrThrow(
-      ['branch', '--list', '--format=%(refname:short)%(HEAD)'],
-      { repoPath }
-    )
-    return parseBranchList(stdout)
-  }
-
-  /** Local branches with upstream and tip commit, for the switch-branch picker (#96). */
+  /**
+   * Local branches with upstream and tip commit, for the switch-branch picker
+   * (#96) and create-worktree's base-ref picker. Sorted by refname, as
+   * `for-each-ref` always is.
+   */
   async listLocalBranchDetails(repoPath: string): Promise<LocalBranch[]> {
     const { stdout } = await this.#git.runOrThrow(
       ['for-each-ref', `--format=${LOCAL_BRANCH_FORMAT}`, 'refs/heads'],

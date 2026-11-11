@@ -1837,13 +1837,18 @@ export const scenarios: Scenario[] = [
     description:
       'Creating a new branch from the switch palette (#69 review, #96): the ' +
       '"Create branch" and "Create branch … from…" rows that appear once a ' +
-      'typed name matches no branch, a typed name git would refuse, the ' +
-      'start-point step that "from…" swaps the list for, and the worktree ' +
-      'afterwards, checked out on the branch that was just created.',
+      'typed name matches no branch, a typed name git would refuse, a new ' +
+      'name that only loosely matches an existing branch with the create ' +
+      'rows on top so Enter creates it (#137), the start-point step that ' +
+      '"from…" swaps the list for, Escape stepping back out of it (#137), ' +
+      'and the worktree afterwards, checked out on the branch that was just ' +
+      'created.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
       await fixture.git(['branch', 'feature-base'])
+      // Matches `wip` only loosely — w…i…p in order — for the #137 step.
+      await fixture.git(['branch', 'feature/write-api'])
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
@@ -1860,15 +1865,30 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('switch-branch-plan').waitFor({ state: 'visible' })
       await shot('invalid-name')
 
+      await input.fill('wip')
+      await window.getByText('From HEAD (main)').waitFor({ state: 'visible' })
+      await window
+        .getByRole('option')
+        .filter({ hasText: 'feature/write-api' })
+        .waitFor({ state: 'visible' })
+      await shot('loose-match')
+
       await input.fill('feature/new-thing')
       await window.getByText('From HEAD (main)').waitFor({ state: 'visible' })
       await shot('create-option')
 
-      await window.getByRole('option').filter({ hasText: 'from…' }).click()
-      await window
-        .getByRole('combobox', { name: 'Search start points' })
-        .waitFor({ state: 'visible' })
+      const fromRow = window.getByRole('option').filter({ hasText: 'from…' })
+      const startPoints = window.getByRole('combobox', { name: 'Search start points' })
+      await fromRow.click()
+      await startPoints.waitFor({ state: 'visible' })
       await shot('base')
+
+      await window.keyboard.press('Escape')
+      await input.waitFor({ state: 'visible' })
+      await shot('base-escaped')
+
+      await fromRow.click()
+      await startPoints.waitFor({ state: 'visible' })
 
       await window.getByRole('option').filter({ hasText: 'feature-base' }).click()
       await window

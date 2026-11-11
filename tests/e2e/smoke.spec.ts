@@ -499,6 +499,49 @@ test('the switch palette puts the default branch first and narrows as you type',
   await rm(root, { recursive: true, force: true })
 })
 
+test('Enter on a new name creates it rather than switching to a loose match (#137)', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+  await fixture.git(['branch', 'feature/write-api'])
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+
+  const openPalette = async (): Promise<void> => {
+    await window.getByRole('button', { name: 'Worktree actions' }).click()
+    await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
+    await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
+  }
+
+  // Escape in the start-point step goes back to the branch list, name intact,
+  // rather than closing the palette.
+  await openPalette()
+  await window.keyboard.type('wip')
+  await window.getByRole('option').filter({ hasText: 'from…' }).click()
+  const startPoints = window.getByRole('combobox', { name: 'Search start points' })
+  await expect(startPoints).toBeVisible()
+  await window.keyboard.press('Escape')
+  const search = window.getByRole('combobox', { name: 'Search branches' })
+  await expect(search).toHaveValue('wip')
+  await expect(window.getByTestId('switch-branch-dialog')).toBeVisible()
+
+  // w…i…p appear in order in feature/write-api, so it's still listed — but
+  // below "Create branch", which is what Enter picks.
+  await expect(window.getByRole('option').filter({ hasText: 'feature/write-api' })).toBeVisible()
+  const first = window.getByRole('option').first()
+  await expect(first).toContainText('Create branch wip')
+  await expect(first).toHaveAttribute('aria-selected', 'true')
+
+  await window.keyboard.press('Enter')
+  await expect(window.getByText('Created wip and switched to it.')).toBeVisible()
+  expect((await fixture.git(['rev-parse', '--abbrev-ref', 'HEAD'])).trim()).toBe('wip')
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})
+
 test('a clicked tab takes focus without the keyboard focus ring', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
   const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
