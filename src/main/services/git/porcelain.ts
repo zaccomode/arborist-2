@@ -8,7 +8,6 @@
  */
 import type {
   AheadBehind,
-  BranchInfo,
   ChangeCode,
   ChangedFile,
   CommitFileStat,
@@ -108,22 +107,6 @@ export function parseWorktreeList(
 
   finish()
   return entries
-}
-
-/**
- * Parses `git branch --list --format=%(refname:short)%(HEAD)`, where the
- * checked-out branch carries a trailing `*`.
- */
-export function parseBranchList(output: string): BranchInfo[] {
-  return splitLines(output)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) =>
-      line.endsWith('*')
-        ? { name: line.slice(0, -1).trim(), current: true }
-        : { name: line, current: false }
-    )
-    .filter((branch) => branch.name.length > 0)
 }
 
 /**

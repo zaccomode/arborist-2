@@ -8,7 +8,6 @@
  */
 
 import type {
-  BranchInfo,
   CommitFileStat,
   CommitLogEntry,
   GitDiscoveryResult,
@@ -40,11 +39,12 @@ export interface IpcInvokeContract {
   /** Lists a repository's worktrees, each enriched with its current status. */
   'worktrees:list': { args: [repoPath: string]; result: Worktree[] }
   'branches:exists': { args: [repoPath: string, branch: string]; result: boolean }
-  /** Local branches, for the base-ref picker on create-worktree. */
-  'branches:list': { args: [repoPath: string]; result: BranchInfo[] }
   /** Remote branches with no local worktree of their own, tip commit included. */
   'branches:remote': { args: [repoPath: string]; result: RemoteBranch[] }
-  /** Every local branch with its upstream and tip commit, for the switch-branch picker (#96). */
+  /**
+   * Every local branch with its upstream and tip commit: the switch-branch
+   * picker (#96) and create-worktree's base-ref picker.
+   */
   'branches:localDetails': { args: [repoPath: string]; result: LocalBranch[] }
   /** Where `origin/HEAD` points, e.g. `origin/main`, or null when it isn't set. */
   'branches:remoteHead': { args: [repoPath: string]; result: string | null }
@@ -346,7 +346,6 @@ const CHANNELS: Record<IpcChannel, true> = {
   'projects:remove': true,
   'worktrees:list': true,
   'branches:exists': true,
-  'branches:list': true,
   'branches:remote': true,
   'branches:localDetails': true,
   'branches:remoteHead': true,

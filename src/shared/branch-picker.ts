@@ -68,10 +68,16 @@ function commitTime(row: BranchRow): number {
 }
 
 /**
- * Default branch first, then most recently committed to, then by name — the
- * order the palette shows with nothing typed. Recency rather than local-then-
- * remote: the branch someone is reaching for is usually the one that just
- * moved, whichever side it lives on. Unavailable rows always sink to the end.
+ * Default branch first, then by the tip commit's date, newest first, then by
+ * name — the order the palette shows with nothing typed. Recency rather than
+ * local-then-remote: the branch someone is reaching for is usually the one
+ * that just moved, whichever side it lives on. Unavailable rows always sink
+ * to the end.
+ *
+ * The date is the tip's *author* date, the same one every other commit in
+ * the app shows (`COMMIT_FORMAT`'s `%aI`), so the age a row displays and the
+ * order it sorts in agree. A rebased or cherry-picked tip keeps its original
+ * author date and so sorts by when it was written, not when it was moved.
  */
 function compareRows(a: BranchRow, b: BranchRow): number {
   if (isAvailable(a) !== isAvailable(b)) return isAvailable(a) ? -1 : 1
@@ -83,6 +89,38 @@ function compareRows(a: BranchRow, b: BranchRow): number {
   const byTime = commitTime(b) - commitTime(a)
   if (byTime !== 0) return byTime
   return a.name.localeCompare(b.name)
+}
+
+/** A local branch as a row. Shared by both lists so the two can't drift. */
+function localRow(
+  branch: LocalBranch,
+  defaultBranch: string | null,
+  checkedOutAt: string | null
+): BranchRow {
+  return {
+    key: `local:${branch.name}`,
+    kind: 'local',
+    name: branch.name,
+    shortName: branch.name,
+    isDefault: branch.name === defaultBranch,
+    upstream: branch.upstream,
+    lastCommit: branch.lastCommit,
+    checkedOutAt
+  }
+}
+
+/** A remote-tracking branch as a row; a remote ref is never checked out. */
+function remoteRow(branch: RemoteBranch, defaultBranch: string | null): BranchRow {
+  return {
+    key: `remote:${branch.name}`,
+    kind: 'remote',
+    name: branch.name,
+    shortName: branch.shortName,
+    isDefault: branch.shortName === defaultBranch,
+    upstream: null,
+    lastCommit: branch.lastCommit,
+    checkedOutAt: null
+  }
 }
 
 /**
@@ -97,6 +135,7 @@ export function switchRows({
   remote,
   worktrees,
   worktreePath,
+  currentBranch,
   defaultBranch,
   platform
 }: {
@@ -104,6 +143,12 @@ export function switchRows({
   remote: readonly RemoteBranch[]
   worktrees: readonly WorktreeEntry[]
   worktreePath: string
+  /**
+   * The branch this worktree is on, from the worktree itself. Left out of the
+   * list even while `worktrees` hasn't caught up with it (#137), rather than
+   * relying only on finding this worktree in that list.
+   */
+  currentBranch: string | null
   defaultBranch: string | null
   /** Required: this runs in the renderer, which has no `process` to default from. */
   platform: NodeJS.Platform
@@ -119,29 +164,11 @@ export function switchRows({
 
   const rows: BranchRow[] = [
     ...local
-      .filter((branch) => branch.name !== here?.branch)
-      .map((branch) => ({
-        key: `local:${branch.name}`,
-        kind: 'local' as const,
-        name: branch.name,
-        shortName: branch.name,
-        isDefault: branch.name === defaultBranch,
-        upstream: branch.upstream,
-        lastCommit: branch.lastCommit,
-        checkedOutAt: elsewhere.get(branch.name) ?? null
-      })),
+      .filter((branch) => branch.name !== currentBranch && branch.name !== here?.branch)
+      .map((branch) => localRow(branch, defaultBranch, elsewhere.get(branch.name) ?? null)),
     ...remote
       .filter((branch) => !localNames.has(branch.shortName))
-      .map((branch) => ({
-        key: `remote:${branch.name}`,
-        kind: 'remote' as const,
-        name: branch.name,
-        shortName: branch.shortName,
-        isDefault: branch.shortName === defaultBranch,
-        upstream: null,
-        lastCommit: branch.lastCommit,
-        checkedOutAt: null
-      }))
+      .map((branch) => remoteRow(branch, defaultBranch))
   ]
   return rows.sort(compareRows)
 }
@@ -174,28 +201,20 @@ export function baseRows({
       lastCommit: head.lastCommit,
       checkedOutAt: null
     },
-    ...local.map((branch) => ({
-      key: `local:${branch.name}`,
-      kind: 'local' as const,
-      name: branch.name,
-      shortName: branch.name,
-      isDefault: branch.name === defaultBranch,
-      upstream: branch.upstream,
-      lastCommit: branch.lastCommit,
-      checkedOutAt: null
-    })),
-    ...remote.map((branch) => ({
-      key: `remote:${branch.name}`,
-      kind: 'remote' as const,
-      name: branch.name,
-      shortName: branch.shortName,
-      isDefault: branch.shortName === defaultBranch,
-      upstream: null,
-      lastCommit: branch.lastCommit,
-      checkedOutAt: null
-    }))
+    ...local.map((branch) => localRow(branch, defaultBranch, null)),
+    ...remote.map((branch) => remoteRow(branch, defaultBranch))
   ]
   return rows.sort(compareRows)
+}
+
+/**
+ * What a row is called in the list. The HEAD row names the branch it's on —
+ * `HEAD (feature/x)` — except on a detached HEAD, where there's no branch to
+ * name and `HEAD (HEAD)` would just repeat itself (#137).
+ */
+export function rowLabel(row: BranchRow): string {
+  if (row.kind !== 'head') return row.name
+  return row.shortName === 'HEAD' ? 'HEAD' : `HEAD (${row.shortName})`
 }
 
 /** Whether `text` has every character of `query`, in order. */
@@ -253,6 +272,35 @@ export function filterRows(rows: readonly BranchRow[], query: string): BranchRow
       return a.score - b.score || a.index - b.index
     })
     .map((entry) => entry.row)
+}
+
+/**
+ * The worst `matchScore` that still outranks "Create branch" for a typed name
+ * that isn't a branch yet: a whole name, a prefix, or a segment prefix.
+ */
+const CONFIDENT_MATCH = 2
+
+/**
+ * Whether the "Create branch" rows go above the matching branches rather than
+ * below them, for a name `offerCreate` has already decided to offer (#137).
+ *
+ * The top row is the one Enter picks, and picking a branch switches to it
+ * straight away. The substring and in-order-characters fallbacks catch
+ * almost any short text — `wip` matches `feature/write-api` — so with the
+ * create rows always last, typing a new name and pressing Enter would
+ * quietly check out some barely-related branch instead, uncommitted changes
+ * and all. So only a match that plainly *is* what was typed (exact, prefix or
+ * segment prefix) stays above them; anything looser drops below, the way VS
+ * Code puts "Create new branch…" first.
+ */
+export function createGoesFirst(rows: readonly BranchRow[], query: string): boolean {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return false
+  return !rows.some((row) => {
+    if (!isAvailable(row)) return false
+    const score = matchScore(needle, row)
+    return score !== null && score <= CONFIDENT_MATCH
+  })
 }
 
 /**

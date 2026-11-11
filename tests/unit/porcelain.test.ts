@@ -4,7 +4,6 @@ import {
   LOG_FIELD_SEPARATOR,
   LOG_RECORD_SEPARATOR,
   parseAheadBehind,
-  parseBranchList,
   parseLocalBranches,
   parseBranchUpstreams,
   parseCommit,
@@ -128,20 +127,6 @@ describe('parseWorktreeList', () => {
 
   it('returns nothing for empty output', () => {
     expect(parseWorktreeList('')).toEqual([])
-  })
-})
-
-describe('parseBranchList', () => {
-  it('marks the branch carrying the trailing star as current', () => {
-    expect(parseBranchList('main*\nfeature/x\nrelease/1.0\n')).toEqual([
-      { name: 'main', current: true },
-      { name: 'feature/x', current: false },
-      { name: 'release/1.0', current: false }
-    ])
-  })
-
-  it('ignores blank lines', () => {
-    expect(parseBranchList('\n\nmain\n\n')).toEqual([{ name: 'main', current: false }])
   })
 })
 

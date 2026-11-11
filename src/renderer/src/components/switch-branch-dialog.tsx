@@ -7,10 +7,12 @@ import { validateBranchName } from '@shared/branch-name'
 import { resolveSwitchTarget } from '@shared/branch-switch'
 import {
   baseRows,
+  createGoesFirst,
   filterRows,
   isAvailable,
   offerCreate,
   resolveDefaultBranch,
+  rowLabel,
   switchRows,
   type BranchRow
 } from '@shared/branch-picker'
@@ -102,7 +104,7 @@ function BranchRowItem({
   onSelect: () => void
 }): React.JSX.Element {
   const Icon = row.kind === 'remote' ? Cloud : row.kind === 'head' ? GitCommitHorizontal : GitBranch
-  const label = row.kind === 'head' ? `HEAD (${row.shortName})` : row.name
+  const label = rowLabel(row)
   const detail = row.checkedOutAt
     ? `Checked out in ${folderName(row.checkedOutAt)}`
     : (row.lastCommit?.subject ?? 'No commits yet')
@@ -193,47 +195,61 @@ export function SwitchBranchDialog({
   const local = localBranches.data ?? []
   const remote = remoteBranches.data ?? []
   const localNames = local.map((branch) => branch.name)
-  const loading = localBranches.isPending || remoteBranches.isPending
+  // Everything the order of the rows depends on, not just the branch lists:
+  // origin/HEAD decides which branch is pinned to the top, and the worktree
+  // list which ones are disabled. Showing rows before those are in would let
+  // the list reorder under an Enter already on its way (#137).
+  const loading =
+    localBranches.isPending ||
+    remoteBranches.isPending ||
+    remoteHead.isPending ||
+    worktrees.isPending
   const defaultBranch = resolveDefaultBranch(
     remoteHead.data ?? null,
     localNames,
     remote.map((branch) => branch.shortName)
   )
 
-  const rows = filterRows(
-    step.kind === 'branch'
-      ? switchRows({
-          local,
-          remote,
-          worktrees: worktrees.data ?? [],
-          worktreePath: worktree.path,
-          defaultBranch,
-          // The renderer has no `process` for the default to read.
-          platform: window.arborist.platform
-        })
-      : baseRows({
-          local,
-          remote,
-          defaultBranch,
-          head: { branch: worktree.branch, lastCommit: worktree.status?.lastCommit ?? null }
-        }),
-    search
-  )
+  const rows = loading
+    ? []
+    : filterRows(
+        step.kind === 'branch'
+          ? switchRows({
+              local,
+              remote,
+              worktrees: worktrees.data ?? [],
+              worktreePath: worktree.path,
+              currentBranch: worktree.branch,
+              defaultBranch,
+              // The renderer has no `process` for the default to read.
+              platform: window.arborist.platform
+            })
+          : baseRows({
+              local,
+              remote,
+              defaultBranch,
+              head: { branch: worktree.branch, lastCommit: worktree.status?.lastCommit ?? null }
+            }),
+        search
+      )
 
   // Held back until the lists are in, so a name typed while they load isn't
   // offered as new for a moment and then turn out to exist.
   const typed = search.trim()
   const showCreate = step.kind === 'branch' && !loading && offerCreate(typed, localNames, remote)
   const createValidation = showCreate ? validateBranchName(typed) : null
+  // Above the branches when none of them is a confident match for what was
+  // typed, so Enter on a new name creates it rather than switching to
+  // whatever loosely matched (#137).
+  const createFirst = showCreate && createGoesFirst(rows, typed)
 
   // The topmost row has focus whenever the search changes (#96); arrowing
   // away from it sticks only until the next keystroke. Tracking which search
   // the navigation happened under, rather than resetting it in an effect,
   // keeps that a pure function of state.
-  const keys = [
-    ...rows.filter(isAvailable).map((row) => row.key),
-    ...(createValidation?.valid ? [CREATE_KEY, CREATE_FROM_KEY] : [])
-  ]
+  const rowKeys = rows.filter(isAvailable).map((row) => row.key)
+  const createKeys = createValidation?.valid ? [CREATE_KEY, CREATE_FROM_KEY] : []
+  const keys = createFirst ? [...createKeys, ...rowKeys] : [...rowKeys, ...createKeys]
   const context = `${step.kind}:${search}`
   const active =
     navigation && navigation.context === context && keys.includes(navigation.key)
@@ -290,7 +306,7 @@ export function SwitchBranchDialog({
    */
   const switchTo = async (input: string, startPoint?: string | null): Promise<void> => {
     if (busy) return
-    const target = resolveSwitchTarget(input, localNames, remote, null)
+    const target = resolveSwitchTarget(input, localNames, remote)
     if (!target.branch) return
     const create: CreateOption =
       startPoint !== undefined && target.create ? { startPoint } : target.create
@@ -343,6 +359,15 @@ export function SwitchBranchDialog({
     else void switchTo(row.name)
   }
 
+  /** Back from the start-point step to the branch list, with the name still typed. */
+  const leaveCreateFrom = (): void => {
+    if (step.kind !== 'base') return
+    setSearch(step.branch)
+    setStep({ kind: 'branch' })
+    setNavigation(null)
+    setError(null)
+  }
+
   const beginCreateFrom = (): void => {
     setStep({ kind: 'base', branch: typed })
     setSearch('')
@@ -383,12 +408,56 @@ export function SwitchBranchDialog({
     onCommitFirst()
   }
 
+  const createGroup = showCreate && (
+    <CommandGroup>
+      <CommandItem
+        value={CREATE_KEY}
+        disabled={!createValidation?.valid}
+        onSelect={() => void switchTo(typed)}
+      >
+        <Plus className="text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate">
+            Create branch <span className="font-mono">{typed}</span>
+          </div>
+          <div
+            data-testid="switch-branch-plan"
+            className={
+              createValidation?.valid
+                ? 'truncate text-muted-foreground'
+                : 'truncate text-destructive'
+            }
+          >
+            {createValidation?.valid
+              ? `From HEAD${worktree.branch ? ` (${worktree.branch})` : ''}`
+              : createValidation?.reason}
+          </div>
+        </div>
+      </CommandItem>
+      {createValidation?.valid && (
+        <CommandItem value={CREATE_FROM_KEY} onSelect={beginCreateFrom}>
+          <GitBranchPlus className="text-muted-foreground" />
+          <div className="min-w-0 flex-1 truncate">
+            Create branch <span className="font-mono">{typed}</span> from…
+          </div>
+        </CommandItem>
+      )}
+    </CommandGroup>
+  )
+
   return (
     <>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
           data-testid="switch-branch-dialog"
           showCloseButton={false}
+          // Escape in the start-point step steps back to the branch list
+          // rather than throwing the whole create away (#137).
+          onEscapeKeyDown={(event) => {
+            if (step.kind !== 'base') return
+            event.preventDefault()
+            leaveCreateFrom()
+          }}
           // Pinned near the top of the window, the way an editor's quick
           // pick sits, rather than centred like a form (#96).
           className="top-3 translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl"
@@ -431,6 +500,7 @@ export function SwitchBranchDialog({
               {!showCreate && (
                 <CommandEmpty>{loading ? 'Loading branches…' : 'No matching branch.'}</CommandEmpty>
               )}
+              {createFirst && createGroup}
               {rows.length > 0 && (
                 <CommandGroup>
                   {rows.map((row) => (
@@ -438,42 +508,7 @@ export function SwitchBranchDialog({
                   ))}
                 </CommandGroup>
               )}
-              {showCreate && (
-                <CommandGroup>
-                  <CommandItem
-                    value={CREATE_KEY}
-                    disabled={!createValidation?.valid}
-                    onSelect={() => void switchTo(typed)}
-                  >
-                    <Plus className="text-muted-foreground" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate">
-                        Create branch <span className="font-mono">{typed}</span>
-                      </div>
-                      <div
-                        data-testid="switch-branch-plan"
-                        className={
-                          createValidation?.valid
-                            ? 'truncate text-muted-foreground'
-                            : 'truncate text-destructive'
-                        }
-                      >
-                        {createValidation?.valid
-                          ? `From HEAD${worktree.branch ? ` (${worktree.branch})` : ''}`
-                          : createValidation?.reason}
-                      </div>
-                    </div>
-                  </CommandItem>
-                  {createValidation?.valid && (
-                    <CommandItem value={CREATE_FROM_KEY} onSelect={beginCreateFrom}>
-                      <GitBranchPlus className="text-muted-foreground" />
-                      <div className="min-w-0 flex-1 truncate">
-                        Create branch <span className="font-mono">{typed}</span> from…
-                      </div>
-                    </CommandItem>
-                  )}
-                </CommandGroup>
-              )}
+              {!createFirst && createGroup}
             </CommandList>
           </Command>
         </DialogContent>

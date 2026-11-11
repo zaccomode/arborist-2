@@ -173,7 +173,7 @@ describe('resolveSwitchTarget', () => {
   ]
 
   it('is empty for empty input, so nothing is offered before anything is picked', () => {
-    expect(resolveSwitchTarget('  ', ['main'], remotes, null)).toEqual({
+    expect(resolveSwitchTarget('  ', ['main'], remotes)).toEqual({
       branch: '',
       create: null,
       tracking: null
@@ -181,7 +181,7 @@ describe('resolveSwitchTarget', () => {
   })
 
   it('switches to a local branch as it always did', () => {
-    expect(resolveSwitchTarget('feature-y', ['main', 'feature-y'], remotes, null)).toEqual({
+    expect(resolveSwitchTarget('feature-y', ['main', 'feature-y'], remotes)).toEqual({
       branch: 'feature-y',
       create: null,
       tracking: null
@@ -194,7 +194,7 @@ describe('resolveSwitchTarget', () => {
    * branch that follows it, created from the ref.
    */
   it('turns a picked remote ref into a local branch created from it', () => {
-    expect(resolveSwitchTarget('origin/feature-x', ['main'], remotes, null)).toEqual({
+    expect(resolveSwitchTarget('origin/feature-x', ['main'], remotes)).toEqual({
       branch: 'feature-x',
       create: { startPoint: 'origin/feature-x' },
       tracking: 'origin/feature-x'
@@ -202,7 +202,7 @@ describe('resolveSwitchTarget', () => {
   })
 
   it('switches to the local branch a picked remote ref already has, rather than making a second one', () => {
-    expect(resolveSwitchTarget('origin/feature-x', ['main', 'feature-x'], remotes, null)).toEqual({
+    expect(resolveSwitchTarget('origin/feature-x', ['main', 'feature-x'], remotes)).toEqual({
       branch: 'feature-x',
       create: null,
       tracking: null
@@ -211,31 +211,15 @@ describe('resolveSwitchTarget', () => {
 
   /** #86: the case the issue is about — the remote wins over "from HEAD". */
   it('bases a typed name with no local branch on the remote branch of that name', () => {
-    expect(resolveSwitchTarget('feature-x', ['main'], remotes, null)).toEqual({
+    expect(resolveSwitchTarget('feature-x', ['main'], remotes)).toEqual({
       branch: 'feature-x',
       create: { startPoint: 'origin/feature-x' },
       tracking: 'origin/feature-x'
     })
   })
 
-  it('prefers the remote over the Base picker, which is the fallback rather than an override', () => {
-    expect(resolveSwitchTarget('feature-x', ['main'], remotes, 'main')).toEqual({
-      branch: 'feature-x',
-      create: { startPoint: 'origin/feature-x' },
-      tracking: 'origin/feature-x'
-    })
-  })
-
-  it('falls back to the Base picker for a name no remote has', () => {
-    expect(resolveSwitchTarget('brand-new', ['main'], remotes, 'main')).toEqual({
-      branch: 'brand-new',
-      create: { startPoint: 'main' },
-      tracking: null
-    })
-  })
-
-  it('falls back to HEAD when the Base picker is empty too', () => {
-    expect(resolveSwitchTarget('brand-new', ['main'], remotes, null)).toEqual({
+  it('creates a name no remote has from HEAD', () => {
+    expect(resolveSwitchTarget('brand-new', ['main'], remotes)).toEqual({
       branch: 'brand-new',
       create: { startPoint: null },
       tracking: null
@@ -248,7 +232,7 @@ describe('resolveSwitchTarget', () => {
    * operation and not something a picker should do quietly.
    */
   it('leaves an existing local branch alone even when a remote of that name exists', () => {
-    expect(resolveSwitchTarget('main', ['main'], remotes, null)).toEqual({
+    expect(resolveSwitchTarget('main', ['main'], remotes)).toEqual({
       branch: 'main',
       create: null,
       tracking: null
@@ -256,11 +240,11 @@ describe('resolveSwitchTarget', () => {
   })
 
   it('trims what was typed, so a stray space is not a different branch', () => {
-    expect(resolveSwitchTarget('  feature-x  ', ['main'], remotes, null).branch).toBe('feature-x')
+    expect(resolveSwitchTarget('  feature-x  ', ['main'], remotes).branch).toBe('feature-x')
   })
 
   it('creates from HEAD when there are no remotes at all', () => {
-    expect(resolveSwitchTarget('feature-x', ['main'], [], null)).toEqual({
+    expect(resolveSwitchTarget('feature-x', ['main'], [])).toEqual({
       branch: 'feature-x',
       create: { startPoint: null },
       tracking: null

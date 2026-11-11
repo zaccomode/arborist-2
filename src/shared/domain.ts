@@ -44,11 +44,6 @@ export interface WorktreeEntry {
   prunableReason: string | null
 }
 
-export interface BranchInfo {
-  name: string
-  current: boolean
-}
-
 /**
  * A local branch with enough attached to tell it apart from its neighbours
  * in the switch-branch picker (#96): what it tracks and where its tip is.

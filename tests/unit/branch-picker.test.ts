@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
   baseRows,
+  createGoesFirst,
   filterRows,
   matchScore,
   offerCreate,
   resolveDefaultBranch,
+  rowLabel,
   switchRows,
   type BranchRow
 } from '@shared/branch-picker'
@@ -80,6 +82,7 @@ describe('switchRows', () => {
       remote: [remote('origin/middle', '2025-06-01T00:00:00Z')],
       worktrees: [],
       worktreePath: '/repo',
+      currentBranch: null,
       defaultBranch: 'main',
       platform: 'linux'
     })
@@ -93,10 +96,29 @@ describe('switchRows', () => {
       remote: [remote('origin/main'), remote('origin/only-remote')],
       worktrees,
       worktreePath: '/repo',
+      currentBranch: 'feature-here',
       defaultBranch: 'main',
       platform: 'linux'
     })
     expect(names(rows)).toEqual(['main', 'origin/only-remote'])
+  })
+
+  /**
+   * #137: the worktree list can lag the worktree itself — still loading, or
+   * not yet refreshed after a switch — so the current branch is left out on
+   * the worktree's own say-so as well.
+   */
+  it("leaves out the worktree's own branch even when the worktree list doesn't have it", () => {
+    const rows = switchRows({
+      local: [local('feature-here'), local('main')],
+      remote: [],
+      worktrees: [],
+      worktreePath: '/repo',
+      currentBranch: 'feature-here',
+      defaultBranch: 'main',
+      platform: 'linux'
+    })
+    expect(names(rows)).toEqual(['main'])
   })
 
   it('lists a branch checked out elsewhere last, marked as unavailable', () => {
@@ -105,6 +127,7 @@ describe('switchRows', () => {
       remote: [],
       worktrees,
       worktreePath: '/repo',
+      currentBranch: 'feature-here',
       defaultBranch: null,
       platform: 'linux'
     })
@@ -118,6 +141,7 @@ describe('switchRows', () => {
       remote: [],
       worktrees: [worktree('/repo', 'main'), worktree('/repo-linked', 'other')],
       worktreePath: '/repo-linked',
+      currentBranch: 'other',
       defaultBranch: 'main',
       platform: 'linux'
     })
@@ -130,6 +154,7 @@ describe('switchRows', () => {
       remote: [remote('origin/main', '2020-01-01T00:00:00Z')],
       worktrees: [],
       worktreePath: '/repo',
+      currentBranch: null,
       defaultBranch: 'main',
       platform: 'linux'
     })
@@ -142,6 +167,7 @@ describe('switchRows', () => {
       remote: [],
       worktrees: [],
       worktreePath: '/repo',
+      currentBranch: null,
       defaultBranch: null,
       platform: 'linux'
     })
@@ -165,6 +191,49 @@ describe('baseRows', () => {
       'remote:origin/other'
     ])
     expect(rows[0].name).toBe('')
+  })
+
+  it('builds the same local and remote rows as the switch list does', () => {
+    const args = {
+      local: [local('feature')],
+      remote: [remote('origin/other')],
+      defaultBranch: null
+    }
+    const switchList = switchRows({
+      ...args,
+      worktrees: [],
+      worktreePath: '/repo',
+      currentBranch: null,
+      platform: 'linux'
+    })
+    const baseList = baseRows({ ...args, head: { branch: null, lastCommit: null } })
+    expect(baseList.slice(1)).toEqual(switchList)
+  })
+})
+
+describe('rowLabel', () => {
+  const head = (branch: string | null): BranchRow =>
+    baseRows({ local: [], remote: [], defaultBranch: null, head: { branch, lastCommit: null } })[0]
+
+  it('names the branch HEAD is on', () => {
+    expect(rowLabel(head('feature/x'))).toBe('HEAD (feature/x)')
+  })
+
+  it("doesn't repeat itself on a detached HEAD (#137)", () => {
+    expect(rowLabel(head(null))).toBe('HEAD')
+  })
+
+  it('is just the name for any other row', () => {
+    expect(
+      rowLabel(
+        baseRows({
+          local: [],
+          remote: [remote('origin/x')],
+          defaultBranch: null,
+          head: { branch: null, lastCommit: null }
+        })[1]
+      )
+    ).toBe('origin/x')
   })
 })
 
@@ -207,6 +276,7 @@ describe('filterRows', () => {
     remote: [],
     worktrees: [],
     worktreePath: '/repo',
+    currentBranch: null,
     defaultBranch: 'main',
     platform: 'linux'
   })
@@ -238,10 +308,65 @@ describe('filterRows', () => {
       remote: [],
       worktrees: [worktree('/repo', 'other'), worktree('/x', 'main')],
       worktreePath: '/repo',
+      currentBranch: 'other',
       defaultBranch: 'main',
       platform: 'linux'
     })
     expect(names(filterRows(withBusy, 'main'))).toEqual(['mainline', 'main'])
+  })
+})
+
+describe('createGoesFirst', () => {
+  /** The repro from #137. */
+  const rows = switchRows({
+    local: [local('main'), local('feature/write-api')],
+    remote: [remote('origin/develop')],
+    worktrees: [worktree('/repo', 'main')],
+    worktreePath: '/repo',
+    currentBranch: 'main',
+    defaultBranch: 'main',
+    platform: 'linux'
+  })
+
+  it('puts create first for a new name that only loosely matches a branch (#137)', () => {
+    // w…i…p appear in order in feature/write-api, so it is still listed —
+    // but Enter must create `wip`, not check out feature/write-api.
+    expect(names(filterRows(rows, 'wip'))).toEqual(['feature/write-api'])
+    expect(matchScore('wip', filterRows(rows, 'wip')[0])).toBe(4)
+    expect(offerCreate('wip', ['main', 'feature/write-api'], [remote('origin/develop')])).toBe(true)
+    expect(createGoesFirst(filterRows(rows, 'wip'), 'wip')).toBe(true)
+  })
+
+  it('puts create first when the only match is a substring', () => {
+    expect(matchScore('rite', filterRows(rows, 'rite')[0])).toBe(3)
+    expect(createGoesFirst(filterRows(rows, 'rite'), 'rite')).toBe(true)
+  })
+
+  it('keeps a prefix or segment-prefix match above create', () => {
+    expect(createGoesFirst(filterRows(rows, 'feat'), 'feat')).toBe(false)
+    expect(createGoesFirst(filterRows(rows, 'write'), 'write')).toBe(false)
+    expect(createGoesFirst(filterRows(rows, 'dev'), 'dev')).toBe(false)
+  })
+
+  it('ignores a confident match that cannot be picked anyway', () => {
+    const busy = switchRows({
+      local: [local('main'), local('wip-old')],
+      remote: [],
+      worktrees: [worktree('/repo', 'main'), worktree('/other', 'wip-old')],
+      worktreePath: '/repo',
+      currentBranch: 'main',
+      defaultBranch: 'main',
+      platform: 'linux'
+    })
+    expect(createGoesFirst(filterRows(busy, 'wip'), 'wip')).toBe(true)
+  })
+
+  it('has nothing to put first for an empty search', () => {
+    expect(createGoesFirst(rows, '  ')).toBe(false)
+  })
+
+  it('puts create first when nothing matches at all', () => {
+    expect(createGoesFirst(filterRows(rows, 'zzz'), 'zzz')).toBe(true)
   })
 })
 
