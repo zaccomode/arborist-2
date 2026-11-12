@@ -1,9 +1,10 @@
 {
   "name": "arborist",
-  "version": "3.6.0",
+  "version": "3.7.0",
   "description": "Cross-platform git worktree manager",
   "main": "./out/main/index.js",
   "author": "Isaac Shea",
+  "packageManager": "npm@11.21.2",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
