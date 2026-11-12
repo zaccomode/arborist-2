@@ -275,32 +275,25 @@ export function filterRows(rows: readonly BranchRow[], query: string): BranchRow
 }
 
 /**
- * The worst `matchScore` that still outranks "Create branch" for a typed name
- * that isn't a branch yet: a whole name, a prefix, or a segment prefix.
- */
-const CONFIDENT_MATCH = 2
-
-/**
  * Whether the "Create branch" rows go above the matching branches rather than
- * below them, for a name `offerCreate` has already decided to offer (#137).
+ * below them, for a name `offerCreate` has already decided to offer (#137,
+ * #139).
  *
  * The top row is the one Enter picks, and picking a branch switches to it
- * straight away. The substring and in-order-characters fallbacks catch
- * almost any short text — `wip` matches `feature/write-api` — so with the
- * create rows always last, typing a new name and pressing Enter would
- * quietly check out some barely-related branch instead, uncommitted changes
- * and all. So only a match that plainly *is* what was typed (exact, prefix or
- * segment prefix) stays above them; anything looser drops below, the way VS
- * Code puts "Create new branch…" first.
+ * straight away. Any looser match catches far too much: the in-order
+ * characters fallback turns `wip` into `feature/write-api` (#137), and even a
+ * segment prefix turns the short, common names people give new branches —
+ * `docs`, `api`, `fix` — into `chore/docs-update` or `feature/write-api`
+ * (#139). With the create rows below those, typing a new name and pressing
+ * Enter would quietly check out some other branch instead, uncommitted
+ * changes and all. So only an exact match — the typed text *is* that branch,
+ * by its name or a remote's short name — stays above them. Everything else is
+ * still listed, just below, the way VS Code puts "Create new branch…" first.
  */
 export function createGoesFirst(rows: readonly BranchRow[], query: string): boolean {
   const needle = query.trim().toLowerCase()
   if (!needle) return false
-  return !rows.some((row) => {
-    if (!isAvailable(row)) return false
-    const score = matchScore(needle, row)
-    return score !== null && score <= CONFIDENT_MATCH
-  })
+  return !rows.some((row) => isAvailable(row) && matchScore(needle, row) === 0)
 }
 
 /**

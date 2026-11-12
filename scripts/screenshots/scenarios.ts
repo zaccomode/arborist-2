@@ -1772,12 +1772,14 @@ export const scenarios: Scenario[] = [
       await option('feature-elsewhere').waitFor({ state: 'visible' })
       await shot('picker')
 
-      // 'conf' isn't a branch name, so the create rows join the one match.
+      // 'conf' isn't a branch name, so the create rows join the one match —
+      // above it, since only an exact name outranks them (#139). So the
+      // match is clicked rather than picked with Enter.
       await window.keyboard.type('conf')
       await option('feature-clean').waitFor({ state: 'detached' })
       await shot('search')
 
-      await window.keyboard.press('Enter')
+      await option('feature-conflict').click()
       await window.getByTestId('switch-branch-conflict-dialog').waitFor({ state: 'visible' })
       await shot('conflict')
 
@@ -1839,7 +1841,10 @@ export const scenarios: Scenario[] = [
       '"Create branch" and "Create branch … from…" rows that appear once a ' +
       'typed name matches no branch, a typed name git would refuse, a new ' +
       'name that only loosely matches an existing branch with the create ' +
-      'rows on top so Enter creates it (#137), the start-point step that ' +
+      'rows on top so Enter creates it (#137), the same for a name that ' +
+      'starts a segment of an existing branch (#139), an invalid name that ' +
+      'still matches a branch, with nothing focused so Enter does nothing ' +
+      '(#139), the start-point step that ' +
       '"from…" swaps the list for, Escape stepping back out of it (#137), ' +
       'and the worktree afterwards, checked out on the branch that was just ' +
       'created.',
@@ -1849,6 +1854,8 @@ export const scenarios: Scenario[] = [
       await fixture.git(['branch', 'feature-base'])
       // Matches `wip` only loosely — w…i…p in order — for the #137 step.
       await fixture.git(['branch', 'feature/write-api'])
+      // `docs` starts one of its segments, for the #139 step.
+      await fixture.git(['branch', 'chore/docs-update'])
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
@@ -1872,6 +1879,26 @@ export const scenarios: Scenario[] = [
         .filter({ hasText: 'feature/write-api' })
         .waitFor({ state: 'visible' })
       await shot('loose-match')
+
+      await input.fill('docs')
+      await window.getByText('From HEAD (main)').waitFor({ state: 'visible' })
+      await window
+        .getByRole('option')
+        .filter({ hasText: 'chore/docs-update' })
+        .waitFor({ state: 'visible' })
+      await shot('segment-match')
+
+      // A trailing slash: invalid, but still a prefix of feature/write-api.
+      await input.fill('feature/')
+      await window
+        .getByTestId('switch-branch-plan')
+        .filter({ hasText: 'cannot start or end with' })
+        .waitFor({ state: 'visible' })
+      await window
+        .getByRole('option')
+        .filter({ hasText: 'feature/write-api' })
+        .waitFor({ state: 'visible' })
+      await shot('invalid-match')
 
       await input.fill('feature/new-thing')
       await window.getByText('From HEAD (main)').waitFor({ state: 'visible' })

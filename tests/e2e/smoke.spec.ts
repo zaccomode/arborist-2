@@ -484,10 +484,11 @@ test('the switch palette puts the default branch first and narrows as you type',
   await expect(first).toContainText('default')
   await expect(first).toHaveAttribute('aria-selected', 'true')
 
-  // Narrowed to the one branch — the create rows below it aside, since
-  // `maint` isn't itself a branch name.
-  await window.keyboard.type('maint')
+  // Narrowed to the one branch. Typed in full, since a prefix alone would put
+  // "Create branch" on top (#139).
+  await window.keyboard.type('maintenance')
   await expect(window.getByRole('option').filter({ hasText: 'default' })).toHaveCount(0)
+  await expect(window.getByRole('option').filter({ hasText: 'Create branch' })).toHaveCount(0)
   await expect(first).toContainText('maintenance')
   await expect(first).toHaveAttribute('aria-selected', 'true')
 
@@ -499,11 +500,12 @@ test('the switch palette puts the default branch first and narrows as you type',
   await rm(root, { recursive: true, force: true })
 })
 
-test('Enter on a new name creates it rather than switching to a loose match (#137)', async () => {
+test('Enter on a new name creates it rather than switching to a loose match (#137, #139)', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
   const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
   await fixture.init()
   await fixture.git(['branch', 'feature/write-api'])
+  await fixture.git(['branch', 'chore/docs-update'])
 
   const app = await launch(root, fixture.repoPath)
   const window = await app.firstWindow()
@@ -531,6 +533,35 @@ test('Enter on a new name creates it rather than switching to a loose match (#13
   // below "Create branch", which is what Enter picks.
   await expect(window.getByRole('option').filter({ hasText: 'feature/write-api' })).toBeVisible()
   const first = window.getByRole('option').first()
+  await expect(first).toContainText('Create branch wip')
+  await expect(first).toHaveAttribute('aria-selected', 'true')
+
+  // A name git would refuse — here a prefix with a trailing slash — leaves its
+  // create row disabled, and nothing else focused: Enter mustn't fall through
+  // to the prefix match below it (#139).
+  await search.fill('')
+  await window.keyboard.type('feature/')
+  await expect(window.getByTestId('switch-branch-plan')).toContainText(
+    'cannot start or end with "/"'
+  )
+  await expect(window.getByRole('option').filter({ hasText: 'feature/write-api' })).toBeVisible()
+  await expect(window.getByRole('option', { selected: true })).toHaveCount(0)
+  await window.keyboard.press('Enter')
+  await expect(window.getByTestId('switch-branch-dialog')).toBeVisible()
+  expect((await fixture.git(['rev-parse', '--abbrev-ref', 'HEAD'])).trim()).toBe('main')
+  // Arrowing down still reaches it, deliberately.
+  await window.keyboard.press('ArrowDown')
+  await expect(window.getByRole('option', { selected: true })).toContainText('feature/write-api')
+
+  // `docs` starts a segment of chore/docs-update, which is still listed — but
+  // below "Create branch", like any match short of the exact name (#139).
+  await search.fill('')
+  await window.keyboard.type('docs')
+  await expect(window.getByRole('option').filter({ hasText: 'chore/docs-update' })).toBeVisible()
+  await expect(first).toContainText('Create branch docs')
+  await expect(first).toHaveAttribute('aria-selected', 'true')
+  await search.fill('')
+  await window.keyboard.type('wip')
   await expect(first).toContainText('Create branch wip')
   await expect(first).toHaveAttribute('aria-selected', 'true')
 
