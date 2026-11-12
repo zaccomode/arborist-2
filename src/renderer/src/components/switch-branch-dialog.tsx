@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
 import { Cloud, GitBranch, GitBranchPlus, GitCommitHorizontal, Plus } from 'lucide-react'
@@ -83,6 +83,11 @@ interface Navigation {
 
 const CREATE_KEY = 'create'
 const CREATE_FROM_KEY = 'create-from'
+/**
+ * The palette's value when no row should have focus. Not empty: cmdk treats
+ * an empty value as "nothing chosen yet" and selects the first row itself.
+ */
+const NO_SELECTION = 'none'
 
 /** The final segment of a worktree path, to name it in a row without the whole path. */
 function folderName(path: string): string {
@@ -191,6 +196,14 @@ export function SwitchBranchDialog({
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [conflict, setConflict] = useState<Conflict | null>(null)
+  // Whether the next change of row comes from the user — arrow keys or the
+  // pointer — rather than from cmdk, which selects the first row by itself
+  // whenever the search changes.
+  const deliberate = useRef(false)
+  // cmdk records its own pick of the first row before asking to change the
+  // value, and only takes the value back from us when it changes. Turning the
+  // pick down therefore bumps this, so that "nothing focused" is a new value.
+  const [declined, setDeclined] = useState(0)
 
   const local = localBranches.data ?? []
   const remote = remoteBranches.data ?? []
@@ -238,9 +251,9 @@ export function SwitchBranchDialog({
   const typed = search.trim()
   const showCreate = step.kind === 'branch' && !loading && offerCreate(typed, localNames, remote)
   const createValidation = showCreate ? validateBranchName(typed) : null
-  // Above the branches when none of them is a confident match for what was
-  // typed, so Enter on a new name creates it rather than switching to
-  // whatever loosely matched (#137).
+  // Above the branches unless one of them is exactly what was typed, so Enter
+  // on a new name creates it rather than switching to whatever else matched
+  // (#137, #139).
   const createFirst = showCreate && createGoesFirst(rows, typed)
 
   // The topmost row has focus whenever the search changes (#96); arrowing
@@ -250,11 +263,16 @@ export function SwitchBranchDialog({
   const rowKeys = rows.filter(isAvailable).map((row) => row.key)
   const createKeys = createValidation?.valid ? [CREATE_KEY, CREATE_FROM_KEY] : []
   const keys = createFirst ? [...createKeys, ...rowKeys] : [...rowKeys, ...createKeys]
+  // A typed name git would refuse leaves its create row on top but disabled,
+  // and every branch below it is a looser match than the name (#139). Focusing
+  // the first of those would let a typo plus Enter check out an unrelated
+  // branch, so nothing has focus until the user arrows to a row.
+  const defaultKey = createFirst && !createValidation?.valid ? NO_SELECTION : (keys[0] ?? '')
   const context = `${step.kind}:${search}`
   const active =
     navigation && navigation.context === context && keys.includes(navigation.key)
       ? navigation.key
-      : (keys[0] ?? '')
+      : defaultKey
 
   /**
    * Closes the palette and clears it, so the next open starts fresh rather
@@ -473,8 +491,23 @@ export function SwitchBranchDialog({
           <Command
             shouldFilter={false}
             loop
-            value={active}
-            onValueChange={(key) => setNavigation({ context, key })}
+            value={active === NO_SELECTION ? `${NO_SELECTION}:${declined}` : active}
+            onValueChange={(key) => {
+              const fromUser = deliberate.current
+              deliberate.current = false
+              // Where nothing should have focus (#139), cmdk's own pick of the
+              // first row is exactly the weak match being kept from Enter.
+              if (defaultKey === NO_SELECTION && !fromUser) {
+                setDeclined((count) => count + 1)
+                return
+              }
+              setNavigation({ context, key })
+            }}
+            onKeyDown={(event) => {
+              if (/^(Arrow(Up|Down)|Home|End)$/.test(event.key) || event.ctrlKey) {
+                deliberate.current = true
+              }
+            }}
             className="rounded-none"
           >
             <CommandInput
@@ -486,7 +519,10 @@ export function SwitchBranchDialog({
                   : 'Select a branch to switch to, or type a new name'
               }
               value={search}
-              onValueChange={setSearch}
+              onValueChange={(value) => {
+                deliberate.current = false
+                setSearch(value)
+              }}
               disabled={busy}
             />
             {error && (
@@ -496,7 +532,12 @@ export function SwitchBranchDialog({
                 message={error}
               />
             )}
-            <CommandList className="max-h-[min(24rem,60vh)]">
+            <CommandList
+              className="max-h-[min(24rem,60vh)]"
+              onPointerMoveCapture={() => {
+                deliberate.current = true
+              }}
+            >
               {!showCreate && (
                 <CommandEmpty>{loading ? 'Loading branches…' : 'No matching branch.'}</CommandEmpty>
               )}

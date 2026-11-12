@@ -342,13 +342,40 @@ describe('createGoesFirst', () => {
     expect(createGoesFirst(filterRows(rows, 'rite'), 'rite')).toBe(true)
   })
 
-  it('keeps a prefix or segment-prefix match above create', () => {
-    expect(createGoesFirst(filterRows(rows, 'feat'), 'feat')).toBe(false)
-    expect(createGoesFirst(filterRows(rows, 'write'), 'write')).toBe(false)
-    expect(createGoesFirst(filterRows(rows, 'dev'), 'dev')).toBe(false)
+  it('puts create first over a segment-prefix match (#139)', () => {
+    const docs = switchRows({
+      local: [local('main'), local('chore/docs-update')],
+      remote: [],
+      worktrees: [worktree('/repo', 'main')],
+      worktreePath: '/repo',
+      currentBranch: 'main',
+      defaultBranch: 'main',
+      platform: 'linux'
+    })
+    expect(names(filterRows(docs, 'docs'))).toEqual(['chore/docs-update'])
+    expect(matchScore('docs', filterRows(docs, 'docs')[0])).toBe(2)
+    expect(createGoesFirst(filterRows(docs, 'docs'), 'docs')).toBe(true)
+    // #137's own example branch, by its second segment.
+    expect(createGoesFirst(filterRows(rows, 'api'), 'api')).toBe(true)
+    expect(createGoesFirst(filterRows(rows, 'write'), 'write')).toBe(true)
   })
 
-  it('ignores a confident match that cannot be picked anyway', () => {
+  it('puts create first over a whole-name prefix match (#139)', () => {
+    expect(matchScore('feat', filterRows(rows, 'feat')[0])).toBe(1)
+    expect(createGoesFirst(filterRows(rows, 'feat'), 'feat')).toBe(true)
+    expect(createGoesFirst(filterRows(rows, 'dev'), 'dev')).toBe(true)
+  })
+
+  it('keeps an exact match above create', () => {
+    // offerCreate only hides create for an exact, case-sensitive name, so a
+    // different case is the one way to get both an exact row and create.
+    expect(offerCreate('Feature/Write-API', ['main', 'feature/write-api'], [])).toBe(true)
+    expect(createGoesFirst(filterRows(rows, 'Feature/Write-API'), 'Feature/Write-API')).toBe(false)
+    // A remote's short name is exact too.
+    expect(createGoesFirst(filterRows(rows, 'Develop'), 'Develop')).toBe(false)
+  })
+
+  it('ignores an exact match that cannot be picked anyway', () => {
     const busy = switchRows({
       local: [local('main'), local('wip-old')],
       remote: [],
@@ -358,7 +385,8 @@ describe('createGoesFirst', () => {
       defaultBranch: 'main',
       platform: 'linux'
     })
-    expect(createGoesFirst(filterRows(busy, 'wip'), 'wip')).toBe(true)
+    expect(matchScore('wip-old', filterRows(busy, 'WIP-old')[0])).toBe(0)
+    expect(createGoesFirst(filterRows(busy, 'WIP-old'), 'WIP-old')).toBe(true)
   })
 
   it('has nothing to put first for an empty search', () => {

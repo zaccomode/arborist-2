@@ -2,6 +2,10 @@
 
 Cross-platform (macOS + Windows) git worktree manager. Electron + React + TypeScript + Tailwind v4 + shadcn/ui. See README.md for layout and commands.
 
+## Changing dependencies: use npm 11
+
+`package.json` pins `packageManager` to npm 11. Node 22 bundles npm 10, which silently drops the `"libc"` fields from the glibc/musl native packages in `package-lock.json` whenever it rewrites the lockfile (#139). Run lockfile-changing commands through npm 11, e.g. `npx npm@11 install <pkg>`, and check that `grep -c '"libc"' package-lock.json` hasn't dropped. Plain `npm ci` doesn't rewrite the lockfile, so any npm is fine for that.
+
 ## UI components: always use the shadcn CLI
 
 Never hand-write components that shadcn provides. `src/renderer/src/components/ui/` is owned by the CLI:
