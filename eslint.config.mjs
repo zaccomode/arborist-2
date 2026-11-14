@@ -1,9 +1,17 @@
+import { createRequire } from 'node:module'
 import { defineConfig } from 'eslint/config'
 import tseslint from '@electron-toolkit/eslint-config-ts'
 import eslintConfigPrettier from '@electron-toolkit/eslint-config-prettier'
 import eslintPluginReact from 'eslint-plugin-react'
 import eslintPluginReactHooks from 'eslint-plugin-react-hooks'
 import eslintPluginReactRefresh from 'eslint-plugin-react-refresh'
+
+// eslint-plugin-react's `version: 'detect'` calls `context.getFilename()`,
+// which ESLint 10 removed, so every react/* rule throws on load. Reading the
+// installed version here gives the plugin the same answer without that call.
+// The plugin's peer range also stops at ESLint 9, hence the override for it
+// in package.json. Both can go once a plugin release supports ESLint 10.
+const reactVersion = createRequire(import.meta.url)('react/package.json').version
 
 export default defineConfig(
   { ignores: ['**/node_modules', '**/dist', '**/out'] },
@@ -13,7 +21,7 @@ export default defineConfig(
   {
     settings: {
       react: {
-        version: 'detect'
+        version: reactVersion
       }
     }
   },
