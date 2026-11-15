@@ -437,6 +437,25 @@ test('switches to a remote branch by creating a local branch that tracks it', as
   await addProject(app)
 
   await window.getByRole('button', { name: 'Worktree actions' }).click()
+  // Records focus leaving the search box. The closing menu used to hand focus
+  // back to its trigger after the box already had it. The dialog's trap
+  // returned it, but keys typed in between were lost ("featu" of
+  // "feature-remote" on a slow CI runner).
+  await window.evaluate(() => {
+    const stolen: string[] = []
+    ;(window as unknown as { __focusStolen: string[] }).__focusStolen = stolen
+    document.addEventListener(
+      'focusout',
+      (event) => {
+        const from = event.target as HTMLElement
+        const to = event.relatedTarget as HTMLElement | null
+        if (from.getAttribute('aria-label') === 'Search branches' && to) {
+          stolen.push(to.getAttribute('aria-label') ?? to.tagName)
+        }
+      },
+      true
+    )
+  })
   await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
   await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
   // #96: the search field has focus the moment the palette opens, and the
@@ -445,6 +464,12 @@ test('switches to a remote branch by creating a local branch that tracks it', as
   // #86: the picker did not list this at all before — a remote branch was
   // not something a worktree could switch to.
   await window.keyboard.type('feature-remote')
+  await expect(window.getByRole('combobox', { name: 'Search branches' })).toHaveValue(
+    'feature-remote'
+  )
+  expect(
+    await window.evaluate(() => (window as unknown as { __focusStolen: string[] }).__focusStolen)
+  ).toEqual([])
   await expect(window.getByRole('option').first()).toContainText('origin/feature-remote')
   await window.keyboard.press('Enter')
 
