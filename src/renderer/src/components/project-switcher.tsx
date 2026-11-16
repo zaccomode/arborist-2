@@ -9,6 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { useMenuOpensDialog } from '@/lib/menu-opens-dialog'
 
 /**
  * One project at a time, chosen here. v1 listed every repository in the
@@ -41,10 +42,12 @@ export function ProjectSwitcher({
   fetching: boolean
 }): React.JSX.Element {
   const selected = projects.find((project) => project.id === selectedId)
+  const { attachTrigger, onCloseAutoFocus: guardMenuFocus, opensDialog } = useMenuOpensDialog()
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
+        ref={attachTrigger}
         className="flex items-center gap-2 rounded-lg border bg-sidebar px-3 py-2 text-sm font-medium outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
         data-testid="project-switcher"
       >
@@ -53,7 +56,11 @@ export function ProjectSwitcher({
         <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="start" className="w-(--radix-dropdown-menu-trigger-width)">
+      <DropdownMenuContent
+        align="start"
+        className="w-(--radix-dropdown-menu-trigger-width)"
+        onCloseAutoFocus={guardMenuFocus}
+      >
         {projects.length > 0 && (
           <>
             <DropdownMenuRadioGroup value={selectedId ?? ''} onValueChange={onSelect}>
@@ -79,7 +86,12 @@ export function ProjectSwitcher({
           <FolderPlus />
           Add project…
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onOpenSettings}>
+        <DropdownMenuItem
+          onSelect={() => {
+            opensDialog()
+            onOpenSettings()
+          }}
+        >
           <Settings />
           App settings…
         </DropdownMenuItem>

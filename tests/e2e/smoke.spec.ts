@@ -27,6 +27,37 @@ async function addProject(app: ElectronApplication): Promise<void> {
   await window.getByRole('menuitem', { name: 'Add project…' }).click()
 }
 
+type Window = Awaited<ReturnType<ElectronApplication['firstWindow']>>
+
+/**
+ * Starts recording every time focus leaves the element matching `selector`
+ * for another element. Read back with `focusStolen`. A closing menu used to
+ * hand focus back to its trigger after a dialog's text box already had it;
+ * the dialog's trap returned it, but keys typed in between were lost (#146,
+ * #147). Recording it catches the bug on every run, not only on a slow one.
+ */
+async function recordFocusLeaving(window: Window, selector: string): Promise<void> {
+  await window.evaluate((selector) => {
+    const stolen: string[] = []
+    ;(window as unknown as { __focusStolen: string[] }).__focusStolen = stolen
+    document.addEventListener(
+      'focusout',
+      (event) => {
+        const from = event.target as HTMLElement
+        const to = event.relatedTarget as HTMLElement | null
+        if (from.matches(selector) && to) {
+          stolen.push(to.getAttribute('aria-label') ?? to.tagName)
+        }
+      },
+      true
+    )
+  }, selector)
+}
+
+async function focusStolen(window: Window): Promise<string[]> {
+  return window.evaluate(() => (window as unknown as { __focusStolen: string[] }).__focusStolen)
+}
+
 test('adds a git repository as a project', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
   const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
@@ -441,21 +472,7 @@ test('switches to a remote branch by creating a local branch that tracks it', as
   // back to its trigger after the box already had it. The dialog's trap
   // returned it, but keys typed in between were lost ("featu" of
   // "feature-remote" on a slow CI runner).
-  await window.evaluate(() => {
-    const stolen: string[] = []
-    ;(window as unknown as { __focusStolen: string[] }).__focusStolen = stolen
-    document.addEventListener(
-      'focusout',
-      (event) => {
-        const from = event.target as HTMLElement
-        const to = event.relatedTarget as HTMLElement | null
-        if (from.getAttribute('aria-label') === 'Search branches' && to) {
-          stolen.push(to.getAttribute('aria-label') ?? to.tagName)
-        }
-      },
-      true
-    )
-  })
+  await recordFocusLeaving(window, '[aria-label="Search branches"]')
   await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
   await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
   // #96: the search field has focus the moment the palette opens, and the
@@ -467,9 +484,7 @@ test('switches to a remote branch by creating a local branch that tracks it', as
   await expect(window.getByRole('combobox', { name: 'Search branches' })).toHaveValue(
     'feature-remote'
   )
-  expect(
-    await window.evaluate(() => (window as unknown as { __focusStolen: string[] }).__focusStolen)
-  ).toEqual([])
+  expect(await focusStolen(window)).toEqual([])
   await expect(window.getByRole('option').first()).toContainText('origin/feature-remote')
   await window.keyboard.press('Enter')
 
@@ -482,6 +497,54 @@ test('switches to a remote branch by creating a local branch that tracks it', as
   expect((await fixture.git(['rev-parse', '--abbrev-ref', 'HEAD'])).trim()).toBe('feature-remote')
   const upstream = await fixture.git(['rev-parse', '--abbrev-ref', 'feature-remote@{upstream}'])
   expect(upstream.trim()).toBe('origin/feature-remote')
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})
+
+test('a menu that opens a dialog leaves typing in the dialog, and gets focus back on Escape (#147)', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+  await writeFile(join(fixture.repoPath, 'README.md'), '# fixture\nedited\n', 'utf8')
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+
+  // The stash dialog's Message box, typed into straight away. Before #147 the
+  // closing menu took focus back to "Changed files actions" mid-word.
+  await window.getByRole('tab', { name: 'Working Tree' }).click()
+  await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+  await window.getByRole('button', { name: 'Changed files actions' }).click()
+  await recordFocusLeaving(window, '#stash-message')
+  await window.getByRole('menuitem', { name: 'Stash all changes…' }).click()
+  await expect(window.getByLabel('Message')).toBeFocused()
+  await window.keyboard.type('quick message')
+  await expect(window.getByLabel('Message')).toHaveValue('quick message')
+  expect(await focusStolen(window)).toEqual([])
+
+  // Closing it puts focus back on the button that opened the menu, rather than
+  // on <body> where the unmounted menu item would leave it.
+  await window.keyboard.press('Escape')
+  await expect(window.getByTestId('new-stash-dialog')).toBeHidden()
+  await expect(window.getByRole('button', { name: 'Changed files actions' })).toBeFocused()
+
+  // The same for the switch-branch palette.
+  await window.getByRole('button', { name: 'Worktree actions' }).click()
+  await window.getByRole('menuitem', { name: 'Switch branch…' }).click()
+  await expect(window.getByRole('combobox', { name: 'Search branches' })).toBeFocused()
+  await window.keyboard.press('Escape')
+  await expect(window.getByTestId('switch-branch-dialog')).toBeHidden()
+  await expect(window.getByRole('button', { name: 'Worktree actions' })).toBeFocused()
+
+  // And the app settings, opened from the project switcher.
+  await window.getByTestId('project-switcher').click()
+  await window.getByRole('menuitem', { name: 'App settings…' }).click()
+  await window.getByTestId('settings-dialog').waitFor({ state: 'visible' })
+  await window.keyboard.press('Escape')
+  await expect(window.getByTestId('settings-dialog')).toBeHidden()
+  await expect(window.getByTestId('project-switcher')).toBeFocused()
 
   await app.close()
   await rm(root, { recursive: true, force: true })

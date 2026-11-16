@@ -14,6 +14,7 @@ import { AboutSettings } from '@/components/settings/about-settings'
 import { DeveloperSettings } from '@/components/settings/developer-settings'
 import { GeneralSettings } from '@/components/settings/general-settings'
 import { PresetSettings } from '@/components/settings/preset-settings'
+import { returnFocusToMenu } from '@/lib/menu-opens-dialog'
 
 /**
  * Settings as a dialog rather than a second window. v1 used a separate window
@@ -44,6 +45,7 @@ export function SettingsDialog({
           tab row itself around under the pointer. */}
       <DialogContent
         data-testid="settings-dialog"
+        onCloseAutoFocus={returnFocusToMenu}
         className="flex h-[560px] max-h-[calc(100vh-4rem)] flex-col sm:max-w-2xl"
       >
         <DialogHeader className="shrink-0">

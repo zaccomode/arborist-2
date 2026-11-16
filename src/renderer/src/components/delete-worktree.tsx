@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
+import { returnFocusToMenu } from '@/lib/menu-opens-dialog'
 
 /**
  * Deleting a worktree in two stages, the way v1 did, but decided by a fresh
@@ -67,7 +68,10 @@ export function DeleteWorktreeDialogs({
   return (
     <>
       <AlertDialog open={open} onOpenChange={onOpenChange}>
-        <AlertDialogContent data-testid="delete-worktree-dialog">
+        <AlertDialogContent
+          data-testid="delete-worktree-dialog"
+          onCloseAutoFocus={returnFocusToMenu}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {worktreeTitle(worktree)}?</AlertDialogTitle>
             <AlertDialogDescription>

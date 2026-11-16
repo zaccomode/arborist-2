@@ -24,6 +24,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { invoke } from '@/api/client'
 import { queryKeys } from '@/api/queries'
+import { returnFocusToMenu, useMenuOpensDialog } from '@/lib/menu-opens-dialog'
 
 /**
  * The Changed Files header's "Stash…" trigger (#69 review): moved here from
@@ -52,6 +53,7 @@ export function NewStashMenu({
   const scoped = paths !== null
 
   const [open, setOpen] = useState(false)
+  const { attachTrigger, onCloseAutoFocus: guardMenuFocus, opensDialog } = useMenuOpensDialog()
   const [message, setMessage] = useState('')
   const [includeUntracked, setIncludeUntracked] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -84,12 +86,18 @@ export function NewStashMenu({
             size="icon"
             className="ml-auto hover:bg-accent dark:hover:bg-accent"
             aria-label="Changed files actions"
+            ref={attachTrigger}
           >
             <MoreVertical />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-auto">
-          <DropdownMenuItem onSelect={() => setOpen(true)}>
+        <DropdownMenuContent align="end" className="w-auto" onCloseAutoFocus={guardMenuFocus}>
+          <DropdownMenuItem
+            onSelect={() => {
+              opensDialog()
+              setOpen(true)
+            }}
+          >
             {scoped
               ? `Stash ${selected.length} selected file${selected.length === 1 ? '' : 's'}…`
               : 'Stash all changes…'}
@@ -98,7 +106,7 @@ export function NewStashMenu({
       </DropdownMenu>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent data-testid="new-stash-dialog">
+        <DialogContent data-testid="new-stash-dialog" onCloseAutoFocus={returnFocusToMenu}>
           <form onSubmit={(event) => void submitStash(event)}>
             <DialogHeader>
               <DialogTitle>Stash changes</DialogTitle>

@@ -54,6 +54,7 @@ import {
   useWorktrees
 } from '@/api/queries'
 import { useWorktreeInspector } from '@/state/selection'
+import { returnFocusToMenu } from '@/lib/menu-opens-dialog'
 
 /** What creates the branch instead of merely switching to it: `null` start point means HEAD. */
 type CreateOption = { startPoint: string | null } | null
@@ -469,6 +470,7 @@ export function SwitchBranchDialog({
         <DialogContent
           data-testid="switch-branch-dialog"
           showCloseButton={false}
+          onCloseAutoFocus={returnFocusToMenu}
           // Escape in the start-point step steps back to the branch list
           // rather than throwing the whole create away (#137).
           onEscapeKeyDown={(event) => {
