@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { CircleAlert, GitBranch, Hash, House, MoreVertical, RefreshCw } from 'lucide-react'
 import type { Worktree, WorktreeTab } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
@@ -20,6 +20,7 @@ import { SwitchBranchDialog } from '@/components/switch-branch-dialog'
 import { SyncActions } from '@/components/sync-actions'
 import { WorkingTreeTab } from '@/components/working-tree-tab'
 import { invoke } from '@/api/client'
+import { useMenuOpensDialog } from '@/lib/menu-opens-dialog'
 import { useWorktreeInspector, useWorktreeTab } from '@/state/selection'
 
 export function WorktreeDetail({
@@ -41,12 +42,7 @@ export function WorktreeDetail({
   const [tab, setTab] = useWorktreeTab(project.id, worktree.path)
   const [inspector, openInspector] = useWorktreeInspector(project.id, worktree.path)
   const [switchOpen, setSwitchOpen] = useState(false)
-  // Set when a menu item opens a dialog. On closing, the menu hands focus back
-  // to its trigger. That happens after its exit animation, by which time the
-  // palette's search box already has focus, so the menu would take it away.
-  // The dialog's focus trap takes it back, but keys typed in between are lost:
-  // CI dropped "featu" from "feature-remote" this way.
-  const openingDialog = useRef(false)
+  const { attachTrigger, onCloseAutoFocus: guardMenuFocus, opensDialog } = useMenuOpensDialog()
   // Bumped rather than a plain boolean, so a second "Commit first" while the
   // Working Tree tab is already open still refocuses the box — a boolean
   // that was already true wouldn't re-trigger the effect that reads it.
@@ -97,26 +93,19 @@ export function WorktreeDetail({
                 size="icon"
                 className="hover:bg-accent dark:hover:bg-accent"
                 aria-label="Worktree actions"
+                ref={attachTrigger}
               >
                 <MoreVertical />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="w-auto"
-              onCloseAutoFocus={(event) => {
-                if (!openingDialog.current) return
-                openingDialog.current = false
-                event.preventDefault()
-              }}
-            >
+            <DropdownMenuContent align="end" className="w-auto" onCloseAutoFocus={guardMenuFocus}>
               <DropdownMenuItem disabled={worktree.prunable} onSelect={onRunSetup}>
                 Run setup
               </DropdownMenuItem>
               <DropdownMenuItem
                 disabled={worktree.prunable}
                 onSelect={() => {
-                  openingDialog.current = true
+                  opensDialog()
                   setSwitchOpen(true)
                 }}
               >
@@ -131,7 +120,10 @@ export function WorktreeDetail({
                   variant="destructive"
                   disabled={worktree.locked}
                   title={worktree.locked ? 'Unlock this worktree before deleting it' : undefined}
-                  onSelect={onDelete}
+                  onSelect={() => {
+                    opensDialog()
+                    onDelete()
+                  }}
                 >
                   Delete worktree…
                 </DropdownMenuItem>

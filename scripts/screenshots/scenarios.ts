@@ -2063,6 +2063,39 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'menu-dialog-focus',
+    description:
+      'A menu item that opens a dialog (#147): the stash dialog with a ' +
+      'message typed straight after opening it, every character kept rather ' +
+      "than lost to the closing menu's trigger, then focus back on the " +
+      '"Changed files actions" button after Escape rather than on <body>.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await writeFile(join(fixture.repoPath, 'README.md'), '# fixture\nedited\n', 'utf8')
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+
+      await window.getByRole('button', { name: 'Changed files actions' }).click()
+      await window.getByRole('menuitem', { name: 'Stash all changes…' }).click()
+      await window.keyboard.type('Typed straight away')
+      await window.getByLabel('Message').waitFor({ state: 'visible' })
+      await shot('typed')
+
+      await window.keyboard.press('Escape')
+      await window.getByTestId('new-stash-dialog').waitFor({ state: 'detached' })
+      await window.waitForFunction(
+        () => document.activeElement?.getAttribute('aria-label') === 'Changed files actions'
+      )
+      await shot('focus-returned')
+    }
+  },
+  {
     name: 'conflict-editor-default',
     description:
       'Project settings’ Presets tab: the per-project conflict-editor ' +
