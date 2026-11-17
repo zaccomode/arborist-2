@@ -169,8 +169,16 @@ async function capture(scenario: Scenario, outDir: string, manifest: Manifest): 
   // scenario that means to show the watcher working opts back in by
   // returning `ARBORIST_DISABLE_WATCHER: '0'` from its own `setup`, which
   // overrides this default below.
+  //
+  // The dates pin any commit the app itself makes during a capture (a commit
+  // from the staging panel, a stash), which inherits this environment. A
+  // commit's hash covers its timestamp, so with the clock's date the short
+  // sha on screen changed on every run. The fixtures pin their own commits'
+  // dates the same way; this sits after those, so app commits stay newest.
   const env = {
     ARBORIST_DISABLE_WATCHER: '1',
+    GIT_AUTHOR_DATE: '2026-01-05T12:00:00Z',
+    GIT_COMMITTER_DATE: '2026-01-05T12:00:00Z',
     ...(await scenario.setup?.({ userDataDir, workDir }))
   }
   const app = await launch(userDataDir, env)
@@ -178,6 +186,19 @@ async function capture(scenario: Scenario, outDir: string, manifest: Manifest): 
   try {
     const window = await app.firstWindow()
     await window.waitForLoadState('domcontentloaded')
+    // Captures show end states, so CSS motion only adds risk, and it made a
+    // handful of captures flip between two renderings a few anti-aliased
+    // pixels apart. Chromium rasterises a layer that is being scaled (a
+    // dialog or palette zooming in, say) at that intermediate scale, and
+    // re-rasterises it at the final one lazily, after the animation ends.
+    // Whether that has happened by the capture is a race, and nothing in
+    // the DOM shows it: `getAnimations()` is already empty. With no CSS
+    // animations or transitions, every layer is only ever rasterised at its
+    // final scale and colour. The waits below stay as a backstop for
+    // anything this can't reach, such as script-driven Web Animations.
+    await window.addStyleTag({
+      content: '*, *::before, *::after { animation: none !important; transition: none !important; }'
+    })
     // The window is created with show: false and revealed on ready-to-show,
     // so capturing before that lands catches a blank frame.
     // `:not(script)` because the theme provider's no-flash script is the

@@ -131,6 +131,19 @@ async function scrollSidebarToBottom(window: Page): Promise<void> {
 }
 
 /**
+ * Adds the scenario's `ARBORIST_PICK_FOLDER` through the switcher and waits
+ * for it to finish loading, which lands on the main worktree's detail pane.
+ * A dialog opened straight after the click (app or project settings, New
+ * worktree) otherwise races the load behind it, so the backdrop shows an
+ * empty pane on one run and the loaded project on the next.
+ */
+async function addProject(window: Page): Promise<void> {
+  await window.getByTestId('project-switcher').click()
+  await window.getByRole('menuitem', { name: 'Add project…' }).click()
+  await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+}
+
+/**
  * Seeds `arborist-data.json` with a repository already registered, so the
  * scenario opens straight to it rather than going through the folder
  * picker — which frees `ARBORIST_PICK_FOLDER` for a scenario that also
@@ -232,8 +245,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
 
       await window.getByTestId('project-switcher').click()
@@ -260,8 +272,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByTestId('prune-worktrees').waitFor({ state: 'visible' })
       await shot('offered')
 
@@ -284,8 +295,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('listitem').filter({ hasText: 'feature/ahead-behind' }).waitFor()
     }
   },
@@ -302,8 +312,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('listitem').filter({ hasText: 'feature/ahead-behind' }).waitFor()
       await shot('default')
 
@@ -380,8 +389,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Fetch' }).click()
       await window.getByRole('button', { name: /origin\/feature\/sierra/ }).waitFor({
@@ -407,8 +415,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
 
       await window.getByRole('button', { name: /feature\/ahead-behind/ }).click()
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
@@ -456,8 +463,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Fetch' }).click()
       await window.getByRole('button', { name: /origin\/feature-remote/ }).waitFor({
@@ -548,8 +554,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('tab', { name: 'Commit Graph' }).click()
       await window.getByTestId('commit-graph-rows').waitFor({ state: 'visible' })
       await shot('graph')
@@ -628,8 +633,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('tab', { name: 'Commit Graph' }).click()
       await window.getByTestId('commit-graph-rows').waitFor({ state: 'visible' })
       await shot('graph')
@@ -647,8 +651,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('button', { name: /main/ }).first().waitFor()
       await shot('before')
 
@@ -685,8 +688,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
 
       await window.getByRole('button', { name: 'New worktree', exact: true }).click()
       await window.getByLabel('Branch', { exact: true }).fill('some-topic')
@@ -710,6 +712,12 @@ export const scenarios: Scenario[] = [
       await window.getByPlaceholder('Search branches…').fill('origin/feature-x')
       await window.getByRole('option', { name: 'origin/feature-x' }).click()
       await window.getByText(/matches origin\/feature-x/).waitFor({ state: 'visible' })
+      // The branch-existence check answers on its own schedule, so without
+      // this the hint under Branch is there on one run and missing the next.
+      await window
+        .getByTestId('branch-existence')
+        .filter({ hasText: 'created from origin/feature-x' })
+        .waitFor({ state: 'visible' })
       await shot('track-offer')
     }
   },
@@ -723,8 +731,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('button', { name: /feature\/dirty/ }).click()
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
 
@@ -754,8 +761,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       // Selecting the project fetches it (#94), so the branch pushed while
       // nobody was looking appears without anyone pressing Fetch.
@@ -796,8 +802,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('button', { name: /origin\/feature-y/ }).waitFor({ state: 'visible' })
       await shot('before')
 
@@ -831,8 +836,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
 
       await window.getByRole('button', { name: 'Project settings' }).click()
       await window
@@ -869,8 +873,7 @@ export const scenarios: Scenario[] = [
         return { ARBORIST_PICK_FOLDER: fixture.repoPath }
       },
       drive: async (window, shot) => {
-        await window.getByTestId('project-switcher').click()
-        await window.getByRole('menuitem', { name: 'Add project…' }).click()
+        await addProject(window)
 
         await window.getByRole('button', { name: 'Project settings' }).click()
         await window
@@ -939,8 +942,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
 
       await window.getByTestId('project-switcher').click()
@@ -966,8 +968,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
 
       await window.getByTestId('project-switcher').click()
@@ -1018,8 +1019,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath, ARBORIST_FAKE_UPDATE: 'up-to-date' }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
 
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'App settings…' }).click()
@@ -1041,8 +1041,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath, ARBORIST_FAKE_UPDATE: 'error' }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
 
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'App settings…' }).click()
@@ -1066,8 +1065,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath, ARBORIST_FAKE_UPDATE: 'error-manifest' }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
 
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'App settings…' }).click()
@@ -1155,8 +1153,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       await window.getByRole('button', { name: 'Project settings' }).click()
       await fillAndSettle(window, 'automation-script', 'npm install\nnpm run build')
@@ -1202,8 +1199,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
 
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'App settings…' }).click()
@@ -1345,8 +1341,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
@@ -1401,8 +1396,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
@@ -1450,8 +1444,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('button', { name: /feature\/dirty/ }).click()
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
@@ -1486,8 +1479,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window
         .locator('[aria-label="a.txt staging state"][data-state="indeterminate"]')
@@ -1531,8 +1523,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
       await window.getByTestId('commit-button').waitFor({ state: 'visible' })
@@ -1562,8 +1553,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('button', { name: /feature\/dirty/ }).click()
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
@@ -1595,8 +1585,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath, HOME: workDir }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByText(/No git identity configured/).waitFor({ state: 'visible' })
       await shot('hint')
@@ -1629,8 +1618,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('button', { name: 'Pull 1' }).waitFor({ state: 'visible' })
       await shot('behind')
 
@@ -1665,8 +1653,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
 
       await window.getByRole('button', { name: /feature\/ahead-behind/ }).click()
       await window.getByRole('tab', { name: 'Working Tree' }).click()
@@ -1701,8 +1688,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath, ARBORIST_DISABLE_WATCHER: '0' }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByText('No changes.').waitFor({ state: 'visible' })
       await shot('before')
@@ -1765,8 +1751,7 @@ export const scenarios: Scenario[] = [
         await window.getByTestId('switch-branch-dialog').waitFor({ state: 'visible' })
       }
 
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
 
       await openPalette()
@@ -1816,8 +1801,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
 
       await window.getByRole('button', { name: 'Worktree actions' }).click()
@@ -1860,8 +1844,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
 
       await window.getByRole('button', { name: 'Worktree actions' }).click()
@@ -1941,8 +1924,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       // #76: no stashes means no section at all, so the wait is for the tab
       // itself to have loaded — waiting on the section would wait forever.
@@ -2006,8 +1988,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('button', { name: /feature\/conflict/ }).click()
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByTestId('conflict-section').waitFor({ state: 'visible' })
@@ -2044,8 +2025,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
       await window
@@ -2077,8 +2057,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
 
@@ -2108,8 +2087,7 @@ export const scenarios: Scenario[] = [
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
     },
     drive: async (window, shot) => {
-      await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await addProject(window)
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       await window.getByRole('button', { name: 'Project settings' }).click()
       await window.getByRole('tab', { name: 'Presets' }).click()

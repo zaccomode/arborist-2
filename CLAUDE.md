@@ -99,7 +99,7 @@ Add a scenario to `scripts/screenshots/scenarios.ts` rather than editing the run
 }
 ```
 
-Wait on the end state, as above, rather than sleeping: a capture that races the UI it is showing fails intermittently and is easy to mistake for a styling bug. Each scenario gets its own Electron launch and a throwaway `--user-data-dir`, so captures can't leak state into each other or depend on whatever is already stored on the machine.
+Wait on the end state, as above, rather than sleeping: a capture that races the UI it is showing fails intermittently and is easy to mistake for a styling bug. That includes anything that arrives on its own schedule after the element you just waited for, such as an async hint under a field, or the project still loading behind a dialog you opened straight after adding it (the `addProject` helper waits for that). A race doesn't always fail: it can just change the manifest hash on some runs, so check a new scenario by running it a few times with `--out` and comparing the PNGs. Each scenario gets its own Electron launch and a throwaway `--user-data-dir`, so captures can't leak state into each other or depend on whatever is already stored on the machine.
 
 ### Capturing several points in one flow
 
@@ -123,9 +123,11 @@ Wait on the end state, as above, rather than sleeping: a capture that races the 
 
 Each call writes `<scenario>-<step>-<theme>.png`, so the example produces six images. A scenario that never calls `shot` is captured once at the end, as `<scenario>-<theme>.png`. Reusing a step name within a scenario is an error rather than a silent overwrite.
 
-Five things the runner handles that are easy to get wrong in a hand-rolled capture. All five produce a plausible-looking wrong image rather than an error, which is the dangerous kind:
+Seven things the runner handles that are easy to get wrong in a hand-rolled capture. All seven produce a plausible-looking wrong image rather than an error, which is the dangerous kind:
 
 - **Wait for the theme class, not just `emulateMedia`.** `main.tsx` mirrors `prefers-color-scheme` onto a `.dark` class from a change listener, so the class lands a tick after `emulateMedia` resolves.
+- **Turn off CSS animations and transitions for the whole session.** The runner injects a stylesheet that sets both to `none`, because captures show end states. Chromium rasterises a layer being scaled (a dialog or palette zooming in) at the intermediate scale and only re-rasterises it at the final scale lazily, so whether a capture caught that was a race. Nothing in the DOM shows it, and a handful of captures flipped between two renderings a few anti-aliased pixels apart. The two points below are kept as a backstop for script-driven animations the stylesheet can't reach.
+- **Pin the date of commits the app makes.** The runner launches with fixed `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE`, so a commit or stash made through the UI gets the same sha every run, rather than one taken from the clock.
 - **Screenshot with `animations: 'disabled'`.** Buttons carry `transition-all`, so a theme swap animates their colours. Capturing mid-transition renders a blend of both themes — a `bg-primary` button came out mid-grey in both schemes, which reads as a styling bug that isn't there.
 - **Wait for the colour transitions to finish, as well.** `animations: 'disabled'` does not save every element: a textarea carries `transition-[color]`, so after a theme swap its own text fades from one theme's colour to the other's, and a capture in between shows a note as near-invisible against the new background — an empty-looking box rather than an obviously wrong colour. The runner waits for every `CSSTransition` to stop running, and excludes animations, since a spinner never finishes.
 - **Park the pointer after clicking.** It otherwise rests on whatever was clicked and the capture picks up its `hover:` styling: the ping button measured RGB 209 hovered against 229 at rest. Set `keepPointer` on the scenario to capture a hover state deliberately.
