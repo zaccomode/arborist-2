@@ -5,7 +5,7 @@ much friendler interface for managing git worktrees than the terminal. It has
 become a sort of worktree-based git client, with working tree and commit graph
 tabs.
 
-![Arborist showing a repository's worktrees and recent commits](docs/screenshots/worktree-badges-dark.png)
+![Arborist showing a repository's worktrees and recent commits](https://cdn.isaacshea.com/i/84fd3069fae8dfe2e84055b4d0694d0e7628e13d097c1e37a9b9c3dc21704170.png)
 
 ## Key Features
 
@@ -35,7 +35,7 @@ npm run lint        # ESLint
 npm run typecheck   # tsc for node + web configs
 npm test            # Vitest unit and integration tests
 npm run test:e2e    # builds, then runs the Playwright smoke test
-npm run screenshot  # builds, then captures every UI scenario (key screens into docs/screenshots, the rest into .screenshots)
+npm run screenshot  # builds, captures every UI scenario into .screenshots, and hashes each into docs/screenshots/manifest.json
 ```
 
 CI runs the first four on macOS and Windows for every push and pull request.

@@ -148,5 +148,5 @@ vite.config.ts.timestamp-*
 test-results/
 playwright-report/
 
-# Local screenshot captures (only key screens are committed, in docs/screenshots)
+# Screenshot captures: never committed. Their hashes are, in docs/screenshots/manifest.json
 .screenshots/
