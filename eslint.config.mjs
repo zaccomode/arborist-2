@@ -14,7 +14,7 @@ import eslintPluginReactRefresh from 'eslint-plugin-react-refresh'
 const reactVersion = createRequire(import.meta.url)('react/package.json').version
 
 export default defineConfig(
-  { ignores: ['**/node_modules', '**/dist', '**/out'] },
+  { ignores: ['**/node_modules', '**/dist', '**/out', 'scripts/vendor/**'] },
   tseslint.configs.recommended,
   eslintPluginReact.configs.flat.recommended,
   eslintPluginReact.configs.flat['jsx-runtime'],

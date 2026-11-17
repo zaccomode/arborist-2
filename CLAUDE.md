@@ -57,10 +57,11 @@ Captures are deterministic within one environment: re-running a scenario unchang
 **4. Put the screenshots in the PR body.** Upload the captures this change affects and embed them, before and after where there's a meaningful pair:
 
 ```bash
-curl -fsSL https://media.isaacshea.com/cli/cdn.mjs -o /tmp/cdn.mjs
-node /tmp/cdn.mjs upload .screenshots/<files> --bucket arborist-2/screenshots \
+node scripts/vendor/cdn.mjs upload .screenshots/<files> --bucket arborist-2/screenshots \
   --repo zaccomode/arborist-2 --pr <number>
 ```
+
+The CLI is vendored in `scripts/vendor/` and pinned by its SHA-256, so it is reviewed like the rest of the repo rather than run as whatever its URL serves that day (#154). Don't download and run it from the image host instead; updating it is its own PR, as `scripts/vendor/README.md` describes.
 
 Paste the markdown exactly as `cdn upload` prints it. It starts with `!`; without it GitHub shows a link instead of the image. After saving the PR body, read it back and check the `!` survived: some PR-editing tools strip it from images on outside hosts. A "before" image is `https://cdn.isaacshea.com/i/<hash>.png`, with `<hash>` taken from the base branch's `docs/screenshots/manifest.json`; it is already uploaded, and its URL doesn't depend on any branch or bucket. Never commit PNGs.
 

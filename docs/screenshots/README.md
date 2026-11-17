@@ -3,7 +3,7 @@
 Captures of the real Electron window, one per scenario in `scripts/screenshots/scenarios.ts`, in both themes. The PNGs aren't committed. `npm run screenshot` (`xvfb-run -a npm run screenshot` on Linux) writes them to the gitignored `.screenshots/` and records the SHA-256 of every one in [`manifest.json`](./manifest.json), which is committed. The images are hosted at `https://cdn.isaacshea.com/i/<sha256>.png`, so the hash in the manifest is also the image's URL. `CLAUDE.md` covers the workflow.
 
 - **Regression check:** `git diff docs/screenshots/manifest.json`. Captures are byte-identical within one environment, so a changed hash means a changed image, and the diff names which one.
-- **Uploading:** a new hash isn't on the image host until someone uploads it, with `node /tmp/cdn.mjs upload` as `CLAUDE.md` describes. Until then its link below returns 404.
+- **Uploading:** a new hash isn't on the image host until someone uploads it, with `node scripts/vendor/cdn.mjs upload` as `CLAUDE.md` describes. Until then its link below returns 404.
 - **Environment:** font rasterisation differs between macOS and Linux, so the manifest is generated in the Linux cloud container. Regenerating on macOS changes every hash at once.
 
 ## Key screens
