@@ -5,7 +5,7 @@ much friendler interface for managing git worktrees than the terminal. It has
 become a sort of worktree-based git client, with working tree and commit graph
 tabs.
 
-![Arborist showing a repository's worktrees and recent commits](docs/screenshots/worktree-badges-dark.png)
+![Arborist showing a repository's worktrees and recent commits](https://cdn.isaacshea.com/i/84fd3069fae8dfe2e84055b4d0694d0e7628e13d097c1e37a9b9c3dc21704170.png)
 
 ## Key Features
 
