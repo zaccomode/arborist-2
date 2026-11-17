@@ -1,7 +1,16 @@
 import { useState } from 'react'
-import { CircleAlert, GitBranch, Hash, House, MoreVertical, RefreshCw } from 'lucide-react'
+import {
+  CircleAlert,
+  GitBranch,
+  GitCompareArrows,
+  Hash,
+  House,
+  MoreVertical,
+  RefreshCw
+} from 'lucide-react'
 import type { Worktree, WorktreeTab } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
+import { branchPositionLabel } from '@shared/branch-position'
 import { commitGraphScopeLabel, commitGraphTips, syncSummary, worktreeTitle } from '@shared/format'
 import { Button } from '@/components/ui/button'
 import {
@@ -42,6 +51,9 @@ export function WorktreeDetail({
   const [tab, setTab] = useWorktreeTab(project.id, worktree.path)
   const [inspector, openInspector] = useWorktreeInspector(project.id, worktree.path)
   const [switchOpen, setSwitchOpen] = useState(false)
+  // Against the default branch (#151), unless the upstream chip already
+  // says the same thing.
+  const positionLabel = branchPositionLabel(worktree.position, worktree.status?.upstream ?? null)
   const { attachTrigger, onCloseAutoFocus: guardMenuFocus, opensDialog } = useMenuOpensDialog()
   // Bumped rather than a plain boolean, so a second "Commit first" while the
   // Working Tree tab is already open still refocuses the box — a boolean
@@ -160,6 +172,12 @@ export function WorktreeDetail({
             </Chip>
           )}
           <Chip>{syncSummary(worktree)}</Chip>
+          {positionLabel && (
+            <Chip testId="branch-position">
+              <GitCompareArrows className="size-3" />
+              {positionLabel}
+            </Chip>
+          )}
           {worktree.locked && (
             <Chip>{worktree.lockReason ? `Locked: ${worktree.lockReason}` : 'Locked'}</Chip>
           )}

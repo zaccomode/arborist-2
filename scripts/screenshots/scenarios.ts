@@ -268,7 +268,7 @@ export const scenarios: Scenario[] = [
       'they list alphabetically, whatever order they were added in, and the ' +
       'first of them is the one opened.',
     setup: async ({ userDataDir, workDir }) => {
-      const repositories = []
+      const repositories: { id: string; path: string; name: string; addedAt: string }[] = []
       // Added newest-name-first, so an add-order list would read Zephyr,
       // Moss, arborist — the lower-case name also checks the ordering
       // ignores case.
@@ -439,7 +439,8 @@ export const scenarios: Scenario[] = [
     key: 'The detail pane: its tabs, a clean working tree, and a missing folder.',
     description:
       'The worktree detail pane across its three tabs: Overview (with the ' +
-      'branch/commit/path information block and notes), Working Tree over ' +
+      'branch/commit/path information block, the pill saying where the ' +
+      'branch stands against origin/main (#151), and notes), Working Tree over ' +
       'a dirty worktree so a row exists (and the tab carries the dot that ' +
       'flags its uncommitted changes, #152), Working Tree over a clean one ' +
       'for its empty state, with no dot, and Commit Graph. Then a worktree whose folder has ' +
@@ -507,6 +508,8 @@ export const scenarios: Scenario[] = [
       })
       await window.getByRole('button', { name: /origin\/feature-remote/ }).click()
       await window.getByTestId('remote-branch-detail').waitFor({ state: 'visible' })
+      // The default-branch pill (#151) is asked for once the pane opens.
+      await window.getByTestId('branch-position').waitFor({ state: 'visible' })
       await window.getByTestId('commit-graph-rows').waitFor({ state: 'visible' })
       await shot('list')
 
@@ -795,7 +798,7 @@ export const scenarios: Scenario[] = [
     name: 'remote-branches',
     description:
       'The Remote Branches section: a branch pushed elsewhere appears via the automatic fetch on selecting the project ' +
-      'pushed elsewhere, its detail pane, and creating a tracking worktree ' +
+      'pushed elsewhere, its detail pane with where it stands against main (#151), and creating a tracking worktree ' +
       'from it — which is what turns it back into an ordinary worktree.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
@@ -816,6 +819,8 @@ export const scenarios: Scenario[] = [
 
       await window.getByRole('button', { name: /origin\/feature-x/ }).click()
       await window.getByTestId('remote-branch-detail').waitFor({ state: 'visible' })
+      // Where it stands against main (#151), asked for once the pane opens.
+      await window.getByTestId('branch-position').waitFor({ state: 'visible' })
       await shot('detail')
 
       await window.getByRole('button', { name: 'Create worktree from this branch' }).click()
@@ -853,6 +858,8 @@ export const scenarios: Scenario[] = [
       await shot('before')
 
       await window.getByRole('button', { name: /origin\/feature-y/ }).click()
+      // The pane behind the dialog, settled before the dialog covers it.
+      await window.getByTestId('branch-position').waitFor({ state: 'visible' })
       await window.getByRole('button', { name: 'Create worktree from this branch' }).click()
       // Overwrites the prefilled `feature-y` with a name that shares nothing
       // with the remote branch's own — the folder name already differed by

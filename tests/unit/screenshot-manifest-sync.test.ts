@@ -1,7 +1,6 @@
 import { readFile } from 'fs/promises'
 import * as prettier from 'prettier'
 import { describe, expect, it } from 'vitest'
-import { scenarios } from '../../scripts/screenshots/scenarios'
 import { MANIFEST_PATH, README_PATH, THEMES } from '../../scripts/screenshots/output'
 import {
   parseManifest,
@@ -15,6 +14,16 @@ import {
  * regenerating would otherwise pass CI, and its "before" images and the
  * key-screens table would point at captures that don't exist.
  */
+/**
+ * Imported by a path TypeScript doesn't follow: `scenarios.ts` imports with
+ * `.ts` extensions for Node's type stripping, which the typecheck config
+ * that covers `tests/` rejects. Only the names and keys are needed here.
+ */
+const SCENARIOS_MODULE = '../../scripts/screenshots/scenarios.ts'
+const { scenarios } = (await import(/* @vite-ignore */ SCENARIOS_MODULE)) as {
+  scenarios: { name: string; key?: string }[]
+}
+
 describe('docs/screenshots stays in step with the scenarios', () => {
   it('has a manifest entry for exactly the scenarios that exist', async () => {
     const manifest = parseManifest(await readFile(MANIFEST_PATH, 'utf8'))

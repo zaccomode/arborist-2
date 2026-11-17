@@ -93,6 +93,7 @@ export function registerIpcHandlers({
   handle('branches:remote', (repoPath) => gitService.listRemoteBranches(repoPath))
   handle('branches:localDetails', (repoPath) => gitService.listLocalBranchDetails(repoPath))
   handle('branches:remoteHead', (repoPath) => gitService.remoteHead(repoPath))
+  handle('branches:position', (repoPath, ref) => gitService.branchPosition(repoPath, ref))
   handle('worktrees:suggestPath', (repoPath, branch, projectId) => {
     const location = resolveWorktreeLocation(
       store.data.settings,

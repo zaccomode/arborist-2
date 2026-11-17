@@ -1,10 +1,12 @@
-import { Cloud, Hash } from 'lucide-react'
+import { Cloud, GitCompareArrows, Hash } from 'lucide-react'
 import type { RemoteBranch } from '@shared/domain'
 import type { Repository } from '@shared/persisted'
+import { branchPositionLabel } from '@shared/branch-position'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/chip'
 import { CommitGraph } from '@/components/commit-graph'
 import { invoke } from '@/api/client'
+import { useRemoteBranchPosition } from '@/api/queries'
 import { useRemoteBranchCommit } from '@/state/selection'
 
 /**
@@ -22,6 +24,12 @@ export function RemoteBranchDetail({
   onCreateWorktree: () => void
 }): React.JSX.Element {
   const [selectedHash, selectCommit] = useRemoteBranchCommit(project.id, branch.name)
+  const position = useRemoteBranchPosition(
+    project.path,
+    branch.name,
+    branch.lastCommit?.hash ?? null
+  )
+  const positionLabel = branchPositionLabel(position.data ?? null)
 
   return (
     <div className="flex h-full flex-col overflow-y-auto p-6" data-testid="remote-branch-detail">
@@ -41,6 +49,12 @@ export function RemoteBranchDetail({
           >
             <Hash className="size-3" />
             {branch.lastCommit.shortHash}
+          </Chip>
+        )}
+        {positionLabel && (
+          <Chip testId="branch-position">
+            <GitCompareArrows className="size-3" />
+            {positionLabel}
           </Chip>
         )}
       </div>

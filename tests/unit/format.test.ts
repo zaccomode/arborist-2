@@ -75,7 +75,8 @@ const worktree: Worktree = {
   prunable: false,
   prunableReason: null,
   status: null,
-  statusError: null
+  statusError: null,
+  position: null
 }
 
 describe('worktreeTitle', () => {

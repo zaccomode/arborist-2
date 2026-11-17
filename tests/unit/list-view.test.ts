@@ -31,6 +31,7 @@ function worktree(
     prunable: false,
     prunableReason: null,
     statusError: null,
+    position: null,
     status: {
       dirty: false,
       staged: 0,
