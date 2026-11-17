@@ -79,7 +79,7 @@ On Linux, including cloud containers, prefix it with a virtual display:
 ```bash
 xvfb-run -a npm run screenshot                  # every scenario
 xvfb-run -a npm run screenshot -- shell         # just the named ones
-xvfb-run -a npm run screenshot -- --out /tmp/x  # everything to one place instead
+xvfb-run -a npm run screenshot -- --out /tmp/x  # a preview: PNGs to /tmp/x, manifest untouched
 ```
 
 This is the full app with preload and IPC, so it's the accurate reference. Prefer it over loading the renderer in a browser.
@@ -99,7 +99,7 @@ Add a scenario to `scripts/screenshots/scenarios.ts` rather than editing the run
 }
 ```
 
-Wait on the end state, as above, rather than sleeping: a capture that races the UI it is showing fails intermittently and is easy to mistake for a styling bug. That includes anything that arrives on its own schedule after the element you just waited for, such as an async hint under a field, or the project still loading behind a dialog you opened straight after adding it (the `addProject` helper waits for that). A race doesn't always fail: it can just change the manifest hash on some runs, so check a new scenario by running it a few times with `--out` and comparing the PNGs. Each scenario gets its own Electron launch and a throwaway `--user-data-dir`, so captures can't leak state into each other or depend on whatever is already stored on the machine.
+Wait on the end state, as above, rather than sleeping: a capture that races the UI it is showing fails intermittently and is easy to mistake for a styling bug. That includes anything that arrives on its own schedule after the element you just waited for, such as an async hint under a field, or the project still loading behind a dialog you opened straight after adding it (the `addProject` helper waits for that). A race doesn't always fail: it can just change the manifest hash on some runs, so check a new scenario by running it a few times with `--out` and comparing the PNGs. A run with `--out` leaves `docs/screenshots/manifest.json` and the README table alone, so only a run without it records hashes; `npm test` fails if the manifest's scenarios or the key-screens table drift from `scenarios.ts`. Each scenario gets its own Electron launch and a throwaway `--user-data-dir`, so captures can't leak state into each other or depend on whatever is already stored on the machine.
 
 ### Capturing several points in one flow
 
