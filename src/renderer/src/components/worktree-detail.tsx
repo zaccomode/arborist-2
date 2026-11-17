@@ -209,7 +209,7 @@ export function WorktreeDetail({
                     data-testid="working-tree-dirty-dot"
                     className="size-1.5 rounded-full bg-amber-500"
                   />
-                  <span className="sr-only">, uncommitted changes</span>
+                  <span className="sr-only">(uncommitted changes)</span>
                 </>
               )}
             </TabsTrigger>

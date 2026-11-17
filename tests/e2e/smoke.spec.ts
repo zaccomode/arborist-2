@@ -712,10 +712,11 @@ test('the Working Tree tab, not a header pill, flags uncommitted changes (#152)'
   await window.getByRole('button', { name: /feature\/dirty/ }).click()
   await expect(window.getByTestId('working-tree-dirty-dot')).toBeVisible()
   // The dot is aria-hidden, so the tab says it in words for a screen reader.
-  await expect(tab).toHaveAccessibleName('Working Tree, uncommitted changes')
-  await expect(window.getByTestId('worktree-detail').getByText('Uncommitted changes')).toHaveCount(
-    0
-  )
+  await expect(tab).toHaveAccessibleName('Working Tree (uncommitted changes)')
+  // The header pill it replaces is gone.
+  await expect(
+    window.getByTestId('worktree-detail').getByText('Uncommitted changes', { exact: true })
+  ).toHaveCount(0)
 
   // The clean main worktree carries no dot.
   await window.getByRole('button', { name: /main/ }).first().click()
