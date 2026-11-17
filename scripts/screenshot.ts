@@ -12,17 +12,32 @@
  *   xvfb-run -a npm run screenshot -- shell   # just the named ones
  *   xvfb-run -a npm run screenshot -- --out /tmp/shots
  *
- * Only scenarios marked `committed` write into docs/screenshots; the rest go
- * to the gitignored .screenshots/. `--out` sends everything to one place.
+ * PNGs go to the gitignored .screenshots/ (or `--out`), never into git. What
+ * is committed is docs/screenshots/manifest.json, every capture's SHA-256, so
+ * `git diff docs/screenshots/manifest.json` is the regression check, and the
+ * images themselves are served from the image host by that hash. The
+ * key-screens table in docs/screenshots/README.md is regenerated from it.
  */
-import { mkdir, mkdtemp, rm } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import * as prettier from 'prettier'
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright'
 // Node's native type stripping resolves ESM imports literally, so this needs
 // the real file extension rather than a bare specifier.
 import { scenarios, type Scenario } from './screenshots/scenarios.ts'
-import { resolveOutDir } from './screenshots/output.ts'
+import { MANIFEST_PATH, README_PATH, resolveOutDir } from './screenshots/output.ts'
+import {
+  captureFileName,
+  mergeManifest,
+  parseManifest,
+  recordCapture,
+  serializeManifest,
+  renderKeyScreens,
+  replaceKeyScreens,
+  sha256Hex,
+  type Manifest
+} from './screenshots/manifest.ts'
 
 const THEMES = ['dark', 'light'] as const
 
@@ -84,12 +99,16 @@ async function settle(window: Page): Promise<void> {
   )
 }
 
-/** Captures the window as it stands, once per theme, as `<stem>-<theme>.png`. */
+/**
+ * Captures the window as it stands, once per theme, and records each PNG's
+ * hash in `manifest`. `step` is `''` for a scenario that never calls `shot`.
+ */
 async function captureThemes(
   window: Page,
   scenario: Scenario,
   outDir: string,
-  stem: string
+  step: string,
+  manifest: Manifest
 ): Promise<void> {
   if (!scenario.keepPointer) {
     // Clicking leaves the pointer resting on whatever was clicked, so the
@@ -127,16 +146,17 @@ async function captureThemes(
         .every((animation) => animation.playState !== 'running')
     )
 
-    const path = join(outDir, `${stem}-${theme}.png`)
+    const path = join(outDir, captureFileName(scenario.name, step, theme))
     // Buttons carry `transition-all`, so swapping the theme animates their
     // colours. Without this the capture lands mid-transition and renders a
     // blend of the two themes rather than either one.
-    await window.screenshot({ path, animations: 'disabled' })
+    const png = await window.screenshot({ path, animations: 'disabled' })
+    recordCapture(manifest, { scenario: scenario.name, step, theme, sha256: sha256Hex(png) })
     console.log(`wrote ${path}`)
   }
 }
 
-async function capture(scenario: Scenario, outDir: string): Promise<void> {
+async function capture(scenario: Scenario, outDir: string, manifest: Manifest): Promise<void> {
   const userDataDir = await mkdtemp(join(tmpdir(), 'arborist-shot-'))
   // Deterministic, unlike the user-data dir, because whatever a scenario
   // builds here can end up on screen: a random temp path would change the
@@ -166,11 +186,13 @@ async function capture(scenario: Scenario, outDir: string): Promise<void> {
 
     const steps = new Set<string>()
     const shot = async (step: string): Promise<void> => {
+      // The manifest files a scenario's single, step-less capture under ''.
+      if (!step) throw new Error(`Scenario "${scenario.name}" captured an empty step name`)
       if (steps.has(step)) {
         throw new Error(`Scenario "${scenario.name}" captured step "${step}" twice`)
       }
       steps.add(step)
-      await captureThemes(window, scenario, outDir, `${scenario.name}-${step}`)
+      await captureThemes(window, scenario, outDir, step, manifest)
     }
 
     await scenario.drive?.(window, shot)
@@ -178,7 +200,7 @@ async function capture(scenario: Scenario, outDir: string): Promise<void> {
     // A scenario that captured its own steps has said where it wants images;
     // adding an unasked-for one at the end would just be a stray file.
     if (steps.size === 0) {
-      await captureThemes(window, scenario, outDir, scenario.name)
+      await captureThemes(window, scenario, outDir, '', manifest)
     }
   } finally {
     await app.close()
@@ -211,12 +233,46 @@ async function main(): Promise<void> {
       })
     : scenarios
 
+  const dir = resolveOutDir(outDir)
+  await mkdir(dir, { recursive: true })
+
+  let manifest = await readManifest()
   // Electron apps get one instance at a time, so these can't overlap.
   for (const scenario of selected) {
-    const dir = resolveOutDir(scenario, outDir)
-    await mkdir(dir, { recursive: true })
-    await capture(scenario, dir)
+    const fresh: Manifest = {}
+    await capture(scenario, dir, fresh)
+    // Written after every scenario, so a run that fails partway still records
+    // the captures it did make.
+    manifest = mergeManifest(
+      manifest,
+      fresh,
+      scenarios.map((s) => s.name)
+    )
+    await writeManifest(manifest)
   }
+}
+
+async function readManifest(): Promise<Manifest> {
+  try {
+    return parseManifest(await readFile(MANIFEST_PATH, 'utf8'))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
+    throw error
+  }
+}
+
+async function writeManifest(manifest: Manifest): Promise<void> {
+  await writeFile(MANIFEST_PATH, serializeManifest(manifest))
+
+  const keyScenarios = scenarios.flatMap((s) => (s.key ? [{ name: s.name, key: s.key }] : []))
+  const readme = replaceKeyScreens(
+    await readFile(README_PATH, 'utf8'),
+    renderKeyScreens(manifest, keyScenarios, THEMES)
+  )
+  // Formatted the way `npm run format` would, so the two never fight over the
+  // table's column padding.
+  const options = await prettier.resolveConfig(README_PATH)
+  await writeFile(README_PATH, await prettier.format(readme, { ...options, filepath: README_PATH }))
 }
 
 main().catch((error: unknown) => {

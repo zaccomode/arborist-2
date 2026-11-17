@@ -52,11 +52,12 @@ export interface Scenario {
    */
   keepPointer?: boolean
   /**
-   * Write this scenario's PNGs into the tracked `docs/screenshots`. Reserve it
-   * for the few key screens; everything else is written to the gitignored
-   * `.screenshots/` so a regeneration doesn't churn the repo (#99).
+   * Marks a key screen: a caption for the table in
+   * `docs/screenshots/README.md`, which shows every step of the scenario from
+   * the image host. Reserve it for genuinely key screens. Every scenario,
+   * key or not, is written to `.screenshots/` and hashed into the manifest.
    */
-  committed?: boolean
+  key?: string
 }
 
 /**
@@ -173,7 +174,7 @@ let stashListFixture: GitFixture | null = null
 export const scenarios: Scenario[] = [
   {
     name: 'shell',
-    committed: true,
+    key: 'The two-pane shell as the app opens, with no project. Compare `concept.png`.',
     description:
       'The two-pane shell as the app opens, with no project selected. This is ' +
       'the capture to compare against concept.png.'
@@ -273,7 +274,7 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'worktree-badges',
-    committed: true,
+    key: 'The sidebar over the full badge matrix.',
     description:
       'The sidebar over the full badge matrix: ahead/behind, dirty, locked, ' +
       'a missing folder, a deleted upstream, and a detached checkout. The ' +
@@ -394,7 +395,7 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'worktree-detail',
-    committed: true,
+    key: 'The detail pane: its tabs, a clean working tree, and a missing folder.',
     description:
       'The worktree detail pane across its three tabs: Overview (with the ' +
       'branch/commit/path information block and notes), Working Tree over ' +
@@ -636,7 +637,7 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'create-worktree',
-    committed: true,
+    key: 'Creating a worktree, before and after.',
     description:
       'The create dialog reading a pasted checkout command, and the worktree ' +
       'list either side of creating one.',
@@ -953,7 +954,7 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'settings',
-    committed: true,
+    key: 'App settings.',
     description:
       'Settings: the General tab with the detected git binary and the theme, ' +
       'the Presets tab with the built-in switches, the preset editor over it, ' +
@@ -1140,7 +1141,7 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'project-settings',
-    committed: true,
+    key: 'Project settings.',
     description:
       'Project settings, opened from the button under the worktree list, now ' +
       'tabbed like app settings: the automation script with its parsed ' +
@@ -1224,7 +1225,7 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'git-not-found',
-    committed: true,
+    key: 'The blocking screen when git is missing.',
     description:
       'The blocking screen shown when no git binary can be found, with the ' +
       'manual path field. Every other screen assumes a working git, so this ' +
@@ -1722,7 +1723,7 @@ export const scenarios: Scenario[] = [
   },
   {
     name: 'switch-branch',
-    committed: true,
+    key: "Switching a worktree's branch, clean and with conflicting changes.",
     description:
       "Switching a worktree's branch (#51), in the top-pinned palette (#96): " +
       'every branch listed the moment it opens, with the one checked out in ' +

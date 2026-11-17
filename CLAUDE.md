@@ -41,25 +41,30 @@ Every PR that touches behaviour or UI needs all four of these. Do them in order,
 
 **2. Unit test the logic.** Run `npm test`, and extend it: a PR that changes behaviour without touching `tests/` is a PR whose behaviour nobody has pinned down. Logic that can live in `src/shared` as a pure function is far cheaper to test there than through the UI, so prefer moving it.
 
-**3. Check for visual regressions.** Regenerate every scenario. Only the few scenarios marked `committed: true` write into the tracked `docs/screenshots/`; the rest write to the gitignored `.screenshots/`, so you review those locally without committing them (#99):
+**3. Check for visual regressions.** Regenerate every scenario. PNGs are written to the gitignored `.screenshots/` and never committed. What is committed is `docs/screenshots/manifest.json`, the SHA-256 of every capture by scenario, step and theme, so the regression check is its diff:
 
 ```bash
 xvfb-run -a npm run screenshot
-git status --short docs/screenshots   # the committed key screens
-ls .screenshots                       # everything else, local only
+git diff docs/screenshots/manifest.json   # names exactly which captures changed
 ```
 
-Then **open each changed PNG and look at it**, in both places. Git reports a binary blob changed, not what changed, so an unreviewed diff here is worth nothing. Every changed image must be either an intended result of this PR or a bug you then fix. An image you can't explain is a regression until proven otherwise — the traps below all produce a plausible-looking wrong image rather than an error, and a `bg-primary` button once came out mid-grey in both themes and read as a real styling bug.
+Each changed hash is a changed image: `<scenario>-<step>-<theme>.png` in `.screenshots/`, or `<scenario>-<theme>.png` for the `""` step of a scenario that never calls `shot`. Then **open each changed PNG and look at it**. The diff says a capture changed, not what changed, so an unreviewed diff here is worth nothing. Every changed image must be either an intended result of this PR or a bug you then fix. An image you can't explain is a regression until proven otherwise — the traps below all produce a plausible-looking wrong image rather than an error, and a `bg-primary` button once came out mid-grey in both themes and read as a real styling bug.
 
-Captures are deterministic within one environment: re-running a scenario unchanged reproduces byte-identical PNGs, which is what makes this check meaningful. **Across** environments they are not, because font rasterisation differs between macOS and Linux. The committed baselines are generated in the Linux cloud container, so regenerate them there too. Regenerating on macOS will diff every image at once, which is the signature of this problem rather than of a real regression.
+The runner also regenerates the key-screens table in `docs/screenshots/README.md` from the manifest, for scenarios that set `key`, so commit that alongside it.
 
-**4. Put the screenshots in the PR body.** Embed the captures the change affects, before and after where there's a meaningful pair, so the visual can be reviewed without launching the app. Only the key screens are committed, so a capture from `.screenshots/` isn't in the repo: if the PR needs it, set `committed: true` on that scenario only when it is a genuinely key screen, otherwise attach it to the PR some other way (e.g. upload it to the PR) rather than committing it. For a committed capture, use the blob:
+Captures are deterministic within one environment: re-running a scenario unchanged reproduces byte-identical PNGs, which is what makes this check meaningful. **Across** environments they are not, because font rasterisation differs between macOS and Linux. The committed manifest is generated in the Linux cloud container, so regenerate it there too. Regenerating on macOS will change every hash at once, which is the signature of this problem rather than of a real regression.
 
-```markdown
-![Shell, dark](https://github.com/zaccomode/arborist-2/blob/<sha>/docs/screenshots/shell-dark.png?raw=true)
+**4. Put the screenshots in the PR body.** Upload the captures this change affects and embed them, before and after where there's a meaningful pair:
+
+```bash
+curl -fsSL https://media.isaacshea.com/cli/cdn.mjs -o /tmp/cdn.mjs
+NODE_USE_ENV_PROXY=1 node /tmp/cdn.mjs upload .screenshots/<files> --bucket arborist-2/screenshots \
+  --repo zaccomode/arborist-2 --pr <number>
 ```
 
-Pin `<sha>` to a commit rather than the branch, so the images survive the branch being deleted after merge. A relative path does not work in a PR body, which has no directory to resolve against — that one is about where the body is rendered, not about who can read the repository, so it holds either way.
+Paste the markdown it prints. A "before" image is `https://cdn.isaacshea.com/i/<hash>.png`, with `<hash>` taken from the base branch's `docs/screenshots/manifest.json`; it is already uploaded, and its URL doesn't depend on any branch or bucket. Never commit PNGs.
+
+In a cloud session the token is a network secret that the egress proxy adds to requests to `media.isaacshea.com`, and `NODE_USE_ENV_PROXY=1` is what sends Node's `fetch` through that proxy: without it the request goes direct and fails with `401 Missing bearer token`. Elsewhere, set `CDN_TOKEN` instead. The upload hashes locally and skips sending anything already stored, so uploading a capture twice is harmless.
 
 ## Design reference
 
@@ -67,7 +72,7 @@ Pin `<sha>` to a commit rather than the branch, so the images survive the branch
 
 ## Previewing UI changes visually
 
-Screenshot the real Electron window. `npm run screenshot` builds, launches the app under Playwright's `_electron`, and writes a dark and a light PNG per scenario, into `docs/screenshots/` for the few `committed` key screens and the gitignored `.screenshots/` for the rest. Compare the dark captures against `concept.png`.
+Screenshot the real Electron window. `npm run screenshot` builds, launches the app under Playwright's `_electron`, and writes a dark and a light PNG per scenario into the gitignored `.screenshots/`, recording each one's hash in `docs/screenshots/manifest.json`. Compare the dark captures against `concept.png`.
 
 On Linux, including cloud containers, prefix it with a virtual display:
 
