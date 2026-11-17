@@ -761,7 +761,8 @@ export const scenarios: Scenario[] = [
     name: 'delete-worktree',
     description:
       'Both confirmations for deleting a dirty worktree: the first says what ' +
-      'goes, the second says what cannot be recovered.',
+      'goes, the second says what cannot be recovered. Then the second ' +
+      'cancelled with Escape, which leaves focus on Worktree actions (#156).',
     setup: async ({ workDir }) => {
       const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
@@ -779,6 +780,15 @@ export const scenarios: Scenario[] = [
       await window.getByRole('button', { name: 'Delete', exact: true }).click()
       await window.getByTestId('force-delete-worktree-dialog').waitFor({ state: 'visible' })
       await shot('force')
+
+      // Backing out of the second dialog returns focus to the menu that
+      // started it all, rather than dropping it on <body> (#156).
+      await window.keyboard.press('Escape')
+      await window.getByTestId('force-delete-worktree-dialog').waitFor({ state: 'detached' })
+      await window.waitForFunction(
+        () => document.activeElement?.getAttribute('aria-label') === 'Worktree actions'
+      )
+      await shot('cancelled')
     }
   },
   {

@@ -61,15 +61,36 @@ export interface FocusReturn<T extends Focusable> {
    * later (a button, the app menu) keeps Radix's own focus return.
    */
   restore(event: PreventableEvent, focusIsFree: boolean): void
+  /**
+   * Call when the dialog that is open is about to close in favour of a second
+   * one, as Delete hands over to Force delete (#156). The next `restore`, the
+   * first dialog's, then keeps the target for the second dialog's close
+   * instead of spending it, and leaves focus in the second dialog. Without
+   * it, the first dialog's close finds focus already taken, discards the
+   * target, and the second dialog's close drops focus to `<body>`.
+   */
+  handOff(): void
 }
 
 export function createFocusReturn<T extends Focusable>(): FocusReturn<T> {
   let target: T | null = null
+  let handingOff = false
   return {
     remember(next) {
       target = next
+      handingOff = false
+    },
+    handOff() {
+      handingOff = true
     },
     restore(event, focusIsFree) {
+      if (handingOff) {
+        handingOff = false
+        // Focus belongs to the dialog taking over. Radix would otherwise try
+        // to return it to whatever had it before the first dialog opened.
+        if (target) event.preventDefault()
+        return
+      }
       const returnTo = target
       target = null
       if (!returnTo || !returnTo.isConnected || !focusIsFree) return

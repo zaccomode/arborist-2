@@ -107,4 +107,60 @@ describe('createFocusReturn (#147)', () => {
     expect(close.prevented).toBe(false)
     expect(trigger.focused).toBe(0)
   })
+
+  describe('handing off to a second dialog (#156)', () => {
+    it('keeps the trigger through the first close and returns to it after the second', () => {
+      const focusReturn = createFocusReturn()
+      const trigger = element()
+      focusReturn.remember(trigger)
+      focusReturn.handOff()
+
+      // The first dialog closes with focus already in the second.
+      const first = event()
+      focusReturn.restore(first, false)
+      expect(first.prevented).toBe(true)
+      expect(trigger.focused).toBe(0)
+
+      // The second closes, Cancel or Escape, and focus goes back to the menu.
+      const second = event()
+      focusReturn.restore(second, true)
+      expect(second.prevented).toBe(true)
+      expect(trigger.focused).toBe(1)
+    })
+
+    it('holds focus in the second dialog even if the first closes before it opens', () => {
+      const focusReturn = createFocusReturn()
+      const trigger = element()
+      focusReturn.remember(trigger)
+      focusReturn.handOff()
+
+      const first = event()
+      focusReturn.restore(first, true)
+      expect(first.prevented).toBe(true)
+      expect(trigger.focused).toBe(0)
+    })
+
+    it("leaves Radix's own focus return when no menu opened the first dialog", () => {
+      const focusReturn = createFocusReturn()
+      focusReturn.handOff()
+      const first = event()
+      focusReturn.restore(first, false)
+      expect(first.prevented).toBe(false)
+
+      // And the hand-off is spent, so the second close is Radix's too.
+      const second = event()
+      focusReturn.restore(second, true)
+      expect(second.prevented).toBe(false)
+    })
+
+    it('is cancelled by a fresh menu opening a dialog', () => {
+      const focusReturn = createFocusReturn()
+      focusReturn.handOff()
+      const trigger = element()
+      focusReturn.remember(trigger)
+
+      focusReturn.restore(event(), true)
+      expect(trigger.focused).toBe(1)
+    })
+  })
 })

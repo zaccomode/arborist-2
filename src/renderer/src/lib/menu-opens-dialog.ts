@@ -55,3 +55,12 @@ export function returnFocusToMenu(event: Event): void {
   const active = document.activeElement
   focusReturn.restore(event, active === null || active === document.body)
 }
+
+/**
+ * Called by a dialog a menu opened just before it closes to open a second
+ * dialog in its place, so focus returns to the menu after the second one
+ * (#156). See `FocusReturn.handOff`.
+ */
+export function handOffFocusReturn(): void {
+  focusReturn.handOff()
+}

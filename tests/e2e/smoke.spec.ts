@@ -725,3 +725,49 @@ test('the Working Tree tab, not a header pill, flags uncommitted changes (#152)'
   await app.close()
   await rm(root, { recursive: true, force: true })
 })
+
+test('cancelling either delete dialog gives focus back to Worktree actions (#156)', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+  await fixture.addWorktree('clean', { branch: 'feature/clean' })
+  const dirty = await fixture.addWorktree('dirty', { branch: 'feature/dirty' })
+  await writeFile(join(dirty, 'README.md'), 'edited but not committed\n', 'utf8')
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+  const actions = window.getByRole('button', { name: 'Worktree actions' })
+
+  // A clean worktree: one dialog, cancelled.
+  await window.getByRole('button', { name: /feature\/clean/ }).click()
+  await actions.click()
+  await window.getByRole('menuitem', { name: 'Delete worktree…' }).click()
+  await window.getByTestId('delete-worktree-dialog').waitFor({ state: 'visible' })
+  await window.getByRole('button', { name: 'Cancel' }).click()
+  await expect(window.getByTestId('delete-worktree-dialog')).toBeHidden()
+  await expect(actions).toBeFocused()
+
+  // A dirty one: the first dialog hands over to the force-delete one, and
+  // cancelling that still finds the menu rather than <body>.
+  await window.getByRole('button', { name: /feature\/dirty/ }).click()
+  await actions.click()
+  await window.getByRole('menuitem', { name: 'Delete worktree…' }).click()
+  await window.getByRole('button', { name: 'Delete', exact: true }).click()
+  await window.getByTestId('force-delete-worktree-dialog').waitFor({ state: 'visible' })
+  await window.getByRole('button', { name: 'Cancel' }).click()
+  await expect(window.getByTestId('force-delete-worktree-dialog')).toBeHidden()
+  await expect(actions).toBeFocused()
+
+  // Escape takes the same way out.
+  await actions.click()
+  await window.getByRole('menuitem', { name: 'Delete worktree…' }).click()
+  await window.getByRole('button', { name: 'Delete', exact: true }).click()
+  await window.getByTestId('force-delete-worktree-dialog').waitFor({ state: 'visible' })
+  await window.keyboard.press('Escape')
+  await expect(window.getByTestId('force-delete-worktree-dialog')).toBeHidden()
+  await expect(actions).toBeFocused()
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})
