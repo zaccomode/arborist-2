@@ -262,6 +262,39 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'project-switcher-order',
+    description:
+      'The switcher menu over three projects registered out of order (#153): ' +
+      'they list alphabetically, whatever order they were added in, and the ' +
+      'first of them is the one opened.',
+    setup: async ({ userDataDir, workDir }) => {
+      const repositories = []
+      // Added newest-name-first, so an add-order list would read Zephyr,
+      // Moss, arborist — the lower-case name also checks the ordering
+      // ignores case.
+      for (const [index, name] of ['Zephyr', 'Moss', 'arborist'].entries()) {
+        const fixture = new GitFixture(join(workDir, name), name)
+        await fixture.init()
+        repositories.push({
+          id: `p${index + 1}`,
+          path: fixture.repoPath,
+          name,
+          addedAt: `2026-01-0${index + 1}T09:00:00.000Z`
+        })
+      }
+      await writeFile(
+        join(userDataDir, 'arborist-data.json'),
+        JSON.stringify({ schemaVersion: 4, repositories }),
+        'utf8'
+      )
+    },
+    drive: async (window) => {
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'App settings…' }).waitFor()
+    }
+  },
+  {
     name: 'prune-worktrees',
     description:
       'Pruning, which used to be a permanent menu item and is now a button ' +
