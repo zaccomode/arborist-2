@@ -4,9 +4,11 @@ import {
   filterRemoteBranches,
   filterWorktrees,
   isPinnedWorktree,
+  sortProjects,
   sortRemoteBranches,
   sortWorktrees
 } from '../../src/shared/list-view'
+import type { Repository } from '../../src/shared/persisted'
 
 function worktree(
   branch: string | null,
@@ -29,6 +31,7 @@ function worktree(
     prunable: false,
     prunableReason: null,
     statusError: null,
+    position: null,
     status: {
       dirty: false,
       staged: 0,
@@ -222,5 +225,44 @@ describe('filterRemoteBranches', () => {
 
   it('matches the remote prefix, which only the full ref carries', () => {
     expect(filterRemoteBranches(list, 'upstream').map((b) => b.name)).toEqual(['upstream/main'])
+  })
+})
+
+describe('sortProjects', () => {
+  function project(
+    name: string,
+    path = `/repos/${name}`,
+    addedAt = '2026-01-01T00:00:00Z'
+  ): Repository {
+    return { id: path, name, path, addedAt }
+  }
+
+  it('orders by name rather than by when each project was added (#153)', () => {
+    const list = [
+      project('zeta', '/z', '2026-01-01T00:00:00Z'),
+      project('Alpha', '/a', '2026-03-01T00:00:00Z'),
+      project('mid', '/m', '2026-02-01T00:00:00Z')
+    ]
+
+    expect(sortProjects(list).map((p) => p.name)).toEqual(['Alpha', 'mid', 'zeta'])
+  })
+
+  it('ignores case and collates numerically', () => {
+    const list = [project('app10'), project('beta'), project('App2')]
+
+    expect(sortProjects(list).map((p) => p.name)).toEqual(['App2', 'app10', 'beta'])
+  })
+
+  it('breaks a name tie by path, so two clones of one repo keep a stable order', () => {
+    const list = [project('arborist', '/work/arborist'), project('arborist', '/home/arborist')]
+
+    expect(sortProjects(list).map((p) => p.path)).toEqual(['/home/arborist', '/work/arborist'])
+  })
+
+  it('leaves the list it was given untouched', () => {
+    const list = [project('b'), project('a')]
+    sortProjects(list)
+
+    expect(list.map((p) => p.name)).toEqual(['b', 'a'])
   })
 })

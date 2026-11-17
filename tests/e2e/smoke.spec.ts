@@ -696,3 +696,79 @@ test('a clicked tab takes focus without the keyboard focus ring', async () => {
   await app.close()
   await rm(root, { recursive: true, force: true })
 })
+
+test('the Working Tree tab, not a header pill, flags uncommitted changes (#152)', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+  const dirty = await fixture.addWorktree('dirty', { branch: 'feature/dirty' })
+  await writeFile(join(dirty, 'README.md'), 'edited but not committed\n', 'utf8')
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+
+  const tab = window.getByRole('tab', { name: /^Working Tree/ })
+  await window.getByRole('button', { name: /feature\/dirty/ }).click()
+  await expect(window.getByTestId('working-tree-dirty-dot')).toBeVisible()
+  // The dot is aria-hidden, so the tab says it in words for a screen reader.
+  await expect(tab).toHaveAccessibleName('Working Tree (uncommitted changes)')
+  // The header pill it replaces is gone.
+  await expect(
+    window.getByTestId('worktree-detail').getByText('Uncommitted changes', { exact: true })
+  ).toHaveCount(0)
+
+  // The clean main worktree carries no dot.
+  await window.getByRole('button', { name: /main/ }).first().click()
+  await expect(tab).toHaveAccessibleName('Working Tree')
+  await expect(window.getByTestId('working-tree-dirty-dot')).toHaveCount(0)
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})
+
+test('cancelling either delete dialog gives focus back to Worktree actions (#156)', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+  await fixture.addWorktree('clean', { branch: 'feature/clean' })
+  const dirty = await fixture.addWorktree('dirty', { branch: 'feature/dirty' })
+  await writeFile(join(dirty, 'README.md'), 'edited but not committed\n', 'utf8')
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+  const actions = window.getByRole('button', { name: 'Worktree actions' })
+
+  // A clean worktree: one dialog, cancelled.
+  await window.getByRole('button', { name: /feature\/clean/ }).click()
+  await actions.click()
+  await window.getByRole('menuitem', { name: 'Delete worktree…' }).click()
+  await window.getByTestId('delete-worktree-dialog').waitFor({ state: 'visible' })
+  await window.getByRole('button', { name: 'Cancel' }).click()
+  await expect(window.getByTestId('delete-worktree-dialog')).toBeHidden()
+  await expect(actions).toBeFocused()
+
+  // A dirty one: the first dialog hands over to the force-delete one, and
+  // cancelling that still finds the menu rather than <body>.
+  await window.getByRole('button', { name: /feature\/dirty/ }).click()
+  await actions.click()
+  await window.getByRole('menuitem', { name: 'Delete worktree…' }).click()
+  await window.getByRole('button', { name: 'Delete', exact: true }).click()
+  await window.getByTestId('force-delete-worktree-dialog').waitFor({ state: 'visible' })
+  await window.getByRole('button', { name: 'Cancel' }).click()
+  await expect(window.getByTestId('force-delete-worktree-dialog')).toBeHidden()
+  await expect(actions).toBeFocused()
+
+  // Escape takes the same way out.
+  await actions.click()
+  await window.getByRole('menuitem', { name: 'Delete worktree…' }).click()
+  await window.getByRole('button', { name: 'Delete', exact: true }).click()
+  await window.getByTestId('force-delete-worktree-dialog').waitFor({ state: 'visible' })
+  await window.keyboard.press('Escape')
+  await expect(window.getByTestId('force-delete-worktree-dialog')).toBeHidden()
+  await expect(actions).toBeFocused()
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})

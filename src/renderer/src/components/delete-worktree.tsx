@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
-import { returnFocusToMenu } from '@/lib/menu-opens-dialog'
+import { handOffFocusReturn, returnFocusToMenu } from '@/lib/menu-opens-dialog'
 
 /**
  * Deleting a worktree in two stages, the way v1 did, but decided by a fresh
@@ -57,7 +57,9 @@ export function DeleteWorktreeDialogs({
     const dirty = worktree.prunable ? false : await invoke('worktrees:isDirty', worktree.path)
     if (dirty) {
       // The second question replaces the first rather than stacking on it:
-      // two modals at once trap focus in the wrong one.
+      // two modals at once trap focus in the wrong one. The way back to the
+      // menu that opened the first passes to the second (#156).
+      handOffFocusReturn()
       onOpenChange(false)
       setConfirmingForce(true)
       return
@@ -96,7 +98,10 @@ export function DeleteWorktreeDialogs({
       </AlertDialog>
 
       <AlertDialog open={confirmingForce} onOpenChange={setConfirmingForce}>
-        <AlertDialogContent data-testid="force-delete-worktree-dialog">
+        <AlertDialogContent
+          data-testid="force-delete-worktree-dialog"
+          onCloseAutoFocus={returnFocusToMenu}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>{worktreeTitle(worktree)} has uncommitted changes</AlertDialogTitle>
             <AlertDialogDescription>

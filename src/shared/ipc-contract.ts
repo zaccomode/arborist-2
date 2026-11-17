@@ -19,6 +19,7 @@ import type {
   Worktree
 } from './domain'
 import type { BranchSwitchPlan } from './branch-switch'
+import type { BranchPosition } from './branch-position'
 import type { ConflictOperation, ConflictState } from './conflicts'
 import type { DiffRequest, FileDiff } from './diff'
 import type { Preset, ProjectSettings, Repository, SelectionState, Settings } from './persisted'
@@ -48,6 +49,11 @@ export interface IpcInvokeContract {
   'branches:localDetails': { args: [repoPath: string]; result: LocalBranch[] }
   /** Where `origin/HEAD` points, e.g. `origin/main`, or null when it isn't set. */
   'branches:remoteHead': { args: [repoPath: string]; result: string | null }
+  /**
+   * Where a branch, remote-tracking ref or commit stands against the default
+   * branch (#151), or null when there is nothing to compare it with.
+   */
+  'branches:position': { args: [repoPath: string, ref: string]; result: BranchPosition | null }
   /**
    * The default folder for a new worktree, already de-duplicated. Main
    * resolves the worktree location from the store and `projectId` — beside
@@ -349,6 +355,7 @@ const CHANNELS: Record<IpcChannel, true> = {
   'branches:remote': true,
   'branches:localDetails': true,
   'branches:remoteHead': true,
+  'branches:position': true,
   'worktrees:suggestPath': true,
   'worktrees:create': true,
   'worktrees:isDirty': true,

@@ -262,6 +262,39 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'project-switcher-order',
+    description:
+      'The switcher menu over three projects registered out of order (#153): ' +
+      'they list alphabetically, whatever order they were added in, and the ' +
+      'first of them is the one opened.',
+    setup: async ({ userDataDir, workDir }) => {
+      const repositories: { id: string; path: string; name: string; addedAt: string }[] = []
+      // Added newest-name-first, so an add-order list would read Zephyr,
+      // Moss, arborist — the lower-case name also checks the ordering
+      // ignores case.
+      for (const [index, name] of ['Zephyr', 'Moss', 'arborist'].entries()) {
+        const fixture = new GitFixture(join(workDir, name), name)
+        await fixture.init()
+        repositories.push({
+          id: `p${index + 1}`,
+          path: fixture.repoPath,
+          name,
+          addedAt: `2026-01-0${index + 1}T09:00:00.000Z`
+        })
+      }
+      await writeFile(
+        join(userDataDir, 'arborist-data.json'),
+        JSON.stringify({ schemaVersion: 4, repositories }),
+        'utf8'
+      )
+    },
+    drive: async (window) => {
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'App settings…' }).waitFor()
+    }
+  },
+  {
     name: 'prune-worktrees',
     description:
       'Pruning, which used to be a permanent menu item and is now a button ' +
@@ -406,9 +439,11 @@ export const scenarios: Scenario[] = [
     key: 'The detail pane: its tabs, a clean working tree, and a missing folder.',
     description:
       'The worktree detail pane across its three tabs: Overview (with the ' +
-      'branch/commit/path information block and notes), Working Tree over ' +
-      'a dirty worktree so a row exists, Working Tree over a clean one for ' +
-      'its empty state, and Commit Graph. Then a worktree whose folder has ' +
+      'branch/commit/path information block, the pill saying where the ' +
+      'branch stands against origin/main (#151), and notes), Working Tree over ' +
+      'a dirty worktree so a row exists (and the tab carries the dot that ' +
+      'flags its uncommitted changes, #152), Working Tree over a clean one ' +
+      'for its empty state, with no dot, and Commit Graph. Then a worktree whose folder has ' +
       'gone missing, with the banner that offers to prune it.',
     setup: async ({ workDir }) => {
       const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
@@ -425,6 +460,8 @@ export const scenarios: Scenario[] = [
       await window.getByRole('button', { name: /feature\/dirty/ }).click()
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+      // The tab, not a header pill, flags the uncommitted changes (#152).
+      await window.getByTestId('working-tree-dirty-dot').waitFor({ state: 'visible' })
       await shot('working-tree')
 
       await window.getByRole('button', { name: /main/ }).first().click()
@@ -471,6 +508,8 @@ export const scenarios: Scenario[] = [
       })
       await window.getByRole('button', { name: /origin\/feature-remote/ }).click()
       await window.getByTestId('remote-branch-detail').waitFor({ state: 'visible' })
+      // The default-branch pill (#151) is asked for once the pane opens.
+      await window.getByTestId('branch-position').waitFor({ state: 'visible' })
       await window.getByTestId('commit-graph-rows').waitFor({ state: 'visible' })
       await shot('list')
 
@@ -725,7 +764,8 @@ export const scenarios: Scenario[] = [
     name: 'delete-worktree',
     description:
       'Both confirmations for deleting a dirty worktree: the first says what ' +
-      'goes, the second says what cannot be recovered.',
+      'goes, the second says what cannot be recovered. Then the second ' +
+      'cancelled with Escape, which leaves focus on Worktree actions (#156).',
     setup: async ({ workDir }) => {
       const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
       return { ARBORIST_PICK_FOLDER: fixture.repoPath }
@@ -743,13 +783,22 @@ export const scenarios: Scenario[] = [
       await window.getByRole('button', { name: 'Delete', exact: true }).click()
       await window.getByTestId('force-delete-worktree-dialog').waitFor({ state: 'visible' })
       await shot('force')
+
+      // Backing out of the second dialog returns focus to the menu that
+      // started it all, rather than dropping it on <body> (#156).
+      await window.keyboard.press('Escape')
+      await window.getByTestId('force-delete-worktree-dialog').waitFor({ state: 'detached' })
+      await window.waitForFunction(
+        () => document.activeElement?.getAttribute('aria-label') === 'Worktree actions'
+      )
+      await shot('cancelled')
     }
   },
   {
     name: 'remote-branches',
     description:
       'The Remote Branches section: a branch pushed elsewhere appears via the automatic fetch on selecting the project ' +
-      'pushed elsewhere, its detail pane, and creating a tracking worktree ' +
+      'pushed elsewhere, its detail pane with where it stands against main (#151), and creating a tracking worktree ' +
       'from it — which is what turns it back into an ordinary worktree.',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
@@ -770,6 +819,8 @@ export const scenarios: Scenario[] = [
 
       await window.getByRole('button', { name: /origin\/feature-x/ }).click()
       await window.getByTestId('remote-branch-detail').waitFor({ state: 'visible' })
+      // Where it stands against main (#151), asked for once the pane opens.
+      await window.getByTestId('branch-position').waitFor({ state: 'visible' })
       await shot('detail')
 
       await window.getByRole('button', { name: 'Create worktree from this branch' }).click()
@@ -807,6 +858,8 @@ export const scenarios: Scenario[] = [
       await shot('before')
 
       await window.getByRole('button', { name: /origin\/feature-y/ }).click()
+      // The pane behind the dialog, settled before the dialog covers it.
+      await window.getByTestId('branch-position').waitFor({ state: 'visible' })
       await window.getByRole('button', { name: 'Create worktree from this branch' }).click()
       // Overwrites the prefilled `feature-y` with a name that shares nothing
       // with the remote branch's own — the folder name already differed by

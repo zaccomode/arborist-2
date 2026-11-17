@@ -5,6 +5,7 @@ import type { DiffRequest } from '@shared/diff'
 import {
   filterRemoteBranches,
   filterWorktrees,
+  sortProjects,
   sortRemoteBranches,
   sortWorktrees
 } from '@shared/list-view'
@@ -93,7 +94,8 @@ function App(): React.JSX.Element | null {
   const { projectId, selectProject, selectWorktree, selectRemoteBranch, hydrated } = useSelection()
   const selectedWorktree = useSelectedWorktree()
   const selectedRemoteBranchName = useSelectedRemoteBranch()
-  const list = useMemo(() => projects.data ?? [], [projects.data])
+  // Alphabetical rather than in the order they were added (#153).
+  const list = useMemo(() => sortProjects(projects.data ?? []), [projects.data])
   const selected = list.find((project) => project.id === projectId) ?? null
   const worktrees = useWorktrees(selected?.path ?? null)
   const worktree = worktrees.data?.find((entry) => samePath(entry.path, selectedWorktree)) ?? null

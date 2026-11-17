@@ -57,10 +57,11 @@ Captures are deterministic within one environment: re-running a scenario unchang
 **4. Put the screenshots in the PR body.** Upload the captures this change affects and embed them, before and after where there's a meaningful pair:
 
 ```bash
-curl -fsSL https://media.isaacshea.com/cli/cdn.mjs -o /tmp/cdn.mjs
-node /tmp/cdn.mjs upload .screenshots/<files> --bucket arborist-2/screenshots \
+node scripts/vendor/cdn.mjs upload .screenshots/<files> --bucket arborist-2/screenshots \
   --repo zaccomode/arborist-2 --pr <number>
 ```
+
+The CLI is vendored in `scripts/vendor/` and pinned by its SHA-256, so it is reviewed like the rest of the repo rather than run as whatever its URL serves that day (#154). Don't download and run it from the image host instead; updating it is its own PR, as `scripts/vendor/README.md` describes.
 
 Paste the markdown exactly as `cdn upload` prints it. It starts with `!`; without it GitHub shows a link instead of the image. After saving the PR body, read it back and check the `!` survived: some PR-editing tools strip it from images on outside hosts. A "before" image is `https://cdn.isaacshea.com/i/<hash>.png`, with `<hash>` taken from the base branch's `docs/screenshots/manifest.json`; it is already uploaded, and its URL doesn't depend on any branch or bucket. Never commit PNGs.
 
@@ -79,7 +80,7 @@ On Linux, including cloud containers, prefix it with a virtual display:
 ```bash
 xvfb-run -a npm run screenshot                  # every scenario
 xvfb-run -a npm run screenshot -- shell         # just the named ones
-xvfb-run -a npm run screenshot -- --out /tmp/x  # everything to one place instead
+xvfb-run -a npm run screenshot -- --out /tmp/x  # a preview: PNGs to /tmp/x, manifest untouched
 ```
 
 This is the full app with preload and IPC, so it's the accurate reference. Prefer it over loading the renderer in a browser.
@@ -99,7 +100,7 @@ Add a scenario to `scripts/screenshots/scenarios.ts` rather than editing the run
 }
 ```
 
-Wait on the end state, as above, rather than sleeping: a capture that races the UI it is showing fails intermittently and is easy to mistake for a styling bug. That includes anything that arrives on its own schedule after the element you just waited for, such as an async hint under a field, or the project still loading behind a dialog you opened straight after adding it (the `addProject` helper waits for that). A race doesn't always fail: it can just change the manifest hash on some runs, so check a new scenario by running it a few times with `--out` and comparing the PNGs. Each scenario gets its own Electron launch and a throwaway `--user-data-dir`, so captures can't leak state into each other or depend on whatever is already stored on the machine.
+Wait on the end state, as above, rather than sleeping: a capture that races the UI it is showing fails intermittently and is easy to mistake for a styling bug. That includes anything that arrives on its own schedule after the element you just waited for, such as an async hint under a field, or the project still loading behind a dialog you opened straight after adding it (the `addProject` helper waits for that). A race doesn't always fail: it can just change the manifest hash on some runs, so check a new scenario by running it a few times with `--out` and comparing the PNGs. A run with `--out` leaves `docs/screenshots/manifest.json` and the README table alone, so only a run without it records hashes; `npm test` fails if the manifest's scenarios or the key-screens table drift from `scenarios.ts`. Each scenario gets its own Electron launch and a throwaway `--user-data-dir`, so captures can't leak state into each other or depend on whatever is already stored on the machine.
 
 ### Capturing several points in one flow
 

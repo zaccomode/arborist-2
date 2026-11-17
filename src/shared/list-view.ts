@@ -1,5 +1,6 @@
 import type { RemoteBranch, Worktree } from './domain'
 import { worktreeTitle } from './format'
+import type { Repository } from './persisted'
 
 /**
  * How the sidebar's two lists are ordered (#77). One value per list type,
@@ -102,6 +103,16 @@ export function sortRemoteBranches(
     }
     return byName(a.name, b.name)
   })
+}
+
+/**
+ * The project switcher's order: by name, with the same collation as the
+ * lists (#153), rather than the order projects were added in. Two projects
+ * can share a name (two clones of one repo), so ties fall back to the path,
+ * which is what tells them apart — and keeps the order stable.
+ */
+export function sortProjects(projects: readonly Repository[]): Repository[] {
+  return [...projects].sort((a, b) => byName(a.name, b.name) || byName(a.path, b.path))
 }
 
 /**

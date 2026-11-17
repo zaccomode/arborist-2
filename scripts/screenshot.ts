@@ -10,13 +10,14 @@
  *
  *   xvfb-run -a npm run screenshot            # every scenario
  *   xvfb-run -a npm run screenshot -- shell   # just the named ones
- *   xvfb-run -a npm run screenshot -- --out /tmp/shots
+ *   xvfb-run -a npm run screenshot -- --out /tmp/shots   # preview only
  *
  * PNGs go to the gitignored .screenshots/ (or `--out`), never into git. What
  * is committed is docs/screenshots/manifest.json, every capture's SHA-256, so
  * `git diff docs/screenshots/manifest.json` is the regression check, and the
  * images themselves are served from the image host by that hash. The
  * key-screens table in docs/screenshots/README.md is regenerated from it.
+ * A run with `--out` is a preview and touches neither (#155).
  */
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
@@ -26,7 +27,13 @@ import { _electron as electron, type ElectronApplication, type Page } from 'play
 // Node's native type stripping resolves ESM imports literally, so this needs
 // the real file extension rather than a bare specifier.
 import { scenarios, type Scenario } from './screenshots/scenarios.ts'
-import { MANIFEST_PATH, README_PATH, resolveOutDir } from './screenshots/output.ts'
+import {
+  MANIFEST_PATH,
+  README_PATH,
+  THEMES,
+  parseScreenshotArgs,
+  resolveOutDir
+} from './screenshots/output.ts'
 import {
   captureFileName,
   mergeManifest,
@@ -38,25 +45,6 @@ import {
   sha256Hex,
   type Manifest
 } from './screenshots/manifest.ts'
-
-const THEMES = ['dark', 'light'] as const
-
-function parseArgs(argv: string[]): { outDir: string | undefined; names: string[] } {
-  const names: string[] = []
-  let outDir: string | undefined
-
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--out') {
-      const value = argv[++i]
-      if (value === undefined) throw new Error('--out needs a directory')
-      outDir = value
-    } else {
-      names.push(argv[i])
-    }
-  }
-
-  return { outDir, names }
-}
 
 async function launch(
   userDataDir: string,
@@ -240,7 +228,7 @@ async function main(): Promise<void> {
     )
   }
 
-  const { outDir, names } = parseArgs(process.argv.slice(2))
+  const { outDir, names, recordManifest } = parseScreenshotArgs(process.argv.slice(2))
 
   const selected = names.length
     ? names.map((name) => {
@@ -257,11 +245,16 @@ async function main(): Promise<void> {
   const dir = resolveOutDir(outDir)
   await mkdir(dir, { recursive: true })
 
+  if (!recordManifest) {
+    console.log(`--out given: writing PNGs to ${dir}, leaving ${MANIFEST_PATH} alone`)
+  }
+
   let manifest = await readManifest()
   // Electron apps get one instance at a time, so these can't overlap.
   for (const scenario of selected) {
     const fresh: Manifest = {}
     await capture(scenario, dir, fresh)
+    if (!recordManifest) continue
     // Written after every scenario, so a run that fails partway still records
     // the captures it did make.
     manifest = mergeManifest(

@@ -6,6 +6,7 @@ import {
   type UseMutationResult
 } from '@tanstack/react-query'
 import type {
+  BranchPosition,
   LocalBranch,
   CommitFileStat,
   CommitLogEntry,
@@ -46,6 +47,11 @@ export const queryKeys = {
   // Under `localBranches`, so invalidating that prefix-matches this too.
   localBranchDetails: (repoPath: string) => ['local-branches', repoPath, 'details'] as const,
   remoteHead: (repoPath: string) => ['remote-head', repoPath] as const,
+  // Under `remoteBranches`, so whatever refreshes that list (a fetch, the
+  // watcher) prefix-matches this too. `tip` is the branch's commit, so a new
+  // commit on it is a new key rather than a stale count.
+  remoteBranchPosition: (repoPath: string, ref: string, tip: string | null) =>
+    ['remote-branches', repoPath, 'position', ref, tip] as const,
   stashes: (worktreePath: string) => ['stashes', worktreePath] as const
 }
 
@@ -119,6 +125,24 @@ export function useRemoteHead(repoPath: string | null): ReturnType<typeof useQue
     queryKey: queryKeys.remoteHead(repoPath ?? ''),
     queryFn: () => invoke('branches:remoteHead', repoPath!),
     enabled: repoPath !== null
+  })
+}
+
+/**
+ * Where a remote branch stands against the default branch (#151), for the
+ * pill on its detail pane. Asked for only when a branch is opened, unlike a
+ * worktree's, which arrives with the worktree list: a repository can have
+ * hundreds of remote branches, and counting each on every refresh would cost
+ * far more than the one pill on screen is worth.
+ */
+export function useRemoteBranchPosition(
+  repoPath: string,
+  ref: string,
+  tip: string | null
+): ReturnType<typeof useQuery<BranchPosition | null>> {
+  return useQuery({
+    queryKey: queryKeys.remoteBranchPosition(repoPath, ref, tip),
+    queryFn: () => invoke('branches:position', repoPath, ref)
   })
 }
 

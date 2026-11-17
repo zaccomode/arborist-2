@@ -15,3 +15,40 @@ export const README_PATH = 'docs/screenshots/README.md'
 export function resolveOutDir(override?: string): string {
   return resolve(override ?? LOCAL_DIR)
 }
+
+/** The themes every scenario is captured in, in the order the table shows them. */
+export const THEMES = ['dark', 'light'] as const
+
+export interface ScreenshotArgs {
+  /** Where PNGs go, if not `LOCAL_DIR`. */
+  outDir: string | undefined
+  /** Scenarios to run; empty means all of them. */
+  names: string[]
+  /**
+   * Whether the run records its hashes in `MANIFEST_PATH` and the README's
+   * key-screens table. Off under `--out` (#155): a run aimed somewhere else
+   * is a preview or a flakiness check, and letting it rewrite the committed
+   * manifest is how a macOS preview's hashes, or whichever of a flaky
+   * scenario's renderings ran last, end up committed.
+   */
+  recordManifest: boolean
+}
+
+export function parseScreenshotArgs(argv: readonly string[]): ScreenshotArgs {
+  const names: string[] = []
+  let outDir: string | undefined
+
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--out') {
+      const value = argv[++i]
+      if (value === undefined || value.startsWith('--')) throw new Error('--out needs a directory')
+      outDir = value
+    } else if (argv[i].startsWith('--')) {
+      throw new Error(`Unknown option "${argv[i]}". Options: --out <directory>`)
+    } else {
+      names.push(argv[i])
+    }
+  }
+
+  return { outDir, names, recordManifest: outDir === undefined }
+}

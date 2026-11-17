@@ -119,6 +119,18 @@ export interface WorktreeStatus extends WorkingTreeStatus, UpstreamTrack {
 export interface Worktree extends WorktreeEntry {
   status: WorktreeStatus | null
   statusError: string | null
+  /**
+   * Where the worktree's branch (or detached commit) stands against the
+   * default branch (#151). Null on the default branch itself, with no
+   * default branch to compare against, or when counting failed.
+   */
+  position: BranchPosition | null
+}
+
+/** A ref's ahead/behind counts against the repository's default branch (#151). */
+export interface BranchPosition extends AheadBehind {
+  /** The ref compared against, as git names it: `origin/main`, or `main` with no remote copy. */
+  base: string
 }
 
 /**

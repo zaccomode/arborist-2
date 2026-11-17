@@ -38,6 +38,12 @@ import {
 import { pullArgsFor, type PullMode, type PullResult } from '../../../shared/sync'
 import { worktreeBasePath, type ResolvedLocation } from '../../../shared/worktree-location'
 import { sortChangedFiles, stagePathsFor } from '../../../shared/working-tree'
+import { resolveDefaultBranch } from '../../../shared/branch-picker'
+import {
+  chooseBaseRef,
+  isDefaultBranchRef,
+  type BranchPosition
+} from '../../../shared/branch-position'
 import type { GitRunner } from './git-runner'
 import { FETCH_TIMEOUT_MS } from './git-executor'
 import {
@@ -210,14 +216,30 @@ export class GitService {
     const { stdout } = await this.#git.runOrThrow(['worktree', 'list', '--porcelain'], { repoPath })
     const entries = parseWorktreeList(stdout)
 
-    const enriched = await mapWithConcurrency(entries, concurrency, (entry) => this.#enrich(entry))
+    // Resolved once for the whole list rather than per worktree. A failure
+    // here costs the position pills, never the list.
+    const base = await this.#defaultBase(repoPath).catch(() => null)
+    const enriched = await mapWithConcurrency(entries, concurrency, async (entry) => {
+      const [status, position] = await Promise.all([
+        this.#enrich(entry),
+        entry.prunable || entry.isBare
+          ? null
+          : this.#positionAgainst(repoPath, entry.branch ?? entry.head, base).catch(() => null)
+      ])
+      return { status, position }
+    })
 
     return entries.map((entry, index) => {
       const result = enriched[index]
       if (result.status === 'fulfilled') {
-        return { ...entry, status: result.value, statusError: null }
+        return { ...entry, ...result.value, statusError: null }
       }
-      return { ...entry, status: null, statusError: (result.reason as Error).message }
+      return {
+        ...entry,
+        status: null,
+        statusError: (result.reason as Error).message,
+        position: null
+      }
     })
   }
 
@@ -256,6 +278,65 @@ export class GitService {
     )
     const ref = stdout.trim()
     return exitCode === 0 && ref.length > 0 ? ref : null
+  }
+
+  /**
+   * Where `ref` (a branch, a remote-tracking ref, or a commit) stands against
+   * the repository's default branch (#151), counted with `rev-list` from
+   * the merge base. Null when there is no default branch to compare with,
+   * when `ref` is the default branch itself, or when either side doesn't
+   * resolve — a pill that can't be computed is simply not shown.
+   */
+  async branchPosition(repoPath: string, ref: string): Promise<BranchPosition | null> {
+    return this.#positionAgainst(repoPath, ref, await this.#defaultBase(repoPath))
+  }
+
+  /** The default branch's name and the ref to count against (see `chooseBaseRef`). */
+  async #defaultBase(
+    repoPath: string
+  ): Promise<{ defaultBranch: string | null; base: string | null }> {
+    const [remoteHead, refs] = await Promise.all([
+      this.remoteHead(repoPath),
+      this.#git.runOrThrow(['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes'], {
+        repoPath
+      })
+    ])
+    const localNames: string[] = []
+    const remoteRefs: string[] = []
+    for (const line of refs.stdout.split('\n')) {
+      if (line.startsWith('refs/heads/')) localNames.push(line.slice('refs/heads/'.length))
+      else if (line.startsWith('refs/remotes/') && !line.endsWith('/HEAD')) {
+        remoteRefs.push(line.slice('refs/remotes/'.length))
+      }
+    }
+
+    const defaultBranch = resolveDefaultBranch(
+      remoteHead,
+      localNames,
+      remoteRefs.map(shortRemoteName)
+    )
+    return { defaultBranch, base: chooseBaseRef(defaultBranch, localNames, remoteRefs) }
+  }
+
+  async #positionAgainst(
+    repoPath: string,
+    ref: string | null,
+    against: { defaultBranch: string | null; base: string | null } | null
+  ): Promise<BranchPosition | null> {
+    const base = against?.base ?? null
+    // `${ref}...${base}` leads the argument, so a ref starting with `-`
+    // would be read as an option. No branch or commit can start with one.
+    if (!ref || !base || ref.startsWith('-')) return null
+    if (isDefaultBranchRef(ref, against?.defaultBranch ?? null, base)) return null
+
+    // `ref` on the left, so the left count is how far ahead it is. The
+    // trailing `--` keeps a branch named like a file from reading as a path.
+    const { exitCode, stdout } = await this.#git.run(
+      ['rev-list', '--count', '--left-right', `${ref}...${base}`, '--'],
+      { repoPath }
+    )
+    const counts = exitCode === 0 ? parseAheadBehind(stdout) : null
+    return counts ? { base, ...counts } : null
   }
 
   /**
