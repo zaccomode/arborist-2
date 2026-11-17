@@ -58,13 +58,13 @@ Captures are deterministic within one environment: re-running a scenario unchang
 
 ```bash
 curl -fsSL https://media.isaacshea.com/cli/cdn.mjs -o /tmp/cdn.mjs
-NODE_USE_ENV_PROXY=1 node /tmp/cdn.mjs upload .screenshots/<files> --bucket arborist-2/screenshots \
+node /tmp/cdn.mjs upload .screenshots/<files> --bucket arborist-2/screenshots \
   --repo zaccomode/arborist-2 --pr <number>
 ```
 
 Paste the markdown it prints. A "before" image is `https://cdn.isaacshea.com/i/<hash>.png`, with `<hash>` taken from the base branch's `docs/screenshots/manifest.json`; it is already uploaded, and its URL doesn't depend on any branch or bucket. Never commit PNGs.
 
-In a cloud session the token is a network secret that the egress proxy adds to requests to `media.isaacshea.com`, and `NODE_USE_ENV_PROXY=1` is what sends Node's `fetch` through that proxy: without it the request goes direct and fails with `401 Missing bearer token`. Elsewhere, set `CDN_TOKEN` instead. The upload hashes locally and skips sending anything already stored, so uploading a capture twice is harmless.
+In a cloud session the token is a network secret that the egress proxy adds to requests to `media.isaacshea.com`; elsewhere, set `CDN_TOKEN`. The upload hashes locally and skips sending anything already stored, so uploading a capture twice is harmless.
 
 ## Design reference
 
