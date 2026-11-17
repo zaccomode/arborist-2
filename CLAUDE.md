@@ -62,7 +62,7 @@ node /tmp/cdn.mjs upload .screenshots/<files> --bucket arborist-2/screenshots \
   --repo zaccomode/arborist-2 --pr <number>
 ```
 
-Paste the markdown it prints. A "before" image is `https://cdn.isaacshea.com/i/<hash>.png`, with `<hash>` taken from the base branch's `docs/screenshots/manifest.json`; it is already uploaded, and its URL doesn't depend on any branch or bucket. Never commit PNGs.
+Paste the markdown exactly as `cdn upload` prints it. It starts with `!`; without it GitHub shows a link instead of the image. After saving the PR body, read it back and check the `!` survived: some PR-editing tools strip it from images on outside hosts. A "before" image is `https://cdn.isaacshea.com/i/<hash>.png`, with `<hash>` taken from the base branch's `docs/screenshots/manifest.json`; it is already uploaded, and its URL doesn't depend on any branch or bucket. Never commit PNGs.
 
 In a cloud session the token is a network secret that the egress proxy adds to requests to `media.isaacshea.com`; elsewhere, set `CDN_TOKEN`. The upload hashes locally and skips sending anything already stored, so uploading a capture twice is harmless.
 
