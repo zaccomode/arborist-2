@@ -440,8 +440,9 @@ export const scenarios: Scenario[] = [
     description:
       'The worktree detail pane across its three tabs: Overview (with the ' +
       'branch/commit/path information block and notes), Working Tree over ' +
-      'a dirty worktree so a row exists, Working Tree over a clean one for ' +
-      'its empty state, and Commit Graph. Then a worktree whose folder has ' +
+      'a dirty worktree so a row exists (and the tab carries the dot that ' +
+      'flags its uncommitted changes, #152), Working Tree over a clean one ' +
+      'for its empty state, with no dot, and Commit Graph. Then a worktree whose folder has ' +
       'gone missing, with the banner that offers to prune it.',
     setup: async ({ workDir }) => {
       const { fixture } = await makeBadgeMatrixIn(workDir, 'Arborist')
@@ -458,6 +459,8 @@ export const scenarios: Scenario[] = [
       await window.getByRole('button', { name: /feature\/dirty/ }).click()
       await window.getByRole('tab', { name: 'Working Tree' }).click()
       await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+      // The tab, not a header pill, flags the uncommitted changes (#152).
+      await window.getByTestId('working-tree-dirty-dot').waitFor({ state: 'visible' })
       await shot('working-tree')
 
       await window.getByRole('button', { name: /main/ }).first().click()

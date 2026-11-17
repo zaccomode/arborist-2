@@ -696,3 +696,32 @@ test('a clicked tab takes focus without the keyboard focus ring', async () => {
   await app.close()
   await rm(root, { recursive: true, force: true })
 })
+
+test('the Working Tree tab, not a header pill, flags uncommitted changes (#152)', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'arborist-e2e-')))
+  const fixture = new GitFixture(join(root, 'fixture'), 'Arborist')
+  await fixture.init()
+  const dirty = await fixture.addWorktree('dirty', { branch: 'feature/dirty' })
+  await writeFile(join(dirty, 'README.md'), 'edited but not committed\n', 'utf8')
+
+  const app = await launch(root, fixture.repoPath)
+  const window = await app.firstWindow()
+  await addProject(app)
+
+  const tab = window.getByRole('tab', { name: /^Working Tree/ })
+  await window.getByRole('button', { name: /feature\/dirty/ }).click()
+  await expect(window.getByTestId('working-tree-dirty-dot')).toBeVisible()
+  // The dot is aria-hidden, so the tab says it in words for a screen reader.
+  await expect(tab).toHaveAccessibleName('Working Tree, uncommitted changes')
+  await expect(window.getByTestId('worktree-detail').getByText('Uncommitted changes')).toHaveCount(
+    0
+  )
+
+  // The clean main worktree carries no dot.
+  await window.getByRole('button', { name: /main/ }).first().click()
+  await expect(tab).toHaveAccessibleName('Working Tree')
+  await expect(window.getByTestId('working-tree-dirty-dot')).toHaveCount(0)
+
+  await app.close()
+  await rm(root, { recursive: true, force: true })
+})
