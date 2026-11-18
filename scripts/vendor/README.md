@@ -6,7 +6,7 @@ whatever a URL serves that day (#154).
 
 | File      | What it is                                                                                     | Source                                       | SHA-256                                                            |
 | --------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------ |
-| `cdn.mjs` | The image host's CLI, used to upload screenshot captures to PR bodies (see `CLAUDE.md`, step 4) | `https://media.isaacshea.com/cli/cdn.mjs` | `dc92f469ffddb37266ea2955859f90f6d3467035ff148f677eeb532872258476` |
+| `cdn.mjs` | The image host's CLI, run by `scripts/upload-screenshots.ts` to upload screenshot captures for PR bodies (see `CLAUDE.md`, step 4) | `https://media.isaacshea.com/cli/cdn.mjs` | `dc92f469ffddb37266ea2955859f90f6d3467035ff148f677eeb532872258476` |
 
 Each file is byte-for-byte what the source served, so its hash can be checked
 against the table, and it is excluded from Prettier and ESLint, which would
