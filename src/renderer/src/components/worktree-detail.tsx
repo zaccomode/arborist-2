@@ -171,13 +171,15 @@ export function WorktreeDetail({
               {hash}
             </Chip>
           )}
-          <Chip>{syncSummary(worktree)}</Chip>
+          {/* Where the branch stands against the default branch comes before
+              its upstream (#160): it is the one that changes as others merge. */}
           {positionLabel && (
             <Chip testId="branch-position">
               <GitCompareArrows className="size-3" />
               {positionLabel}
             </Chip>
           )}
+          <Chip>{syncSummary(worktree)}</Chip>
           {worktree.locked && (
             <Chip>{worktree.lockReason ? `Locked: ${worktree.lockReason}` : 'Locked'}</Chip>
           )}

@@ -132,5 +132,13 @@ export function syncSummary(worktree: Worktree): string {
   }
   if (status.ahead) return `\u2191${status.ahead} ahead of ${status.upstream}`
   if (status.behind) return `\u2193${status.behind} behind ${status.upstream}`
-  return `Up-to-date with ${status.upstream}`
+  // Even with the upstream, its branch name adds nothing (#160): it is the
+  // branch's own name. The remote is all that is left to say.
+  return `Up-to-date with ${remoteOf(status.upstream)}`
+}
+
+/** `origin/feature/x` -> `origin`. */
+export function remoteOf(upstream: string): string {
+  const slash = upstream.indexOf('/')
+  return slash === -1 ? upstream : upstream.slice(0, slash)
 }

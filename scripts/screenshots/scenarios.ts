@@ -144,6 +144,19 @@ async function addProject(window: Page): Promise<void> {
 }
 
 /**
+ * With the switcher menu open, waits for its group headings (#150). They
+ * arrive once every project's remote has been read, and until then the list
+ * is flat, so a capture that doesn't wait shows one or the other by chance.
+ */
+async function waitForProjectGroups(window: Page): Promise<void> {
+  await window
+    .getByRole('menu')
+    .locator('[data-slot="dropdown-menu-label"]')
+    .first()
+    .waitFor({ state: 'visible' })
+}
+
+/**
  * Seeds `arborist-data.json` with a repository already registered, so the
  * scenario opens straight to it rather than going through the folder
  * picker — which frees `ARBORIST_PICK_FOLDER` for a scenario that also
@@ -250,6 +263,7 @@ export const scenarios: Scenario[] = [
 
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'App settings…' }).waitFor()
+      await waitForProjectGroups(window)
       await shot('menu')
       await window.keyboard.press('Escape')
       await window.getByRole('menu').waitFor({ state: 'detached' })
@@ -292,6 +306,57 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'App settings…' }).waitFor()
+      await waitForProjectGroups(window)
+    }
+  },
+  {
+    name: 'project-switcher-groups',
+    description:
+      'The switcher menu grouped by where each project is published (#150): ' +
+      'GitHub projects under their owner, alphabetically; a project on ' +
+      'another host under its owner there, with the host named; and a ' +
+      'project with no remote under Local, last.',
+    setup: async ({ userDataDir, workDir }) => {
+      const projects: [name: string, url: string | null][] = [
+        ['arborist-2', 'https://github.com/zaccomode/arborist-2.git'],
+        ['sketchframe', 'git@github.com:zaccomode/sketchframe.git'],
+        ['widgets', 'https://github.com/acme/widgets.git'],
+        ['mirror', 'git@gitlab.com:acme/mirror.git'],
+        ['scratch', null]
+      ]
+      const repositories: { id: string; path: string; name: string; addedAt: string }[] = []
+      for (const [index, [name, url]] of projects.entries()) {
+        const fixture = new GitFixture(join(workDir, name), name)
+        await fixture.init()
+        if (url) {
+          // The URL the switcher reads, with git told to reach it at the
+          // fixture's own bare remote: the fetch on opening a project then
+          // succeeds offline instead of racing a network error toast.
+          await fixture.git(['remote', 'set-url', 'origin', url])
+          await fixture.git(['config', `url.${fixture.remotePath}.insteadOf`, url])
+        } else {
+          await fixture.git(['remote', 'remove', 'origin'])
+        }
+        repositories.push({
+          id: `p${index + 1}`,
+          path: fixture.repoPath,
+          name,
+          addedAt: `2026-01-0${index + 1}T09:00:00.000Z`
+        })
+      }
+      await writeFile(
+        join(userDataDir, 'arborist-data.json'),
+        JSON.stringify({ schemaVersion: 4, repositories }),
+        'utf8'
+      )
+    },
+    drive: async (window) => {
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'App settings…' }).waitFor()
+      await waitForProjectGroups(window)
+      // The last group, so every heading above it has rendered too.
+      await window.getByRole('group', { name: 'Local' }).waitFor({ state: 'visible' })
     }
   },
   {
@@ -1000,6 +1065,7 @@ export const scenarios: Scenario[] = [
 
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Fetch' }).waitFor({ state: 'visible' })
+      await waitForProjectGroups(window)
       await shot('menu')
 
       await window.getByRole('menuitem', { name: 'Fetch' }).click()

@@ -153,3 +153,21 @@ describe('switch-branch palette data (#96)', () => {
     expect(await service.remoteHead(fixture.repoPath)).toBe('origin/main')
   }, 30_000)
 })
+
+describe('remoteUrl (#150)', () => {
+  it("reads origin's URL over another remote's, and null once there are none", async () => {
+    await fixture.git(['remote', 'add', 'aardvark', 'git@github.com:someone/fork.git'])
+    await fixture.git(['remote', 'set-url', 'origin', 'https://github.com/acme/thing.git'])
+    expect(await service.remoteUrl(fixture.repoPath)).toBe('https://github.com/acme/thing.git')
+
+    await fixture.git(['remote', 'remove', 'origin'])
+    expect(await service.remoteUrl(fixture.repoPath)).toBe('git@github.com:someone/fork.git')
+
+    await fixture.git(['remote', 'remove', 'aardvark'])
+    expect(await service.remoteUrl(fixture.repoPath)).toBeNull()
+  }, 30_000)
+
+  it('is null for a folder that is no longer there', async () => {
+    expect(await service.remoteUrl(`${fixture.repoPath}-gone`)).toBeNull()
+  }, 30_000)
+})

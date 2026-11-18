@@ -107,7 +107,13 @@ describe('syncSummary', () => {
   }
 
   it('reads an up-to-date branch', () => {
-    expect(syncSummary({ ...worktree, status })).toBe('Up-to-date with origin/feature/x')
+    expect(syncSummary({ ...worktree, status })).toBe('Up-to-date with origin')
+  })
+
+  it('names only the remote when up to date, whatever the branch is called', () => {
+    expect(syncSummary({ ...worktree, status: { ...status, upstream: 'fork/main' } })).toBe(
+      'Up-to-date with fork'
+    )
   })
 
   it('reads divergence in both directions', () => {

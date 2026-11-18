@@ -1,15 +1,20 @@
 import { ChevronDown, FolderGit2, FolderPlus, RefreshCw, Settings } from 'lucide-react'
+import { useMemo } from 'react'
 import type { Repository } from '@shared/persisted'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { useMenuOpensDialog } from '@/lib/menu-opens-dialog'
+import { useProjectRemoteUrls } from '@/api/queries'
+import { groupProjects } from '@shared/project-groups'
 
 /**
  * One project at a time, chosen here. v1 listed every repository in the
@@ -43,6 +48,17 @@ export function ProjectSwitcher({
 }): React.JSX.Element {
   const selected = projects.find((project) => project.id === selectedId)
   const { attachTrigger, onCloseAutoFocus: guardMenuFocus, opensDialog } = useMenuOpensDialog()
+  // Grouped by where each project is published (#150). Until the remotes
+  // have been read the list stays flat, rather than briefly showing every
+  // project under "Local".
+  const remoteUrls = useProjectRemoteUrls()
+  const groups = useMemo(
+    () =>
+      remoteUrls.data
+        ? groupProjects(projects, remoteUrls.data)
+        : [{ label: null, local: false, projects }],
+    [projects, remoteUrls.data]
+  )
 
   return (
     <DropdownMenu>
@@ -64,10 +80,21 @@ export function ProjectSwitcher({
         {projects.length > 0 && (
           <>
             <DropdownMenuRadioGroup value={selectedId ?? ''} onValueChange={onSelect}>
-              {projects.map((project) => (
-                <DropdownMenuRadioItem key={project.id} value={project.id}>
-                  <span className="truncate">{project.name}</span>
-                </DropdownMenuRadioItem>
+              {groups.map((group) => (
+                <DropdownMenuGroup
+                  key={group.local ? 'local' : `remote:${group.label}`}
+                  aria-label={group.label ?? undefined}
+                  data-testid="project-group"
+                >
+                  {group.label !== null && (
+                    <DropdownMenuLabel className="truncate">{group.label}</DropdownMenuLabel>
+                  )}
+                  {group.projects.map((project) => (
+                    <DropdownMenuRadioItem key={project.id} value={project.id}>
+                      <span className="truncate">{project.name}</span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuGroup>
               ))}
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />

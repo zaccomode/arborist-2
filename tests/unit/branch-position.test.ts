@@ -22,6 +22,11 @@ describe('chooseBaseRef (#151)', () => {
     expect(chooseBaseRef('main', [], ['origin/not-main'])).toBeNull()
   })
 
+  it('does not mistake a branch whose last segment is the name for it (#161)', () => {
+    expect(chooseBaseRef('main', ['main'], ['origin/feature/main'])).toBe('main')
+    expect(chooseBaseRef('main', ['main'], ['fork/alice/main', 'fork/main'])).toBe('fork/main')
+  })
+
   it('has no base without a default branch, or when it exists nowhere', () => {
     expect(chooseBaseRef(null, ['main'], ['origin/main'])).toBeNull()
     expect(chooseBaseRef('trunk', ['main'], ['origin/main'])).toBeNull()

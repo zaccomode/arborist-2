@@ -2,6 +2,7 @@ import { promises as fs } from 'fs'
 import { join } from 'path'
 import { AppError } from '../../../shared/errors'
 import { mapWithConcurrency } from '../../../shared/concurrency'
+import { pickRemoteUrl } from '../../../shared/project-groups'
 import type {
   LocalBranch,
   CommitFileStat,
@@ -278,6 +279,23 @@ export class GitService {
     )
     const ref = stdout.trim()
     return exitCode === 0 && ref.length > 0 ? ref : null
+  }
+
+  /**
+   * The URL the project switcher groups a repository by (#150): `origin`'s,
+   * else the first remote's. Null when it has no remote, or can't be read at
+   * all (its folder has gone): either way it belongs under "Local".
+   */
+  async remoteUrl(repoPath: string): Promise<string | null> {
+    try {
+      const { exitCode, stdout } = await this.#git.run(
+        ['config', '--get-regexp', '^remote\\..*\\.url$'],
+        { repoPath }
+      )
+      return exitCode === 0 ? pickRemoteUrl(stdout) : null
+    } catch {
+      return null
+    }
   }
 
   /**
