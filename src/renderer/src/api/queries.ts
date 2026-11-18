@@ -25,6 +25,8 @@ const COMMIT_PAGE_SIZE = 20
 
 export const queryKeys = {
   projects: ['projects'] as const,
+  // Under `projects`, so adding or removing one regroups the switcher too.
+  projectRemoteUrls: ['projects', 'remote-urls'] as const,
   worktrees: (repoPath: string) => ['worktrees', repoPath] as const,
   note: (repositoryId: string, worktreePath: string | null) =>
     ['note', repositoryId, worktreePath] as const,
@@ -57,6 +59,14 @@ export const queryKeys = {
 
 export function useProjects(): ReturnType<typeof useQuery<Repository[]>> {
   return useQuery({ queryKey: queryKeys.projects, queryFn: () => invoke('projects:list') })
+}
+
+/** Each project's remote URL, for grouping the switcher by owner (#150). */
+export function useProjectRemoteUrls(): ReturnType<typeof useQuery<Record<string, string | null>>> {
+  return useQuery({
+    queryKey: queryKeys.projectRemoteUrls,
+    queryFn: () => invoke('projects:remoteUrls')
+  })
 }
 
 export function useAddProject(): UseMutationResult<Repository, Error, string> {

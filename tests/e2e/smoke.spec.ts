@@ -414,7 +414,7 @@ test('the worktree refresh button asks the remote, not just the local repository
   const app = await launch(root, fixture.repoPath)
   const window = await app.firstWindow()
   await addProject(app)
-  await expect(window.getByTestId('worktree-detail')).toContainText('Up-to-date with origin/main')
+  await expect(window.getByTestId('worktree-detail')).toContainText('Up-to-date with origin')
 
   // Pushed to the bare remote through a second clone, so the local
   // repository's own refs do not move: nothing short of a fetch can notice

@@ -14,6 +14,7 @@ import type { UpdateService } from '../services/updates'
 import type { WorktreeWatcher } from '../services/watch/worktree-watcher'
 import { commitDraftKey, worktreeNoteKey } from '../../shared/persisted'
 import { resolveWorktreeLocation } from '../../shared/worktree-location'
+import { mapWithConcurrency } from '../../shared/concurrency'
 import { applicationPickerOptions } from '../services/system/pickers'
 
 type Handler<C extends IpcChannel> = (...args: IpcArgs<C>) => Promise<IpcReturn<C>> | IpcReturn<C>
@@ -84,6 +85,20 @@ export function registerIpcHandlers({
   handle('projects:list', () => projects.list())
   handle('projects:add', (path) => projects.add(path))
   handle('projects:remove', (id) => projects.remove(id))
+  handle('projects:remoteUrls', async () => {
+    const repositories = projects.list()
+    const urls = await mapWithConcurrency(
+      repositories,
+      store.data.settings.refreshConcurrency,
+      (repo) => gitService.remoteUrl(repo.path)
+    )
+    return Object.fromEntries(
+      repositories.map((repo, index) => {
+        const result = urls[index]
+        return [repo.id, result?.status === 'fulfilled' ? result.value : null]
+      })
+    )
+  })
 
   handle('worktrees:list', (repoPath) =>
     gitService.listWorktrees(repoPath, store.data.settings.refreshConcurrency)

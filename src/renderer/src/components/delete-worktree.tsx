@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Worktree } from '@shared/domain'
 import { worktreeTitle } from '@shared/format'
+import { createPendingStep } from '@shared/pending-step'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,11 +51,28 @@ export function DeleteWorktreeDialogs({
     }
   }
 
+  // Dismissing the first dialog while `isDirty` is still out calls off
+  // whatever its answer would have done (#161).
+  const pending = useRef(createPendingStep()).current
+
+  const handleOpenChange = (next: boolean): void => {
+    if (!next) pending.cancel()
+    onOpenChange(next)
+  }
+
   const confirmFirst = async (): Promise<void> => {
     setError(null)
-    // A prunable worktree has no directory left to inspect, so there is
-    // nothing to lose and nothing to ask about.
-    const dirty = worktree.prunable ? false : await invoke('worktrees:isDirty', worktree.path)
+    const live = pending.begin()
+    let dirty: boolean
+    try {
+      // A prunable worktree has no directory left to inspect, so there is
+      // nothing to lose and nothing to ask about.
+      dirty = worktree.prunable ? false : await invoke('worktrees:isDirty', worktree.path)
+    } catch (cause) {
+      if (live()) setError((cause as Error).message)
+      return
+    }
+    if (!live()) return
     if (dirty) {
       // The second question replaces the first rather than stacking on it:
       // two modals at once trap focus in the wrong one. The way back to the
@@ -69,7 +87,7 @@ export function DeleteWorktreeDialogs({
 
   return (
     <>
-      <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialog open={open} onOpenChange={handleOpenChange}>
         <AlertDialogContent
           data-testid="delete-worktree-dialog"
           onCloseAutoFocus={returnFocusToMenu}

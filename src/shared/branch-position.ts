@@ -26,7 +26,9 @@ export function chooseBaseRef(
   if (!defaultBranch) return null
   const onOrigin = `origin/${defaultBranch}`
   if (remoteRefs.includes(onOrigin)) return onOrigin
-  const onOther = remoteRefs.find((ref) => ref.endsWith(`/${defaultBranch}`))
+  // The whole name after the remote, as `shortRemoteName` reads it: a
+  // `origin/feature/main` is someone's feature branch, not `main` (#161).
+  const onOther = remoteRefs.find((ref) => ref.slice(ref.indexOf('/') + 1) === defaultBranch)
   if (onOther) return onOther
   return localNames.includes(defaultBranch) ? defaultBranch : null
 }

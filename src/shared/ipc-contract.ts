@@ -37,6 +37,11 @@ export interface IpcInvokeContract {
   'projects:list': { args: []; result: Repository[] }
   'projects:add': { args: [path: string]; result: Repository }
   'projects:remove': { args: [id: string]; result: void }
+  /**
+   * Each project's remote URL by id, null for one without a remote, for
+   * grouping the project switcher by owner (#150).
+   */
+  'projects:remoteUrls': { args: []; result: Record<string, string | null> }
   /** Lists a repository's worktrees, each enriched with its current status. */
   'worktrees:list': { args: [repoPath: string]; result: Worktree[] }
   'branches:exists': { args: [repoPath: string, branch: string]; result: boolean }
@@ -350,6 +355,7 @@ const CHANNELS: Record<IpcChannel, true> = {
   'projects:list': true,
   'projects:add': true,
   'projects:remove': true,
+  'projects:remoteUrls': true,
   'worktrees:list': true,
   'branches:exists': true,
   'branches:remote': true,
