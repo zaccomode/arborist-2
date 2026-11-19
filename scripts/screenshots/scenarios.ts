@@ -910,7 +910,9 @@ export const scenarios: Scenario[] = [
       'A remote branch, before and after it is turned into a worktree whose ' +
       'local branch is deliberately named something else entirely (#47): ' +
       'the branch still disappears from Remote Branches, because the match ' +
-      'follows the tracking relationship rather than the name.',
+      'follows the tracking relationship rather than the name. Its detail ' +
+      'pane says it is up to date with origin/feature-y in full, since the ' +
+      'upstream is not its namesake (#165).',
     setup: async ({ workDir }) => {
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
@@ -939,6 +941,7 @@ export const scenarios: Scenario[] = [
         .getByTestId('worktree-detail')
         .filter({ hasText: 'renamed-locally' })
         .waitFor({ state: 'visible' })
+      await window.getByText('Up-to-date with origin/feature-y').waitFor({ state: 'visible' })
       await window.getByText('No remote branches without worktrees.').waitFor({ state: 'visible' })
       await shot('after')
     }
