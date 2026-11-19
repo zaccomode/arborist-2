@@ -271,8 +271,8 @@
   },
   "project-switcher-groups": {
     "": {
-      "dark": "2ddb2bf71d90a2af1df0c6b6b7aacda1674657ffa33b013d4d156321e3652413",
-      "light": "e50a5ab1fbc83d93198cad4075957f59027982ac62ea83f3dc736369d6d089ef"
+      "dark": "71160b5d562340b878a5f6378d2073b5f40f103e73c8445b92f9d7870910dcd5",
+      "light": "813562fefece818403036d682d9a1c5b553f212c492d66d3380878cf9c80de5d"
     }
   },
   "project-switcher-order": {
@@ -325,8 +325,8 @@
   },
   "rb-tracking-demo": {
     "after": {
-      "dark": "d1fff4dff83395d1097bff1eea8921b09c42cc0b8483b5cb0cb1b0d1a9559731",
-      "light": "ba61155296b7a866730060beaa3fb3f66bfc7ceca4e38d89c0e4df0dac22503b"
+      "dark": "b5c9e47b4a9a6cab00cf9ddcb08591de2208a1f7380a52fbd10e1bd9f916128c",
+      "light": "f6ac393e33883d7230dbb11d82e662d38fb82760c51568eb8502446503b60d3e"
     },
     "before": {
       "dark": "67dbd1c10e0d757b84a8ec7b29f83ad99909ffeafed9e209bb54fd67d79402a8",
@@ -371,8 +371,8 @@
   },
   "settings": {
     "about": {
-      "dark": "30dad9aedccbf5b41396cee8ec6ea97fb110492d9a70c912fc995d32b61d6adb",
-      "light": "e2ed6a93c46a620eb46a04163fbe5a7bda99a6a5cecc517ee4f6f6c69cff6d23"
+      "dark": "5d08543bb5748ad640a7d420a8e17cd8a220d7e1e3d851c75b2e06f60070ea0a",
+      "light": "a01113b18d134a02a5702675dd6c5ec7dedbaaff0765ce08898f363cb664b2ce"
     },
     "developer": {
       "dark": "8b8444ada20de80c4f9c08395b334c472bc99d0f31a5ea2287a2e33ffd0f8b4a",
@@ -397,14 +397,14 @@
   },
   "settings-about-error": {
     "error": {
-      "dark": "f54b22e1c4ba24f654e0dcbf4f0eb60e50259d9aa5077fc6b04ec342f79ef870",
-      "light": "78683f20021268524b577fc732eac50e8fc41988f3a5c5cb27e43b99c2aa91fd"
+      "dark": "40812adfa84bdfc4fd311e29fd2d85111c9e32b02bf3b7a91a16134a8273a1ed",
+      "light": "695348cafcc28c4e435fd867172cfdafd4cffcc6df80ea31dd040fe0d241304a"
     }
   },
   "settings-about-missing-manifest": {
     "error": {
-      "dark": "728e13712ca080dc640cf8c2dee1277dd8728ad60ae330d3329648939a92587e",
-      "light": "c99b64b7849359580c5c78b89d3b9c42b0bf0edac48ee760949a06439dd27def"
+      "dark": "63fa5e4779c457b96b5d4cc019243bf20da05b9bbd6a79f001cdf112cf6c7624",
+      "light": "4da00de764e26d986c72450cdb237108749f61b5365f2fc6a74075ae9974d009"
     }
   },
   "settings-worktree-location": {
@@ -581,8 +581,8 @@
   },
   "update-check-tab": {
     "up-to-date": {
-      "dark": "9980e2d58f65840a72e3dc7a924b6e1d2660fc494108c0dab9441d164464715e",
-      "light": "c87c0efc17e92f99c979e12f947d8d010af209a0aa4c0c42d5b26e224fb4ae8d"
+      "dark": "1c5088f28f46c307a7f4d8807d5ba532014eceb1d202e9d20287289e4f04c7f6",
+      "light": "503f5854e86a6537fc45f0528355627f635b82100755042c2593b55c13ef3e17"
     }
   },
   "update-downloading": {
