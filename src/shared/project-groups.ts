@@ -5,8 +5,10 @@
  * paths), a host whose URLs carry no owner under the host's name, and
  * everything with no remote under "Local".
  *
- * Read from each project's remote URL, so it needs no sign-in. Kept pure so
- * the URL parsing and the grouping rules are tested directly.
+ * Read from each project's remote URL, so it needs no sign-in. The URL is
+ * read and parsed in the main process, and only the `RemoteLocation` crosses
+ * to the renderer, so credentials embedded in a URL never leave it (#166).
+ * Kept pure so the URL parsing and the grouping rules are tested directly.
  */
 import type { Repository } from './persisted'
 import { sortProjects } from './list-view'
@@ -22,12 +24,74 @@ export const LOCAL_GROUP = 'Local'
 const GITHUB = 'github.com'
 
 /**
+ * Hosts that are another way in to a better-known one: GitHub's SSH-over-443
+ * endpoint is still GitHub, and its projects belong with their owner (#166).
+ */
+const HOST_ALIASES: Readonly<Record<string, string>> = { 'ssh.github.com': GITHUB }
+
+function canonicalHost(host: string): string {
+  const lower = host.toLowerCase()
+  return HOST_ALIASES[lower] ?? lower
+}
+
+/**
+ * The host of a URL git reaches over SSH, as written: the scp-like
+ * `git@host:path` or an `ssh://` URL. That host may be a `~/.ssh/config`
+ * alias (`github-work`), which only ssh itself can resolve. Null for any
+ * other kind of URL.
+ */
+export function sshHostOf(url: string): string | null {
+  const trimmed = url.trim()
+  const scheme = /^([a-z][a-z0-9+.-]*):\/\/(.*)$/i.exec(trimmed)
+  if (scheme) {
+    if (!/^(ssh|git\+ssh|ssh\+git)$/i.test(scheme[1]!)) return null
+    const rest = scheme[2]!
+    const authority = rest.slice(rest.lastIndexOf('@') + 1).split('/')[0]!
+    const host = authority.replace(/:\d*$/, '')
+    return host.length > 0 ? host : null
+  }
+  return scpLike(trimmed)?.host ?? null
+}
+
+/** `[user@]host:path`, which git only reads as SSH with no slash before the colon. */
+function scpLike(url: string): { host: string; path: string } | null {
+  // `C:\repo` is a Windows path, not host `C`.
+  const scp = /^(?:[^@/:]+@)?([^/:]+):(?!\\)(.+)$/.exec(url)
+  if (!scp || /^[a-z]$/i.test(scp[1]!)) return null
+  return { host: scp[1]!, path: scp[2]! }
+}
+
+/**
+ * Whether `host` is safe to hand to `ssh -G` as its destination argument: a
+ * plain host name, never something ssh could read as an option.
+ */
+export function isResolvableSshHost(host: string): boolean {
+  return /^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(host)
+}
+
+/** The `hostname` line of `ssh -G <host>` output, or null if it has none. */
+export function parseSshHostname(output: string): string | null {
+  for (const line of output.split(/\r?\n/)) {
+    const match = /^hostname\s+(\S+)\s*$/i.exec(line)
+    if (match) return match[1]!
+  }
+  return null
+}
+
+/**
  * Where a remote URL points, in each form git accepts for a network remote:
  * `https://host/owner/repo.git`, `ssh://git@host:22/owner/repo`, and the
  * scp-like `git@host:owner/repo.git`. Null for a local path or a `file://`
  * URL, which is a remote in git's eyes but not a published repository.
+ *
+ * `resolveHost` maps an SSH URL's host through `~/.ssh/config`, so an alias
+ * like `github-work` lands with the real host's projects; without it the
+ * host is taken as written.
  */
-export function parseRemoteUrl(url: string): RemoteLocation | null {
+export function parseRemoteUrl(
+  url: string,
+  resolveHost: (host: string) => string = (host) => host
+): RemoteLocation | null {
   const trimmed = url.trim()
   if (trimmed.length === 0) return null
 
@@ -36,26 +100,45 @@ export function parseRemoteUrl(url: string): RemoteLocation | null {
   const scheme = /^([a-z][a-z0-9+.-]*):\/\/(.*)$/i.exec(trimmed)
   if (scheme) {
     if (scheme[1]!.toLowerCase() === 'file') return null
+    // Credentials end at the *last* `@`: one in an unencoded password, or a
+    // `/` in it, must not leak into the host or owner (#166). Owner and
+    // repository names never hold an `@`, so nothing real is lost.
     const rest = scheme[2]!
-    const slash = rest.indexOf('/')
-    const authority = slash === -1 ? rest : rest.slice(0, slash)
-    path = slash === -1 ? '' : rest.slice(slash + 1)
-    host = authority.slice(authority.lastIndexOf('@') + 1).replace(/:\d*$/, '')
+    const afterUserinfo = rest.slice(rest.lastIndexOf('@') + 1)
+    const slash = afterUserinfo.indexOf('/')
+    const authority = slash === -1 ? afterUserinfo : afterUserinfo.slice(0, slash)
+    path = slash === -1 ? '' : afterUserinfo.slice(slash + 1)
+    host = authority.replace(/:\d*$/, '')
   } else {
-    // scp-like: `[user@]host:path`, which git only recognises when there is
-    // no slash before the colon. `C:\repo` is a Windows path, not host `C`.
-    const scp = /^(?:[^@/:]+@)?([^/:]+):(?!\\)(.+)$/.exec(trimmed)
-    if (!scp || /^[a-z]$/i.test(scp[1]!)) return null
-    host = scp[1]!
-    path = scp[2]!
+    const scp = scpLike(trimmed)
+    if (!scp) return null
+    host = scp.host
+    // An absolute path on the host, `git@host:/srv/repo.git`, names a
+    // directory rather than an owner.
+    path = scp.path.startsWith('/') ? '' : scp.path
   }
 
-  host = host.toLowerCase()
   if (host.length === 0) return null
+  if (sshHostOf(trimmed) !== null) host = resolveHost(host)
+  host = canonicalHost(host)
   const segments = path.split('/').filter((segment) => segment.length > 0)
   // `owner/repo` has an owner; a bare `repo.git` at the root does not.
   const owner = segments.length >= 2 ? segments[0]! : null
   return { host, owner }
+}
+
+/**
+ * `parseRemoteUrl` with the SSH host resolved first by an asynchronous
+ * lookup, which is what `ssh -G` is. Only an SSH URL's host is looked up.
+ */
+export async function resolveRemoteLocation(
+  url: string | null,
+  lookupSshHost: (host: string) => Promise<string>
+): Promise<RemoteLocation | null> {
+  if (!url) return null
+  const sshHost = sshHostOf(url)
+  const resolved = sshHost ? await lookupSshHost(sshHost) : null
+  return parseRemoteUrl(url, (host) => resolved ?? host)
 }
 
 /** The heading a project goes under. */
@@ -73,19 +156,18 @@ export interface ProjectGroup {
 }
 
 /**
- * Projects under their headings, given each one's remote URL by id (null
- * when it has none). Groups go alphabetically with "Local" last, and each
+ * Projects under their headings, given where each one is published by id
+ * (null when it has no remote). Groups go alphabetically with "Local" last, and each
  * group keeps the switcher's alphabetical order (#153). Owner names compare
  * case-insensitively, as GitHub treats them.
  */
 export function groupProjects(
   projects: readonly Repository[],
-  remoteUrls: Readonly<Record<string, string | null>>
+  locations: Readonly<Record<string, RemoteLocation | null>>
 ): ProjectGroup[] {
   const groups = new Map<string, ProjectGroup>()
   for (const project of sortProjects(projects)) {
-    const url = remoteUrls[project.id] ?? null
-    const location = url ? parseRemoteUrl(url) : null
+    const location = locations[project.id] ?? null
     const label = groupLabel(location)
     const key = location ? `remote:${label.toLowerCase()}` : 'local'
     const group = groups.get(key) ?? { label, local: !location, projects: [] }
@@ -99,15 +181,16 @@ export function groupProjects(
 }
 
 /**
- * The URL to group a repository by, from `git config --get-regexp
- * '^remote\..*\.url$'` output: `origin`'s, since that is where a clone came
- * from and where a publish goes, else the first remote's.
+ * The remote to group a repository by, from `git config --get-regexp
+ * '^remote\..*\.url$'` output: `origin`, since that is where a clone came
+ * from and where a publish goes, else the first remote. Its URL is then read
+ * with `git remote get-url`, which applies `url.*.insteadOf` (#166).
  */
-export function pickRemoteUrl(configOutput: string): string | null {
-  const remotes: { name: string; url: string }[] = []
+export function pickRemoteName(configOutput: string): string | null {
+  const names: string[] = []
   for (const line of configOutput.split(/\r?\n/)) {
-    const match = /^remote\.(.+)\.url\s+(.+)$/.exec(line.trim())
-    if (match) remotes.push({ name: match[1]!, url: match[2]! })
+    const match = /^remote\.(.+)\.url\s+.+$/.exec(line.trim())
+    if (match) names.push(match[1]!)
   }
-  return (remotes.find((remote) => remote.name === 'origin') ?? remotes[0])?.url ?? null
+  return names.includes('origin') ? 'origin' : (names[0] ?? null)
 }

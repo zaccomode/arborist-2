@@ -23,6 +23,7 @@ import type { BranchPosition } from './branch-position'
 import type { ConflictOperation, ConflictState } from './conflicts'
 import type { DiffRequest, FileDiff } from './diff'
 import type { Preset, ProjectSettings, Repository, SelectionState, Settings } from './persisted'
+import type { RemoteLocation } from './project-groups'
 import type { PullMode, PullResult } from './sync'
 import type { AutomationEvent } from './automation'
 import type { PresetCatalogue, PresetRunResult, ResolvedPreset } from './presets'
@@ -38,10 +39,12 @@ export interface IpcInvokeContract {
   'projects:add': { args: [path: string]; result: Repository }
   'projects:remove': { args: [id: string]; result: void }
   /**
-   * Each project's remote URL by id, null for one without a remote, for
-   * grouping the project switcher by owner (#150).
+   * Where each project is published, by id, null for one without a remote,
+   * for grouping the project switcher by owner (#150). The host and owner
+   * only: the URL itself stays in the main process, since it can carry
+   * credentials (#166).
    */
-  'projects:remoteUrls': { args: []; result: Record<string, string | null> }
+  'projects:remoteLocations': { args: []; result: Record<string, RemoteLocation | null> }
   /** Lists a repository's worktrees, each enriched with its current status. */
   'worktrees:list': { args: [repoPath: string]; result: Worktree[] }
   'branches:exists': { args: [repoPath: string, branch: string]; result: boolean }
@@ -355,7 +358,7 @@ const CHANNELS: Record<IpcChannel, true> = {
   'projects:list': true,
   'projects:add': true,
   'projects:remove': true,
-  'projects:remoteUrls': true,
+  'projects:remoteLocations': true,
   'worktrees:list': true,
   'branches:exists': true,
   'branches:remote': true,

@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { useMenuOpensDialog } from '@/lib/menu-opens-dialog'
-import { useProjectRemoteUrls } from '@/api/queries'
+import { useProjectRemoteLocations } from '@/api/queries'
 import { groupProjects } from '@shared/project-groups'
 
 /**
@@ -51,13 +51,13 @@ export function ProjectSwitcher({
   // Grouped by where each project is published (#150). Until the remotes
   // have been read the list stays flat, rather than briefly showing every
   // project under "Local".
-  const remoteUrls = useProjectRemoteUrls()
+  const locations = useProjectRemoteLocations()
   const groups = useMemo(
     () =>
-      remoteUrls.data
-        ? groupProjects(projects, remoteUrls.data)
+      locations.data
+        ? groupProjects(projects, locations.data)
         : [{ label: null, local: false, projects }],
-    [projects, remoteUrls.data]
+    [projects, locations.data]
   )
 
   return (

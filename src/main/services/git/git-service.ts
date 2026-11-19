@@ -2,7 +2,7 @@ import { promises as fs } from 'fs'
 import { join } from 'path'
 import { AppError } from '../../../shared/errors'
 import { mapWithConcurrency } from '../../../shared/concurrency'
-import { pickRemoteUrl } from '../../../shared/project-groups'
+import { pickRemoteName } from '../../../shared/project-groups'
 import type {
   LocalBranch,
   CommitFileStat,
@@ -283,16 +283,27 @@ export class GitService {
 
   /**
    * The URL the project switcher groups a repository by (#150): `origin`'s,
-   * else the first remote's. Null when it has no remote, or can't be read at
+   * else the first remote's, read with `git remote get-url` so that
+   * `url.*.insteadOf` shorthands like `gh:acme/x` come back as the URL git
+   * actually uses (#166). Null when it has no remote, or can't be read at
    * all (its folder has gone): either way it belongs under "Local".
+   *
+   * Main-process only: the URL can carry credentials, so the renderer is
+   * given the parsed location instead (see `projects:remoteLocations`).
    */
   async remoteUrl(repoPath: string): Promise<string | null> {
     try {
-      const { exitCode, stdout } = await this.#git.run(
-        ['config', '--get-regexp', '^remote\\..*\\.url$'],
-        { repoPath }
-      )
-      return exitCode === 0 ? pickRemoteUrl(stdout) : null
+      const config = await this.#git.run(['config', '--get-regexp', '^remote\\..*\\.url$'], {
+        repoPath
+      })
+      const name = config.exitCode === 0 ? pickRemoteName(config.stdout) : null
+      // git refuses to create a remote whose name starts with a dash, but a
+      // hand-edited config could hold one; never pass it where it reads as
+      // an option.
+      if (!name || name.startsWith('-')) return null
+      const { exitCode, stdout } = await this.#git.run(['remote', 'get-url', name], { repoPath })
+      const url = stdout.trim()
+      return exitCode === 0 && url.length > 0 ? url : null
     } catch {
       return null
     }

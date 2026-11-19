@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import type { Repository } from '@shared/persisted'
-import { groupLabel, groupProjects, parseRemoteUrl, pickRemoteUrl } from '@shared/project-groups'
+import {
+  groupLabel,
+  groupProjects,
+  isResolvableSshHost,
+  parseRemoteUrl,
+  parseSshHostname,
+  pickRemoteName,
+  resolveRemoteLocation,
+  sshHostOf,
+  type RemoteLocation
+} from '@shared/project-groups'
 
 describe('parseRemoteUrl', () => {
   it('reads HTTPS, SSH and scp-like GitHub URLs', () => {
@@ -23,6 +33,52 @@ describe('parseRemoteUrl', () => {
       host: 'git.example.com',
       owner: null
     })
+  })
+
+  it('keeps every part of a credential out of the result (#166)', () => {
+    for (const url of [
+      'https://user:s3cr3t-token@github.com/acme/x.git',
+      // Unencoded `/` and `@` in the password, which used to split the
+      // authority early and group as "ss@github.com (user:pa)".
+      'https://user:pa/ss@github.com/acme/x.git',
+      'https://user:p@ss/w@rd@github.com/acme/x.git',
+      'ssh://user:pa/ss@github.com:22/acme/x.git'
+    ]) {
+      const location = parseRemoteUrl(url)
+      expect(location, url).toEqual({ host: 'github.com', owner: 'acme' })
+      const label = groupLabel(location)
+      for (const secret of ['user', 's3cr3t', 'pa', 'ss', 'rd']) {
+        expect(label, url).not.toContain(secret)
+      }
+    }
+  })
+
+  it('treats ssh.github.com, GitHub over port 443, as GitHub (#166)', () => {
+    expect(parseRemoteUrl('ssh://git@ssh.github.com:443/acme/x')).toEqual({
+      host: 'github.com',
+      owner: 'acme'
+    })
+  })
+
+  it('resolves an SSH host alias, and only an SSH one (#166)', () => {
+    const resolve = (host: string): string => (host === 'github-work' ? 'github.com' : host)
+    expect(parseRemoteUrl('git@github-work:acme/x.git', resolve)).toEqual({
+      host: 'github.com',
+      owner: 'acme'
+    })
+    expect(parseRemoteUrl('ssh://git@github-work/acme/x.git', resolve)).toEqual({
+      host: 'github.com',
+      owner: 'acme'
+    })
+    // An alias that resolves to GitHub's port-443 endpoint is GitHub too.
+    expect(parseRemoteUrl('git@gh443:acme/x.git', () => 'ssh.github.com')?.host).toBe('github.com')
+    // ssh config has no say over an HTTPS URL.
+    expect(parseRemoteUrl('https://github-work/acme/x', resolve)?.host).toBe('github-work')
+  })
+
+  it('has no owner for an absolute path on an scp-like host (#166)', () => {
+    expect(parseRemoteUrl('git@host:/srv/repo.git')).toEqual({ host: 'host', owner: null })
+    expect(parseRemoteUrl('git@host:/srv/team/repo.git')).toEqual({ host: 'host', owner: null })
   })
 
   it('treats local paths and file URLs as no remote at all', () => {
@@ -61,11 +117,11 @@ describe('groupProjects', () => {
       project('5', 'mirror')
     ]
     const groups = groupProjects(projects, {
-      '1': 'git@github.com:Zaccomode/zeta.git',
-      '2': 'https://github.com/zaccomode/alpha',
+      '1': parseRemoteUrl('git@github.com:Zaccomode/zeta.git'),
+      '2': parseRemoteUrl('https://github.com/zaccomode/alpha'),
       '3': null,
-      '4': 'https://github.com/acme/beta.git',
-      '5': 'git@gitlab.com:acme/mirror.git'
+      '4': parseRemoteUrl('https://github.com/acme/beta.git'),
+      '5': parseRemoteUrl('git@gitlab.com:acme/mirror.git')
     })
     expect(groups.map((group) => [group.label, group.projects.map((p) => p.name)])).toEqual([
       ['acme', ['beta']],
@@ -83,7 +139,7 @@ describe('groupProjects', () => {
 
   it('keeps an owner called Local apart from the Local group', () => {
     const groups = groupProjects([project('1', 'a'), project('2', 'b')], {
-      '1': 'https://github.com/Local/a',
+      '1': { host: 'github.com', owner: 'Local' } satisfies RemoteLocation,
       '2': null
     })
     expect(groups.map((group) => [group.label, group.local])).toEqual([
@@ -93,16 +149,67 @@ describe('groupProjects', () => {
   })
 })
 
-describe('pickRemoteUrl', () => {
-  it("prefers origin's URL, then the first remote's", () => {
+describe('pickRemoteName', () => {
+  it('prefers origin, then the first remote', () => {
     expect(
-      pickRemoteUrl(
+      pickRemoteName(
         'remote.fork.url git@github.com:me/x.git\nremote.origin.url https://github.com/o/x\n'
       )
-    ).toBe('https://github.com/o/x')
-    expect(pickRemoteUrl('remote.fork.url git@github.com:me/x.git\n')).toBe(
-      'git@github.com:me/x.git'
-    )
-    expect(pickRemoteUrl('')).toBeNull()
+    ).toBe('origin')
+    expect(pickRemoteName('remote.fork.url git@github.com:me/x.git\r\n')).toBe('fork')
+    expect(pickRemoteName('')).toBeNull()
+  })
+})
+
+describe('sshHostOf', () => {
+  it('reads the host of scp-like and ssh:// URLs as written', () => {
+    expect(sshHostOf('git@github-work:acme/x.git')).toBe('github-work')
+    expect(sshHostOf('ssh://git@ssh.github.com:443/acme/x')).toBe('ssh.github.com')
+    expect(sshHostOf('git+ssh://host/acme/x')).toBe('host')
+  })
+
+  it('is null for anything git does not reach over SSH', () => {
+    expect(sshHostOf('https://github.com/acme/x')).toBeNull()
+    expect(sshHostOf('/srv/repo.git')).toBeNull()
+    expect(sshHostOf('C:\\repos\\x')).toBeNull()
+    expect(sshHostOf('file:///srv/repo.git')).toBeNull()
+  })
+})
+
+describe('isResolvableSshHost', () => {
+  it('accepts host names and refuses anything ssh could read as an option', () => {
+    expect(isResolvableSshHost('github-work')).toBe(true)
+    expect(isResolvableSshHost('git.example.com')).toBe(true)
+    expect(isResolvableSshHost('-oProxyCommand=evil')).toBe(false)
+    expect(isResolvableSshHost('host name')).toBe(false)
+    expect(isResolvableSshHost('')).toBe(false)
+  })
+})
+
+describe('parseSshHostname', () => {
+  it('reads the hostname line of ssh -G output', () => {
+    expect(parseSshHostname('user git\nhostname github.com\nport 22\n')).toBe('github.com')
+    expect(parseSshHostname('user git\r\nhostname github.com\r\n')).toBe('github.com')
+    expect(parseSshHostname('user git\n')).toBeNull()
+  })
+})
+
+describe('resolveRemoteLocation', () => {
+  it('looks up only SSH hosts', async () => {
+    const lookups: string[] = []
+    const lookup = async (host: string): Promise<string> => {
+      lookups.push(host)
+      return host === 'github-work' ? 'github.com' : host
+    }
+    expect(await resolveRemoteLocation('git@github-work:acme/x.git', lookup)).toEqual({
+      host: 'github.com',
+      owner: 'acme'
+    })
+    expect(await resolveRemoteLocation('https://github.com/acme/x', lookup)).toEqual({
+      host: 'github.com',
+      owner: 'acme'
+    })
+    expect(await resolveRemoteLocation(null, lookup)).toBeNull()
+    expect(lookups).toEqual(['github-work'])
   })
 })

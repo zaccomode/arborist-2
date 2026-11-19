@@ -315,25 +315,34 @@ export const scenarios: Scenario[] = [
       'The switcher menu grouped by where each project is published (#150): ' +
       'GitHub projects under their owner, alphabetically; a project on ' +
       'another host under its owner there, with the host named; and a ' +
-      'project with no remote under Local, last.',
+      'project with no remote under Local, last. A credentialed URL, ' +
+      "GitHub's port-443 SSH host and an insteadOf shorthand all land under " +
+      'their GitHub owner, with no part of the credential shown (#166).',
     setup: async ({ userDataDir, workDir }) => {
       const projects: [name: string, url: string | null][] = [
         ['arborist-2', 'https://github.com/zaccomode/arborist-2.git'],
         ['sketchframe', 'git@github.com:zaccomode/sketchframe.git'],
         ['widgets', 'https://github.com/acme/widgets.git'],
         ['mirror', 'git@gitlab.com:acme/mirror.git'],
-        ['scratch', null]
+        ['scratch', null],
+        ['sprockets', 'https://bot:pa/ss@github.com/acme/sprockets.git'],
+        ['gadgets', 'ssh://git@ssh.github.com:443/acme/gadgets.git'],
+        ['gizmos', 'gh:zaccomode/gizmos']
       ]
       const repositories: { id: string; path: string; name: string; addedAt: string }[] = []
       for (const [index, [name, url]] of projects.entries()) {
         const fixture = new GitFixture(join(workDir, name), name)
         await fixture.init()
         if (url) {
-          // The URL the switcher reads, with git told to reach it at the
-          // fixture's own bare remote: the fetch on opening a project then
-          // succeeds offline instead of racing a network error toast.
+          // The URL the switcher reads, left out of `fetch --all`: the fetch
+          // on opening a project then succeeds offline instead of racing a
+          // network error toast. (Redirecting it with insteadOf no longer
+          // works, since the switcher now reads the URL git really uses.)
           await fixture.git(['remote', 'set-url', 'origin', url])
-          await fixture.git(['config', `url.${fixture.remotePath}.insteadOf`, url])
+          await fixture.git(['config', 'remote.origin.skipFetchAll', 'true'])
+          if (url.startsWith('gh:')) {
+            await fixture.git(['config', 'url.https://github.com/.insteadOf', 'gh:'])
+          }
         } else {
           await fixture.git(['remote', 'remove', 'origin'])
         }
