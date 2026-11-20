@@ -20,6 +20,33 @@ describe('SshHostResolver (#166)', () => {
     expect(await silent.resolve('github-work')).toBe('github-work')
   })
 
+  it('retries a host whose lookup failed, rather than keeping the fallback (#168)', async () => {
+    let attempts = 0
+    const resolver = new SshHostResolver(async () => {
+      attempts++
+      if (attempts === 1) throw new Error('ssh -G timed out')
+      return 'hostname github.com\n'
+    })
+    expect(await resolver.resolve('github-work')).toBe('github-work')
+    expect(await resolver.resolve('github-work')).toBe('github.com')
+    expect(await resolver.resolve('github-work')).toBe('github.com')
+    expect(attempts).toBe(2)
+  })
+
+  it('shares one lookup between callers that ask while it is running', async () => {
+    let attempts = 0
+    const resolver = new SshHostResolver(async () => {
+      attempts++
+      return 'hostname github.com\n'
+    })
+    const both = await Promise.all([
+      resolver.resolve('github-work'),
+      resolver.resolve('github-work')
+    ])
+    expect(both).toEqual(['github.com', 'github.com'])
+    expect(attempts).toBe(1)
+  })
+
   it('never runs ssh for a host it could read as an option', async () => {
     const calls: string[] = []
     const resolver = new SshHostResolver(async (host) => {

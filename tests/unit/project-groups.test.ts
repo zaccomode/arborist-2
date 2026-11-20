@@ -8,6 +8,7 @@ import {
   parseSshHostname,
   pickRemoteName,
   resolveRemoteLocation,
+  splitRemoteUrl,
   sshHostOf,
   type RemoteLocation
 } from '@shared/project-groups'
@@ -173,6 +174,54 @@ describe('sshHostOf', () => {
     expect(sshHostOf('/srv/repo.git')).toBeNull()
     expect(sshHostOf('C:\\repos\\x')).toBeNull()
     expect(sshHostOf('file:///srv/repo.git')).toBeNull()
+  })
+})
+
+describe('splitRemoteUrl (#168)', () => {
+  it('splits each network form into host, path and whether it is SSH', () => {
+    expect(splitRemoteUrl('git@github-work:acme/x.git')).toEqual({
+      host: 'github-work',
+      path: 'acme/x.git',
+      ssh: true
+    })
+    expect(splitRemoteUrl('SSH://git@host:22/acme/x')).toEqual({
+      host: 'host',
+      path: 'acme/x',
+      ssh: true
+    })
+    expect(splitRemoteUrl('https://u:p@ss/w@github.com/acme/x')).toEqual({
+      host: 'github.com',
+      path: 'acme/x',
+      ssh: false
+    })
+    expect(splitRemoteUrl('git@host:/srv/repo.git')).toEqual({ host: 'host', path: '', ssh: true })
+  })
+
+  it('is null for local paths, file:// URLs and URLs with no host', () => {
+    expect(splitRemoteUrl('/srv/repo.git')).toBeNull()
+    expect(splitRemoteUrl('C:\\repos\\x')).toBeNull()
+    expect(splitRemoteUrl('file:///srv/repo.git')).toBeNull()
+    expect(splitRemoteUrl('ssh:///acme/x')).toBeNull()
+    expect(splitRemoteUrl('  ')).toBeNull()
+  })
+
+  it('agrees with sshHostOf and parseRemoteUrl on the host it looks up and replaces', () => {
+    const urls = [
+      'git@github-work:acme/x.git',
+      'ssh://git@github-work:2222/acme/x',
+      'git+ssh://u:p@ss@github-work/acme/x',
+      'https://github-work/acme/x'
+    ]
+    for (const url of urls) {
+      const looked: string[] = []
+      const location = parseRemoteUrl(url, (host) => {
+        looked.push(host)
+        return 'resolved.example'
+      })
+      const ssh = sshHostOf(url)
+      expect(looked).toEqual(ssh ? [ssh] : [])
+      expect(location?.host).toBe(ssh ? 'resolved.example' : 'github-work')
+    }
   })
 })
 
