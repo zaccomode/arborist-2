@@ -19,6 +19,7 @@ import type { ConflictState } from '@shared/conflicts'
 import type { DiffRequest, FileDiff } from '@shared/diff'
 import type { PresetCatalogue, ResolvedPreset } from '@shared/presets'
 import type { ProjectSettings, Repository, Settings } from '@shared/persisted'
+import type { RemoteLocation } from '@shared/project-groups'
 import { invoke } from '@/api/client'
 
 const COMMIT_PAGE_SIZE = 20
@@ -26,7 +27,7 @@ const COMMIT_PAGE_SIZE = 20
 export const queryKeys = {
   projects: ['projects'] as const,
   // Under `projects`, so adding or removing one regroups the switcher too.
-  projectRemoteUrls: ['projects', 'remote-urls'] as const,
+  projectRemoteLocations: ['projects', 'remote-locations'] as const,
   worktrees: (repoPath: string) => ['worktrees', repoPath] as const,
   note: (repositoryId: string, worktreePath: string | null) =>
     ['note', repositoryId, worktreePath] as const,
@@ -61,11 +62,22 @@ export function useProjects(): ReturnType<typeof useQuery<Repository[]>> {
   return useQuery({ queryKey: queryKeys.projects, queryFn: () => invoke('projects:list') })
 }
 
-/** Each project's remote URL, for grouping the switcher by owner (#150). */
-export function useProjectRemoteUrls(): ReturnType<typeof useQuery<Record<string, string | null>>> {
+/**
+ * Where each project is published, for grouping the switcher by owner
+ * (#150). Remotes rarely change, and reading them costs a couple of git
+ * processes per project (and an `ssh -G` per SSH host), so this stays fresh
+ * far longer than the app's default rather than re-reading every project on
+ * each window focus (#166).
+ */
+export const PROJECT_LOCATIONS_STALE_MS = 5 * 60_000
+
+export function useProjectRemoteLocations(): ReturnType<
+  typeof useQuery<Record<string, RemoteLocation | null>>
+> {
   return useQuery({
-    queryKey: queryKeys.projectRemoteUrls,
-    queryFn: () => invoke('projects:remoteUrls')
+    queryKey: queryKeys.projectRemoteLocations,
+    queryFn: () => invoke('projects:remoteLocations'),
+    staleTime: PROJECT_LOCATIONS_STALE_MS
   })
 }
 
@@ -73,7 +85,13 @@ export function useAddProject(): UseMutationResult<Repository, Error, string> {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (path: string) => invoke('projects:add', path),
-    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.projects })
+    onSuccess: async () => {
+      // Locations first, then the list: the other way round, the new project
+      // is listed before its location is known and briefly shows under
+      // "Local" (#166). A failed refetch still lets the list refresh.
+      await client.invalidateQueries({ queryKey: queryKeys.projectRemoteLocations })
+      await client.invalidateQueries({ queryKey: queryKeys.projects, exact: true })
+    }
   })
 }
 

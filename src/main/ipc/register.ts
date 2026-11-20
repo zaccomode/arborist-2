@@ -16,6 +16,8 @@ import { commitDraftKey, worktreeNoteKey } from '../../shared/persisted'
 import { resolveWorktreeLocation } from '../../shared/worktree-location'
 import { mapWithConcurrency } from '../../shared/concurrency'
 import { applicationPickerOptions } from '../services/system/pickers'
+import { SshHostResolver } from '../services/system/ssh-config'
+import { resolveRemoteLocation } from '../../shared/project-groups'
 
 type Handler<C extends IpcChannel> = (...args: IpcArgs<C>) => Promise<IpcReturn<C>> | IpcReturn<C>
 
@@ -54,6 +56,8 @@ export function registerIpcHandlers({
   updates,
   watcher
 }: IpcDeps): void {
+  const sshHosts = new SshHostResolver()
+
   handle('system:pickFolder', async () => {
     // A native dialog cannot be driven by Playwright, so e2e tests and
     // screenshot scenarios say up front what the user would have chosen.
@@ -85,12 +89,16 @@ export function registerIpcHandlers({
   handle('projects:list', () => projects.list())
   handle('projects:add', (path) => projects.add(path))
   handle('projects:remove', (id) => projects.remove(id))
-  handle('projects:remoteUrls', async () => {
+  // Parsed here, so a URL's credentials never reach the renderer (#166).
+  handle('projects:remoteLocations', async () => {
     const repositories = projects.list()
     const urls = await mapWithConcurrency(
       repositories,
       store.data.settings.refreshConcurrency,
-      (repo) => gitService.remoteUrl(repo.path)
+      async (repo) =>
+        resolveRemoteLocation(await gitService.remoteUrl(repo.path), (host) =>
+          sshHosts.resolve(host)
+        )
     )
     return Object.fromEntries(
       repositories.map((repo, index) => {

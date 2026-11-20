@@ -110,9 +110,25 @@ describe('syncSummary', () => {
     expect(syncSummary({ ...worktree, status })).toBe('Up-to-date with origin')
   })
 
-  it('names only the remote when up to date, whatever the branch is called', () => {
-    expect(syncSummary({ ...worktree, status: { ...status, upstream: 'fork/main' } })).toBe(
+  it('names only the remote when the upstream is the branch of the same name', () => {
+    expect(syncSummary({ ...worktree, status: { ...status, upstream: 'fork/feature/x' } })).toBe(
       'Up-to-date with fork'
+    )
+  })
+
+  it('names the whole upstream when it tracks a branch of another name (#165)', () => {
+    expect(syncSummary({ ...worktree, status: { ...status, upstream: 'origin/main' } })).toBe(
+      'Up-to-date with origin/main'
+    )
+    // A suffix match on the name alone is not enough: `x` is not `feature/x`.
+    expect(
+      syncSummary({ ...worktree, branch: 'x', status: { ...status, upstream: 'origin/feature/x' } })
+    ).toBe('Up-to-date with origin/feature/x')
+  })
+
+  it('names the whole upstream of a detached HEAD', () => {
+    expect(syncSummary({ ...worktree, branch: null, status })).toBe(
+      'Up-to-date with origin/feature/x'
     )
   })
 

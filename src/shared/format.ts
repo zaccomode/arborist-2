@@ -132,9 +132,21 @@ export function syncSummary(worktree: Worktree): string {
   }
   if (status.ahead) return `\u2191${status.ahead} ahead of ${status.upstream}`
   if (status.behind) return `\u2193${status.behind} behind ${status.upstream}`
-  // Even with the upstream, its branch name adds nothing (#160): it is the
-  // branch's own name. The remote is all that is left to say.
-  return `Up-to-date with ${remoteOf(status.upstream)}`
+  return `Up-to-date with ${upToDateTarget(status.upstream, worktree.branch)}`
+}
+
+/**
+ * Who an up-to-date branch is level with. When the upstream is the branch's
+ * namesake on some remote, its branch part adds nothing (#160), so only the
+ * remote is named: "origin". When it tracks a branch of another name, as a
+ * branch made from `origin/main` does by default, that is exactly what the
+ * user needs to see, so the whole upstream is named: "origin/main" (#165).
+ */
+export function upToDateTarget(upstream: string, branch: string | null): string {
+  // A remote's name rarely holds a slash, and when one does this falls back
+  // to the whole upstream, which is never wrong, only longer.
+  const remote = remoteOf(upstream)
+  return branch && upstream === `${remote}/${branch}` ? remote : upstream
 }
 
 /** `origin/feature/x` -> `origin`. */
