@@ -10,7 +10,7 @@
  */
 import { execFile } from 'child_process'
 import { promises as fs } from 'fs'
-import { devNull, tmpdir } from 'os'
+import { tmpdir } from 'os'
 import { join } from 'path'
 
 /**
@@ -30,7 +30,9 @@ import { join } from 'path'
  * repository's own config.
  */
 export const isolatedGitEnv: Readonly<Record<string, string>> = {
-  GIT_CONFIG_GLOBAL: devNull,
+  // Literally `/dev/null` on every platform: Git for Windows maps it to `nul`
+  // itself, but refuses Node's `os.devNull` (`\\.\nul`).
+  GIT_CONFIG_GLOBAL: '/dev/null',
   GIT_CONFIG_NOSYSTEM: '1',
   GIT_CONFIG_COUNT: '0',
   GIT_CONFIG_PARAMETERS: ''

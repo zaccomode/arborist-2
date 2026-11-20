@@ -1,4 +1,3 @@
-import { devNull } from 'os'
 import { resolve } from 'path'
 import { defineConfig } from 'vitest/config'
 
@@ -18,7 +17,9 @@ export default defineConfig({
     // the screenshot runner uses outside vitest; a unit test checks the two
     // agree.
     env: {
-      GIT_CONFIG_GLOBAL: devNull,
+      // Literally `/dev/null` on every platform: Git for Windows maps it to
+      // `nul` itself, but refuses Node's `os.devNull` (`\\.\nul`).
+      GIT_CONFIG_GLOBAL: '/dev/null',
       GIT_CONFIG_NOSYSTEM: '1',
       GIT_CONFIG_COUNT: '0',
       GIT_CONFIG_PARAMETERS: ''
