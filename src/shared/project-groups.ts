@@ -35,22 +35,57 @@ function canonicalHost(host: string): string {
 }
 
 /**
- * The host of a URL git reaches over SSH, as written: the scp-like
- * `git@host:path` or an `ssh://` URL. That host may be a `~/.ssh/config`
- * alias (`github-work`), which only ssh itself can resolve. Null for any
- * other kind of URL.
+ * A network remote URL split into its host, as written, and its path, and
+ * whether git reaches it over SSH: the scp-like `git@host:path` or an
+ * `ssh://` URL. Null for a local path, a `file://` URL, or a URL with no
+ * host. The one place remote URLs are parsed, so the host looked up in
+ * `~/.ssh/config` is always the host that is replaced (#168).
  */
-export function sshHostOf(url: string): string | null {
+export interface SplitRemoteUrl {
+  host: string
+  path: string
+  ssh: boolean
+}
+
+export function splitRemoteUrl(url: string): SplitRemoteUrl | null {
   const trimmed = url.trim()
+  if (trimmed.length === 0) return null
+
+  let split: SplitRemoteUrl
   const scheme = /^([a-z][a-z0-9+.-]*):\/\/(.*)$/i.exec(trimmed)
   if (scheme) {
-    if (!/^(ssh|git\+ssh|ssh\+git)$/i.test(scheme[1]!)) return null
+    const protocol = scheme[1]!.toLowerCase()
+    if (protocol === 'file') return null
+    // Credentials end at the *last* `@`: one in an unencoded password, or a
+    // `/` in it, must not leak into the host or owner (#166). Owner and
+    // repository names never hold an `@`, so nothing real is lost.
     const rest = scheme[2]!
-    const authority = rest.slice(rest.lastIndexOf('@') + 1).split('/')[0]!
-    const host = authority.replace(/:\d*$/, '')
-    return host.length > 0 ? host : null
+    const afterUserinfo = rest.slice(rest.lastIndexOf('@') + 1)
+    const slash = afterUserinfo.indexOf('/')
+    const authority = slash === -1 ? afterUserinfo : afterUserinfo.slice(0, slash)
+    split = {
+      host: authority.replace(/:\d*$/, ''),
+      path: slash === -1 ? '' : afterUserinfo.slice(slash + 1),
+      ssh: /^(ssh|git\+ssh|ssh\+git)$/.test(protocol)
+    }
+  } else {
+    const scp = scpLike(trimmed)
+    if (!scp) return null
+    // An absolute path on the host, `git@host:/srv/repo.git`, names a
+    // directory rather than an owner.
+    split = { host: scp.host, path: scp.path.startsWith('/') ? '' : scp.path, ssh: true }
   }
-  return scpLike(trimmed)?.host ?? null
+  return split.host.length > 0 ? split : null
+}
+
+/**
+ * The host of a URL git reaches over SSH, as written. That host may be a
+ * `~/.ssh/config` alias (`github-work`), which only ssh itself can resolve.
+ * Null for any other kind of URL.
+ */
+export function sshHostOf(url: string): string | null {
+  const split = splitRemoteUrl(url)
+  return split?.ssh ? split.host : null
 }
 
 /** `[user@]host:path`, which git only reads as SSH with no slash before the colon. */
@@ -92,39 +127,15 @@ export function parseRemoteUrl(
   url: string,
   resolveHost: (host: string) => string = (host) => host
 ): RemoteLocation | null {
-  const trimmed = url.trim()
-  if (trimmed.length === 0) return null
+  const split = splitRemoteUrl(url)
+  return split ? locate(split, split.ssh ? resolveHost(split.host) : split.host) : null
+}
 
-  let host: string
-  let path: string
-  const scheme = /^([a-z][a-z0-9+.-]*):\/\/(.*)$/i.exec(trimmed)
-  if (scheme) {
-    if (scheme[1]!.toLowerCase() === 'file') return null
-    // Credentials end at the *last* `@`: one in an unencoded password, or a
-    // `/` in it, must not leak into the host or owner (#166). Owner and
-    // repository names never hold an `@`, so nothing real is lost.
-    const rest = scheme[2]!
-    const afterUserinfo = rest.slice(rest.lastIndexOf('@') + 1)
-    const slash = afterUserinfo.indexOf('/')
-    const authority = slash === -1 ? afterUserinfo : afterUserinfo.slice(0, slash)
-    path = slash === -1 ? '' : afterUserinfo.slice(slash + 1)
-    host = authority.replace(/:\d*$/, '')
-  } else {
-    const scp = scpLike(trimmed)
-    if (!scp) return null
-    host = scp.host
-    // An absolute path on the host, `git@host:/srv/repo.git`, names a
-    // directory rather than an owner.
-    path = scp.path.startsWith('/') ? '' : scp.path
-  }
-
-  if (host.length === 0) return null
-  if (sshHostOf(trimmed) !== null) host = resolveHost(host)
-  host = canonicalHost(host)
-  const segments = path.split('/').filter((segment) => segment.length > 0)
+function locate(split: SplitRemoteUrl, host: string): RemoteLocation {
+  const segments = split.path.split('/').filter((segment) => segment.length > 0)
   // `owner/repo` has an owner; a bare `repo.git` at the root does not.
   const owner = segments.length >= 2 ? segments[0]! : null
-  return { host, owner }
+  return { host: canonicalHost(host), owner }
 }
 
 /**
@@ -135,10 +146,9 @@ export async function resolveRemoteLocation(
   url: string | null,
   lookupSshHost: (host: string) => Promise<string>
 ): Promise<RemoteLocation | null> {
-  if (!url) return null
-  const sshHost = sshHostOf(url)
-  const resolved = sshHost ? await lookupSshHost(sshHost) : null
-  return parseRemoteUrl(url, (host) => resolved ?? host)
+  const split = url ? splitRemoteUrl(url) : null
+  if (!split) return null
+  return locate(split, split.ssh ? await lookupSshHost(split.host) : split.host)
 }
 
 /** The heading a project goes under. */

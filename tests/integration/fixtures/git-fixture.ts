@@ -10,7 +10,7 @@
  */
 import { execFile } from 'child_process'
 import { promises as fs } from 'fs'
-import { tmpdir } from 'os'
+import { devNull, tmpdir } from 'os'
 import { join } from 'path'
 
 /**
@@ -20,6 +20,22 @@ import { join } from 'path'
  * imports the bundled app uses. There is no parsing here, so nothing is
  * duplicated by keeping it separate.
  */
+/**
+ * Git with no global, system or environment-injected config, so a
+ * developer's `~/.gitconfig` (an `insteadOf` rewrite, a signing key, a
+ * default branch) can't change what a fixture builds or what a test sees
+ * (#168). `GIT_CONFIG_COUNT` and `GIT_CONFIG_PARAMETERS` carry config set
+ * through the environment, which some cloud containers use to add their own
+ * `insteadOf` rules. The fixture sets everything it relies on in each
+ * repository's own config.
+ */
+export const isolatedGitEnv: Readonly<Record<string, string>> = {
+  GIT_CONFIG_GLOBAL: devNull,
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_CONFIG_COUNT: '0',
+  GIT_CONFIG_PARAMETERS: ''
+}
+
 function runGit(args: string[], cwd: string, env: NodeJS.ProcessEnv = {}): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
@@ -27,7 +43,7 @@ function runGit(args: string[], cwd: string, env: NodeJS.ProcessEnv = {}): Promi
       args,
       {
         cwd,
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C', ...env },
+        env: { ...process.env, ...isolatedGitEnv, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C', ...env },
         windowsHide: true
       },
       (error, stdout, stderr) => {
