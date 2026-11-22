@@ -3,7 +3,13 @@ import { ArrowDown, ArrowUp, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Worktree } from '@shared/domain'
-import { PULL_MODE_LABELS, pullLabel, syncAvailability, type PullMode } from '@shared/sync'
+import {
+  PULL_MODE_LABELS,
+  pullLabel,
+  pushAction,
+  syncAvailability,
+  type PullMode
+} from '@shared/sync'
 import { Button } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
 import {
@@ -13,7 +19,8 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { invoke } from '@/api/client'
-import { queryKeys } from '@/api/queries'
+import { queryKeys, useProjectHasRemote } from '@/api/queries'
+import { usePublishDialog } from '@/state/publish-dialog'
 import { showErrorToast } from '@/lib/error-toast'
 
 /**
@@ -39,9 +46,11 @@ import { showErrorToast } from '@/lib/error-toast'
  * review). See `syncAvailability` for what that costs.
  */
 export function SyncActions({
+  projectId,
   repoPath,
   worktree
 }: {
+  projectId: string
   repoPath: string
   worktree: Worktree
 }): React.JSX.Element | null {
@@ -49,6 +58,8 @@ export function SyncActions({
   const [busy, setBusy] = useState<'pull' | 'push' | null>(null)
   const { canPull, canPush, behind, ahead, hasUpstream } = syncAvailability(worktree)
   const worktreePath = worktree.path
+  const hasRemote = useProjectHasRemote(projectId)
+  const openPublish = usePublishDialog((state) => state.setOpen)
 
   const invalidate = (): void => {
     queryClient.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
@@ -88,6 +99,10 @@ export function SyncActions({
   }
 
   const runPush = async (): Promise<void> => {
+    if (pushAction(hasUpstream, hasRemote) === 'publish-repository') {
+      openPublish(true)
+      return
+    }
     setBusy('push')
     try {
       await invoke('workingTree:push', worktreePath, worktree.branch ?? '', !hasUpstream)

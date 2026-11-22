@@ -1,4 +1,12 @@
-import { ChevronDown, FolderGit2, FolderPlus, RefreshCw, Settings } from 'lucide-react'
+import {
+  ChevronDown,
+  CloudUpload,
+  FolderDown,
+  FolderGit2,
+  FolderPlus,
+  RefreshCw,
+  Settings
+} from 'lucide-react'
 import { useMemo } from 'react'
 import type { Repository } from '@shared/persisted'
 import {
@@ -13,7 +21,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { useMenuOpensDialog } from '@/lib/menu-opens-dialog'
-import { useProjectRemoteLocations } from '@/api/queries'
+import { useProjectRemoteLocations, useProjectsWithoutRemote } from '@/api/queries'
 import { groupProjects } from '@shared/project-groups'
 
 /**
@@ -21,7 +29,8 @@ import { groupProjects } from '@shared/project-groups'
  * sidebar at once; the concept design trades that overview for a view with
  * room for a worktree's detail, so the switcher carries the project list.
  *
- * Mostly the project list — switching project, adding one, and the app's own
+ * Mostly the project list — switching project, adding one from disk or
+ * cloning one from GitHub, and the app's own
  * settings. What belongs to the open project is reachable where that project
  * already is — settings under the worktree list, removal inside those
  * settings, pruning beside the worktrees that need it — with one exception:
@@ -34,6 +43,8 @@ export function ProjectSwitcher({
   selectedId,
   onSelect,
   onAddProject,
+  onCloneProject,
+  onPublishProject,
   onOpenSettings,
   onFetch,
   fetching
@@ -42,6 +53,10 @@ export function ProjectSwitcher({
   selectedId: string | null
   onSelect: (id: string) => void
   onAddProject: () => void
+  /** Opens the clone-from-GitHub dialog (#150). */
+  onCloneProject: () => void
+  /** Opens the publish dialog, offered only for a project with no remote (#150). */
+  onPublishProject: () => void
   onOpenSettings: () => void
   onFetch: () => void
   fetching: boolean
@@ -59,6 +74,12 @@ export function ProjectSwitcher({
         : [{ label: null, local: false, projects }],
     [projects, locations.data]
   )
+
+  // Only for a project with no remote at all — one on a local path still
+  // pushes somewhere — and only once that is known, rather than for a moment
+  // on every project while it loads.
+  const withoutRemote = useProjectsWithoutRemote()
+  const publishable = !!selected && !!withoutRemote.data?.includes(selected.id)
 
   return (
     <DropdownMenu>
@@ -106,12 +127,32 @@ export function ProjectSwitcher({
               <RefreshCw className={fetching ? 'animate-spin' : undefined} />
               Fetch
             </DropdownMenuItem>
+            {publishable && (
+              <DropdownMenuItem
+                onSelect={() => {
+                  opensDialog()
+                  onPublishProject()
+                }}
+              >
+                <CloudUpload />
+                Publish to GitHub…
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
           </>
         )}
         <DropdownMenuItem onSelect={onAddProject}>
           <FolderPlus />
-          Add project…
+          Add local repository…
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => {
+            opensDialog()
+            onCloneProject()
+          }}
+        >
+          <FolderDown />
+          Clone from GitHub…
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => {

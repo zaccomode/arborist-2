@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Worktree } from '../../src/shared/domain'
-import { pullArgsFor, pullLabel, syncAvailability } from '../../src/shared/sync'
+import { pullArgsFor, pullLabel, pushAction, syncAvailability } from '../../src/shared/sync'
 
 function worktree(
   overrides: Partial<Worktree> = {},
@@ -125,5 +125,19 @@ describe('syncAvailability', () => {
 
   it('drops pull once the upstream is deleted on the remote, whatever the stale count says', () => {
     expect(syncAvailability(worktree({}, { gone: true, behind: 4 })).canPull).toBe(false)
+  })
+})
+
+describe('pushAction', () => {
+  it('offers to publish the repository when the project has no remote at all (#150)', () => {
+    expect(pushAction(false, false)).toBe('publish-repository')
+  })
+
+  it('pushes whenever there is a remote, or an upstream, or it is not known yet', () => {
+    expect(pushAction(false, true)).toBe('push')
+    expect(pushAction(true, true)).toBe('push')
+    expect(pushAction(false, null)).toBe('push')
+    // An upstream means a remote, whatever the cached answer says.
+    expect(pushAction(true, false)).toBe('push')
   })
 })

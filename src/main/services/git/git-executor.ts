@@ -4,6 +4,8 @@ import { isTransientSpawnCode, OUT_OF_RESOURCES_ADVICE, retryTransientSpawn } fr
 
 export const DEFAULT_TIMEOUT_MS = 30_000
 export const FETCH_TIMEOUT_MS = 120_000
+/** A clone downloads the whole history, so it gets far longer than a fetch. */
+export const CLONE_TIMEOUT_MS = 30 * 60_000
 
 /** 64 MiB: `git log` over a large repo comfortably exceeds Node's 1 MiB default. */
 const MAX_BUFFER = 64 * 1024 * 1024
@@ -25,6 +27,8 @@ export interface ExecGitOptions {
   input?: string | Buffer
   /** 'utf8' (default) fills stdout/stderr; 'buffer' additionally fills stdoutBuffer. */
   encoding?: 'utf8' | 'buffer'
+  /** Added on top of `gitEnv()`: the GitHub token's header for one clone or push (#150). */
+  env?: Record<string, string>
 }
 
 let debugEnabled = process.env['ARBORIST_DEBUG'] === '1'
@@ -113,7 +117,7 @@ function execGitOnce(
 
   return new Promise((resolve, reject) => {
     const execOptions = {
-      env: gitEnv(),
+      env: options.env ? { ...gitEnv(), ...options.env } : gitEnv(),
       timeout: timeoutMs,
       signal: options.signal,
       maxBuffer: MAX_BUFFER,

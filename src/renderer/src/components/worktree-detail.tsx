@@ -87,7 +87,7 @@ export function WorktreeDetail({
               {worktree.path}
             </button>
           </div>
-          <SyncActions repoPath={project.path} worktree={worktree} />
+          <SyncActions projectId={project.id} repoPath={project.path} worktree={worktree} />
           <Button
             variant="ghost"
             size="icon"

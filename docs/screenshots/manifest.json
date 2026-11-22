@@ -5,18 +5,18 @@
       "light": "8213b7ba5bcc3c46b7872dbb095c42272e9ad82e10c0a9cd4b2747d71668df33"
     },
     "empty": {
-      "dark": "6bf4ec5fd2137374c7ef8137d76b10752552fbc969f7d1924d67c034bd130f4d",
-      "light": "e8491275d2d0bb98772aab2fb05a0c3f5ce3544181ccc6508daa89ac3cbaeba1"
+      "dark": "509b9c2effb78e1a73e880cf1c5bdf703069db6511d5eff9dc76c2aae0ffb0a0",
+      "light": "69bf95765a13a86f7e3eb0585c49fb9a010c2877c27cf541c34e646ebc05ed45"
     },
     "menu": {
-      "dark": "5029e63c857175cc3bc676a84b396b3ce990f448b30a6d621f22ae24f771a609",
-      "light": "5519fda85bb775e75fac174435de27768f1445f2d0564dcb563e8fa304775ad8"
+      "dark": "03e92dc679a139b9b7a8b110ce9da2dabf8565bac4a82d7229fce751b0c96017",
+      "light": "c0bf28f581b8e3cd3466cc7b052a54b0dfbdf9bc545ca1f2557d1dbb7e67a341"
     }
   },
   "add-project-error": {
     "error": {
-      "dark": "05a079f1bab29103497b3174080cf72a2ca250a7a3eedcda941e57e5b04ec34a",
-      "light": "59c9f1764c830c4c7a2e55f8b9a48f9e92726a3373a9e596ee8e89fa312d1e4b"
+      "dark": "4e600eb6f497f7515199e6b17a6a6f33742e936d9459e2cf0c3944ea416cca33",
+      "light": "c1e7a75e7e56df5d38a5e3dc7e2c37d2e52d7da97f56e66cb55a6a8f64723e38"
     }
   },
   "base-ref-picker": {
@@ -35,6 +35,50 @@
     "track-offer": {
       "dark": "1fa9a80445ad284a78fc5542854312836cd25dc2b771cb8938d002d75966c324",
       "light": "8fdc6332704a198b2d71b2e003f2f7abffe76137a6fc4fdc0feb4f0d2b5badfd"
+    }
+  },
+  "clone-already-in-arborist": {
+    "list": {
+      "dark": "7d156d718a31b641bbd999890774f30b0a89cb2bbd20a00a7d841665ad115f72",
+      "light": "20d57aa6e6c7ef1b889af1df90d27d44646732e88a54f19091b87310ffa7322e"
+    },
+    "warned": {
+      "dark": "86cf164d0ef1015fd68d74d40ec8c56c9ee73a57f1bbb1e44558306712ffc8d8",
+      "light": "1c8d383f866888166cc5d6c13ff04a0cd8e4ef91a4c87778a1dedc845562a4f6"
+    }
+  },
+  "clone-from-github": {
+    "cloned": {
+      "dark": "6b0c9790521d303c244443181a912d015b1ef8b923704569dc2e096cc738cc77",
+      "light": "14bbc3a4446601f86dfb9f4e684c03d1f8cd20a55154e6179a4cdd87fc04ccf3"
+    },
+    "code": {
+      "dark": "ab5a028827354828630d1528862aa66c8001463767cc877855586a31bf2c2c32",
+      "light": "cfdd17be2ed5e2edc8b433379087bb3bc170b9786cd2a285327b13140edae35e"
+    },
+    "destination-taken": {
+      "dark": "1f828b1889470862590a37b76a162f6c29584f8b69521dc6d212bf8852cb5f1e",
+      "light": "98c8b760c4f846008ced16d9fd43d7877214ccfa4b60099558a53c7124be3084"
+    },
+    "empty": {
+      "dark": "509b9c2effb78e1a73e880cf1c5bdf703069db6511d5eff9dc76c2aae0ffb0a0",
+      "light": "69bf95765a13a86f7e3eb0585c49fb9a010c2877c27cf541c34e646ebc05ed45"
+    },
+    "filtered": {
+      "dark": "d375b3990a5bc9b24b9056fa36d1fd566d3085bf10a8e82d7a4313aef87eb764",
+      "light": "d72c0eded8b985e3b105d52a55ba8e9283e3fb8efcbc0b41f4afdc580832796e"
+    },
+    "ready": {
+      "dark": "1b2ec3c61b3ad5a0f70ee7e981d64029c24400d8d8c27fe44b9deaae2ca7466f",
+      "light": "2d3048ba500812b4eaf4255254c9f2e900c6b975b3988065b14b3440970c8411"
+    },
+    "repos": {
+      "dark": "c5c6b23cf2bddbad90a273d5eee590c5aaf4079598c2fcc3d5c3545b7bfc0178",
+      "light": "4e06733eead0a329bbb26289d8687ced24bbbde055d1dc88c81f8da0cc1f79fa"
+    },
+    "sign-in": {
+      "dark": "ffb668e6f580aa060a2dc0d0e26d4b1bc768344c6c64417a0bc12ce310c150b0",
+      "light": "a7a0f6c79a4bb8c34efd7b31e1fc5bc71b1d3f942396cd7240c90acb1285b13d"
     }
   },
   "commit-footer-pin": {
@@ -185,8 +229,8 @@
       "light": "56ef660f5d2aeb8149684d062df9408eacf6a32810ba44b28cf767fc91f37bb0"
     },
     "menu": {
-      "dark": "4a40b7a4c9a9e749474bad91030154610f30964848afcdf1e7d8979165fa6328",
-      "light": "4a71ce40614bd54c46e91628129f0d2fc76560f874543f849e46a4fa7a436b7d"
+      "dark": "fddf29af67015934dafd830d9cf722115cd99f0deaeb56b87c1eb5de07f90a9b",
+      "light": "f422ea3ce361ba0a16aa5dba8b6a934920317e821baeb3072059e965d78a9841"
     }
   },
   "git-not-found": {
@@ -239,8 +283,8 @@
   },
   "project-actions": {
     "menu": {
-      "dark": "c2eaf240ec899c8b0231a39452c6050f9335b9d5cfdbaba0e31b273806e31f31",
-      "light": "8fbf771e5fe00186422ceddc927c2d90bf2a28eed637862dd081dafc59da25ea"
+      "dark": "bd4585f6849f180c10a8ecf03082b4b56374f4b2c21a83673804627b3dcad5d3",
+      "light": "551016964c24c5967dc3643bf3ba0b661e27a12eed900ab415fb84c5cd0e599a"
     },
     "remove": {
       "dark": "8e2113a3ea1fa2de2125e1dbcf43c0b5705f0842173d55f7e39860bee80a765c",
@@ -271,14 +315,14 @@
   },
   "project-switcher-groups": {
     "": {
-      "dark": "71160b5d562340b878a5f6378d2073b5f40f103e73c8445b92f9d7870910dcd5",
-      "light": "813562fefece818403036d682d9a1c5b553f212c492d66d3380878cf9c80de5d"
+      "dark": "36c47b7760efcc9baab36b1929e53b715012bc2b8dd90562ed68b85981b5344d",
+      "light": "c68ae5f853ce3639ccf0388f7e72bd4452a459b4463980f77518d4a8a62f921d"
     }
   },
   "project-switcher-order": {
     "": {
-      "dark": "f7faa68da3a70d9e2242b27ff150017c307baa607f186f04aa654bff08b08db0",
-      "light": "4f51375f6908cc84ac83997eaadb521c8423382f0f187970c5cf8c92c5a811dc"
+      "dark": "23c1bcadf8de41df3111410038ded92adac472382f5b74d7d68e33c45811337d",
+      "light": "2a6c68ec22ee1edea74f0b4f09a81fffc7604f4812b13e83b5909ea6e936e55f"
     }
   },
   "prune-worktrees": {
@@ -289,6 +333,24 @@
     "pruned": {
       "dark": "7bee6df511a48a0507339c945744cdb83cbaa61841153fe68522cb65093c7fcc",
       "light": "000517656b4b4fb78872b3c1a3e5ec9558e9f4a4520b814197dc2d36c932ff80"
+    }
+  },
+  "publish-to-github": {
+    "dialog": {
+      "dark": "fb39df857c8c523f60ec1aec462ff910ab08bf5efb6438adab3cbb5cfa0acf97",
+      "light": "c374e8b461b1a7c44a941c6aaecfd2cec3d77de33c40907c969d871215c5bb27"
+    },
+    "filled": {
+      "dark": "76b1e0fdd52b1c67be461d04c1eb5086d9c20075147044eb82df28cadcb1af81",
+      "light": "4621d6f2f04aa84f880d6575fd75ccc6638f255290f85a4dfc90e78c0b779b8b"
+    },
+    "menu": {
+      "dark": "535d9a03c0332e1420d759cf34243b4f744eca6e252981533a7e0c5d7cc44703",
+      "light": "7e1f772edd93401c5f1b48553b5917567362ab928f1119443b02be4da9397ea0"
+    },
+    "published": {
+      "dark": "2c5b3e048a9cbf487a7849c3130c841e0ce53180f62f479d87b4312b25da3893",
+      "light": "0f6ee415e8749ee1761a95a79f43f0dbca7fc0eda2187ce2c406af172439ba15"
     }
   },
   "pull-push": {
@@ -371,54 +433,58 @@
   },
   "settings": {
     "about": {
-      "dark": "5d08543bb5748ad640a7d420a8e17cd8a220d7e1e3d851c75b2e06f60070ea0a",
-      "light": "a01113b18d134a02a5702675dd6c5ec7dedbaaff0765ce08898f363cb664b2ce"
+      "dark": "cd61ef6823f4ec5b41949cabf545366b6d9b1eda8a447195fed0b17785e80853",
+      "light": "b439ae53143564f8027c02300679b89224386abc7ad74cbfeb785924fa68292e"
     },
     "developer": {
-      "dark": "8b8444ada20de80c4f9c08395b334c472bc99d0f31a5ea2287a2e33ffd0f8b4a",
-      "light": "c3723d7f769291785a9788d13b8f3502e7279c072cf63e1c7459f14bdb440720"
+      "dark": "cfeb5f3d317244cb989465035d6da1cc5ddb41a2532243de4f76eed4d792ad57",
+      "light": "108829ad307cd846bb712439604eb19b2f5244c7d9a92869683216271feda7ef"
     },
     "general": {
-      "dark": "05cbbeab36e4e30141cd271a6dac1662dcb5174ef2ab56d07d82e60c8fdb4652",
-      "light": "a00fb6452f6c70c417fec949a2c327b316dd408124f0dfab7f620f202a071368"
+      "dark": "4f9390ddedc05cc10d0bf7fbec3fe172ffa365988c7ab768abd5590040389123",
+      "light": "2920769466b08b81bb87c44c993dafba53619110b5c802895e005e373d5b2e47"
+    },
+    "github": {
+      "dark": "20a64ba3f02da329e524b71f0c46155d12a7016e94f3b3e54e8c409119b7a516",
+      "light": "4cde298fe417f69603b40083c422db7177ffee0baff308511591b0e433c3a0e3"
     },
     "preset-editor": {
-      "dark": "774e9c9cbb2ded0f0c4e3268daec72b51b9bdaaba55ba8d17d8708997626a8c8",
-      "light": "f99fb6860367b88c174699885eea709621fe58a8869b7e53f8c6df29b4cd98be"
+      "dark": "6cf71bb6503108a3253251fbfa238b2414a732ba2c6d826e7058a28c70bb5e2a",
+      "light": "409c674e62e5bedc3298e0a7bbf0fb1d44e1cf0e0ec63abe0cd4bfed1f96fd90"
     },
     "preset-icons": {
-      "dark": "6a21efe7bd7294dc0ba7fdf99ad85102aa088b2231c53b931392de669e23a480",
-      "light": "9bcb9cfc76f03cb723257a55c7a4f1c0a4462ab5e165bfd29128be5c8b8a91bc"
+      "dark": "ae23576a93b8d05b3f46a12173960568250129477900abb5188e3ce862eef118",
+      "light": "fffe6eff4174cb211167a9755ee630ab7a4ad1c6a9678ce81a14961dd1d98c2d"
     },
     "presets": {
-      "dark": "9b6d50224891bf9312e128f9484b930f3759ea95e61bdfb8ae95e4060a791f90",
-      "light": "722307081267cc3ac43a43379d7c7febf1f6c2f697c80231ee15fd0a9bd943fe"
+      "dark": "499359e7a7a81dd115c2792aa75b075ef04bae33a6db7fac6d6ec14f516617be",
+      "light": "d1d7cc0ce88e2518a3c825e1ae5f4dc542793e62a974f3655cfa1584efee0593"
     }
   },
   "settings-about-error": {
     "error": {
-      "dark": "40812adfa84bdfc4fd311e29fd2d85111c9e32b02bf3b7a91a16134a8273a1ed",
-      "light": "695348cafcc28c4e435fd867172cfdafd4cffcc6df80ea31dd040fe0d241304a"
+      "dark": "8e8abbc07aa152eb8d1a6e5603c1daade4f7d39a4e9150ff51af775c007155fa",
+      "light": "f4ca10d7e38acf78587261f77430151afa52fc041ceea639922700f6d1006a94"
     }
   },
   "settings-about-missing-manifest": {
     "error": {
-      "dark": "63fa5e4779c457b96b5d4cc019243bf20da05b9bbd6a79f001cdf112cf6c7624",
-      "light": "4da00de764e26d986c72450cdb237108749f61b5365f2fc6a74075ae9974d009"
+      "dark": "3f6d3c491dbd313127b4836d529df104f28f0a2a1ca409294250f5ce6235acf6",
+      "light": "4a8c5bf1be3910a1ea730b90bf13a830ec0b5cc3c11650e62a6997444abe7306"
     }
   },
   "settings-worktree-location": {
     "beside": {
-      "dark": "fce6edc3303984fb966cc9fdf8edc87850d69cdd23d97fdfaa365f6370b7b157",
-      "light": "99542acbef014a5ce496654e08b65775fcfd9e6be15bd4c06ac10fd7de844079"
+      "dark": "a8ea4a953f45d455a07edf0cc4a842106a5175e5974a867b7d021edcbbeeb3ee",
+      "light": "1eee0828beaec8eedf22cfffd2e92d3d71af530447d7e9dfe9f6bd804b6a1396"
     },
     "central-chosen": {
-      "dark": "8609a64c411b5c677e016dc814fb06bb022aab422c4a0feb53f5f543213158cc",
-      "light": "15f999d09d8a06a91ea9f4a78afadafd2d2645ba924d56fe31c7e93f031c9765"
+      "dark": "d63ef155a4c1d22f717ccc132b37344c443a40a7490ac112ab7205e7c547e432",
+      "light": "5b9bf4fde98ed6b0f1e979becc22e7ec284982fad9def74e07e2284a4610f669"
     },
     "central-empty": {
-      "dark": "82e657576d4c71aef606f16dbfcfb154352c6d0bd352620964f7179e9fc9fb73",
-      "light": "bd90220567dc147c5859f4f9275b7b989f30d39bbff56b6fdf56a9226f528fb9"
+      "dark": "8f8a1b24cc38a59b4ca5e77ce075060725ea4e207163e152319727362b548f6a",
+      "light": "62711b35b68d4d0fdd8ce5a22a613fadd053b43540339a0adf413e5be0ce8e9c"
     }
   },
   "setup-automation": {
@@ -455,8 +521,8 @@
   },
   "shell": {
     "": {
-      "dark": "6bf4ec5fd2137374c7ef8137d76b10752552fbc969f7d1924d67c034bd130f4d",
-      "light": "e8491275d2d0bb98772aab2fb05a0c3f5ce3544181ccc6508daa89ac3cbaeba1"
+      "dark": "509b9c2effb78e1a73e880cf1c5bdf703069db6511d5eff9dc76c2aae0ffb0a0",
+      "light": "69bf95765a13a86f7e3eb0585c49fb9a010c2877c27cf541c34e646ebc05ed45"
     }
   },
   "shell-panels": {
@@ -509,8 +575,8 @@
   },
   "store-corrupt": {
     "": {
-      "dark": "9d9d79670fad0b41742bc296b79185594b85096385d0c902b9e87729d5e1da02",
-      "light": "50e15a56ee7a0ee510d824bd0fcaebaf12c69ab5dd6650cc7afa904271f79f31"
+      "dark": "bcc6542cf1cc1cff9324ab6ca12aa008688d14232d7f6729b535b9e5fd2b3be7",
+      "light": "5749e7cceac27ff3fe3f489c14b86c3895b06460cb8fbc3b18279d56da91cb38"
     }
   },
   "switch-branch": {
@@ -581,38 +647,38 @@
   },
   "update-check-tab": {
     "up-to-date": {
-      "dark": "1c5088f28f46c307a7f4d8807d5ba532014eceb1d202e9d20287289e4f04c7f6",
-      "light": "503f5854e86a6537fc45f0528355627f635b82100755042c2593b55c13ef3e17"
+      "dark": "32c063d9a78870af8ef297f8f78f30905aa52bb564f3dce4a70c2db2a4918537",
+      "light": "79044c46c067211b7caafd3506468beb3b1195d97953255fadbcb8b3cb0b40d8"
     }
   },
   "update-downloading": {
     "": {
-      "dark": "634d623fb4f1b77b31a155dd8450c346aef9175de1e6f717dccdf5e65fa8ef4b",
-      "light": "0326e43df6bd8fe3751355aecd53a9cbfe3d21eac7bcb9d72f338d5f54fb2a29"
+      "dark": "2ac3ce013429861a09cec3db2a27b11303edf28b5880766a862ca2719e87faa3",
+      "light": "60e2b61dbe44d0ce789b2932155ae0274990797af44da8546fee687dccc7cfee"
     }
   },
   "update-error": {
     "": {
-      "dark": "ce399641e03637bfd9c577ae35c6d7bd5dfc219d35a412dbbcbb67e258666903",
-      "light": "496b47567908ab004a92d816c58b3d0082b6cf6aae0935c8398495f8460db2f5"
+      "dark": "17ed18a80c392046cb93b29e7838526f33b2fc1d7e1cba2a2fb7544e17e0f832",
+      "light": "b66094c473a83c6b5b7de5c2efe12b2f31093ef82170b31464eaa2713eb7607f"
     }
   },
   "update-error-missing-manifest": {
     "": {
-      "dark": "82a4dbad6cd3829a96c93ae38388ff687cbdf6cfe04a0117a7be2a2bf9777314",
-      "light": "53d0bf57995d9fd320c79c502986b14de7a5c23fab4d77375601289b56e4d804"
+      "dark": "5dfd1a7f17d113ed4d70e0b9dd1147980d50af58bcbbb78a4d75cedd0075776f",
+      "light": "ece761308276358f5bab2110e9ad79473830023176a4e02c2c87561214475d8a"
     }
   },
   "update-ready": {
     "": {
-      "dark": "ba4bd7444ccf299fc1f7ca66c1d0634c7618a1373ef70d511f6e50522ed9e33c",
-      "light": "b93e1903e0e65c61e1a895efb0f97a7b440b948818aa884bccbc6bb18be81ed7"
+      "dark": "d10f53cb7fa13ca949dbba97fce4a23b81d637c17e202e508f365a482ca5a66e",
+      "light": "9ef6af94f0022187b0dc419125afd69e6d96beb359938759724fce6452848937"
     }
   },
   "update-up-to-date": {
     "": {
-      "dark": "2ffdb63f1d62fa65cec8d52c12d32cc26d2b620b7ba1f9b52563d21e1ee816da",
-      "light": "8a3e85ba6167db49a1d2e30b51be77ddaa3e22f410ca22e3e9734e45030088ab"
+      "dark": "d16900ccda48956299d139f99402b4852e46b7dc48682d3f72751cc88566714c",
+      "light": "799632d5f4be38e6b40bd99d70b6efa047904f804424e90e8fd14d1c1102289b"
     }
   },
   "working-tree-discard": {

@@ -15,7 +15,7 @@ import {
 
 describe('parseRemoteUrl', () => {
   it('reads HTTPS, SSH and scp-like GitHub URLs', () => {
-    const expected = { host: 'github.com', owner: 'zaccomode' }
+    const expected = { host: 'github.com', owner: 'zaccomode', fullName: 'zaccomode/arborist-2' }
     expect(parseRemoteUrl('https://github.com/zaccomode/arborist-2.git')).toEqual(expected)
     expect(parseRemoteUrl('https://user:token@GitHub.com/zaccomode/arborist-2')).toEqual(expected)
     expect(parseRemoteUrl('ssh://git@github.com:22/zaccomode/arborist-2.git')).toEqual(expected)
@@ -25,14 +25,16 @@ describe('parseRemoteUrl', () => {
   it('takes the top-level namespace on hosts with subgroups', () => {
     expect(parseRemoteUrl('git@gitlab.com:team/sub/repo.git')).toEqual({
       host: 'gitlab.com',
-      owner: 'team'
+      owner: 'team',
+      fullName: 'team/sub/repo'
     })
   })
 
   it('has no owner when the repository sits at the root of the host', () => {
     expect(parseRemoteUrl('https://git.example.com/repo.git')).toEqual({
       host: 'git.example.com',
-      owner: null
+      owner: null,
+      fullName: null
     })
   })
 
@@ -46,7 +48,7 @@ describe('parseRemoteUrl', () => {
       'ssh://user:pa/ss@github.com:22/acme/x.git'
     ]) {
       const location = parseRemoteUrl(url)
-      expect(location, url).toEqual({ host: 'github.com', owner: 'acme' })
+      expect(location, url).toEqual({ host: 'github.com', owner: 'acme', fullName: 'acme/x' })
       const label = groupLabel(location)
       for (const secret of ['user', 's3cr3t', 'pa', 'ss', 'rd']) {
         expect(label, url).not.toContain(secret)
@@ -57,7 +59,8 @@ describe('parseRemoteUrl', () => {
   it('treats ssh.github.com, GitHub over port 443, as GitHub (#166)', () => {
     expect(parseRemoteUrl('ssh://git@ssh.github.com:443/acme/x')).toEqual({
       host: 'github.com',
-      owner: 'acme'
+      owner: 'acme',
+      fullName: 'acme/x'
     })
   })
 
@@ -65,11 +68,13 @@ describe('parseRemoteUrl', () => {
     const resolve = (host: string): string => (host === 'github-work' ? 'github.com' : host)
     expect(parseRemoteUrl('git@github-work:acme/x.git', resolve)).toEqual({
       host: 'github.com',
-      owner: 'acme'
+      owner: 'acme',
+      fullName: 'acme/x'
     })
     expect(parseRemoteUrl('ssh://git@github-work/acme/x.git', resolve)).toEqual({
       host: 'github.com',
-      owner: 'acme'
+      owner: 'acme',
+      fullName: 'acme/x'
     })
     // An alias that resolves to GitHub's port-443 endpoint is GitHub too.
     expect(parseRemoteUrl('git@gh443:acme/x.git', () => 'ssh.github.com')?.host).toBe('github.com')
@@ -78,8 +83,21 @@ describe('parseRemoteUrl', () => {
   })
 
   it('has no owner for an absolute path on an scp-like host (#166)', () => {
-    expect(parseRemoteUrl('git@host:/srv/repo.git')).toEqual({ host: 'host', owner: null })
-    expect(parseRemoteUrl('git@host:/srv/team/repo.git')).toEqual({ host: 'host', owner: null })
+    expect(parseRemoteUrl('git@host:/srv/repo.git')).toEqual({
+      host: 'host',
+      owner: null,
+      fullName: null
+    })
+    expect(parseRemoteUrl('git@host:/srv/team/repo.git')).toEqual({
+      host: 'host',
+      owner: null,
+      fullName: null
+    })
+  })
+
+  it('gives the full name without `.git`, keeping subgroups', () => {
+    expect(parseRemoteUrl('https://github.com/acme/Widgets.GIT')?.fullName).toBe('acme/Widgets')
+    expect(parseRemoteUrl('git@gitlab.com:team/sub/repo')?.fullName).toBe('team/sub/repo')
   })
 
   it('treats local paths and file URLs as no remote at all', () => {
@@ -94,9 +112,13 @@ describe('parseRemoteUrl', () => {
 
 describe('groupLabel', () => {
   it('names a GitHub group by owner alone, other hosts by owner and host', () => {
-    expect(groupLabel({ host: 'github.com', owner: 'acme' })).toBe('acme')
-    expect(groupLabel({ host: 'gitlab.com', owner: 'acme' })).toBe('acme (gitlab.com)')
-    expect(groupLabel({ host: 'git.example.com', owner: null })).toBe('git.example.com')
+    expect(groupLabel({ host: 'github.com', owner: 'acme', fullName: 'acme/x' })).toBe('acme')
+    expect(groupLabel({ host: 'gitlab.com', owner: 'acme', fullName: 'acme/x' })).toBe(
+      'acme (gitlab.com)'
+    )
+    expect(groupLabel({ host: 'git.example.com', owner: null, fullName: null })).toBe(
+      'git.example.com'
+    )
     expect(groupLabel(null)).toBe('Local')
   })
 })
@@ -140,7 +162,7 @@ describe('groupProjects', () => {
 
   it('keeps an owner called Local apart from the Local group', () => {
     const groups = groupProjects([project('1', 'a'), project('2', 'b')], {
-      '1': { host: 'github.com', owner: 'Local' } satisfies RemoteLocation,
+      '1': { host: 'github.com', owner: 'Local', fullName: 'Local/x' } satisfies RemoteLocation,
       '2': null
     })
     expect(groups.map((group) => [group.label, group.local])).toEqual([
@@ -252,11 +274,13 @@ describe('resolveRemoteLocation', () => {
     }
     expect(await resolveRemoteLocation('git@github-work:acme/x.git', lookup)).toEqual({
       host: 'github.com',
-      owner: 'acme'
+      owner: 'acme',
+      fullName: 'acme/x'
     })
     expect(await resolveRemoteLocation('https://github.com/acme/x', lookup)).toEqual({
       host: 'github.com',
-      owner: 'acme'
+      owner: 'acme',
+      fullName: 'acme/x'
     })
     expect(await resolveRemoteLocation(null, lookup)).toBeNull()
     expect(lookups).toEqual(['github-work'])

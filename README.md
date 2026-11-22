@@ -12,6 +12,7 @@ tabs.
 - **Git worktree management:** Create new worktrees from new or remote branches
 - **Setup automations:** Automatically execute terminal commands whenever a new worktree is created. Useful for installing dependencies or copying environment variables.
 - **"Open in" buttons:** Setup buttons that live on the overview tab for each worktree, allowing you to quickly open that worktree in your terminal, file explorer, code editor, or even on GitHub.
+- **GitHub sign-in:** Clone any repository the Arborist GitHub App can reach, or publish a local project as a new GitHub repository, without leaving the app.
 - **Working tree and commit graph support:** see a full git history, relative to the selected worktree. Drill down into previous commits and diffs.
 
 ## Installing

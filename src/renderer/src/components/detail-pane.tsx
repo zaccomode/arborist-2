@@ -1,7 +1,13 @@
 import { GitBranch, TreePine } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
-export function NoProjects({ onAddProject }: { onAddProject: () => void }): React.JSX.Element {
+export function NoProjects({
+  onAddProject,
+  onCloneProject
+}: {
+  onAddProject: () => void
+  onCloneProject: () => void
+}): React.JSX.Element {
   return (
     <div className="flex h-full flex-col items-center justify-center" data-testid="no-projects">
       <TreePine className="size-10 text-muted-foreground" />
@@ -9,9 +15,12 @@ export function NoProjects({ onAddProject }: { onAddProject: () => void }): Reac
       <p className="mt-1 text-sm text-muted-foreground">
         Add a git repository to see and manage its worktrees.
       </p>
-      <Button className="mt-6" onClick={onAddProject}>
-        Add project…
-      </Button>
+      <div className="mt-6 flex gap-2">
+        <Button onClick={onAddProject}>Add local repository…</Button>
+        <Button variant="outline" onClick={onCloneProject}>
+          Clone from GitHub…
+        </Button>
+      </div>
     </div>
   )
 }

@@ -103,7 +103,12 @@ export const settingsSchema = z.object({
   worktreeSort: z.enum(['alphabetical', 'recently-updated']).default('alphabetical'),
   /** Pins the main worktree above the rest of the list. On by default, per #77. */
   worktreeSortMainFirst: z.boolean().default(true),
-  remoteBranchSort: z.enum(['alphabetical', 'recently-updated']).default('alphabetical')
+  remoteBranchSort: z.enum(['alphabetical', 'recently-updated']).default('alphabetical'),
+  /**
+   * The folder the last GitHub clone went into (#150), offered first next
+   * time. Null until the first clone.
+   */
+  lastCloneFolder: z.string().nullable().default(null)
 })
 
 /**

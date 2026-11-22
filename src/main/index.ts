@@ -1,4 +1,4 @@
-import { app, screen, shell, BrowserWindow, nativeTheme } from 'electron'
+import { app, net, safeStorage, screen, shell, BrowserWindow, nativeTheme } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
@@ -24,6 +24,10 @@ import { PresetService } from './services/presets'
 import { AutomationRunner } from './services/automation'
 import { UpdateService } from './services/updates'
 import { WorktreeWatcher } from './services/watch/worktree-watcher'
+import { GitHubService } from './services/github/github-service'
+import { HttpGitHubApi } from './services/github/github-api'
+import { FAKE_TOKEN, FakeGitHubApi } from './services/github/fake-github'
+import { TokenStore } from './services/github/token-store'
 
 const DEFAULT_WINDOW: WindowState = { width: 1100, height: 720, maximized: false }
 
@@ -98,6 +102,50 @@ function scriptedUpdateStatus(): UpdateStatus | undefined {
     default:
       return undefined
   }
+}
+
+/**
+ * The GitHub service (#150), against the real GitHub — or, when a screenshot
+ * scenario or e2e test names a fixture in `ARBORIST_FAKE_GITHUB`, against a
+ * fake that treats opening the verification
+ * page as the user approving the code.
+ */
+async function createGitHubService(
+  store: Store,
+  git: GitRunner,
+  projects: ProjectService,
+  gitService: GitService
+): Promise<GitHubService> {
+  const fixture = process.env['ARBORIST_FAKE_GITHUB']
+  const shared = {
+    git,
+    store,
+    projects,
+    remoteUrl: (repoPath: string) => gitService.remoteUrl(repoPath)
+  }
+  if (fixture) {
+    const api = await FakeGitHubApi.load(fixture)
+    // Kept in the scenario's throwaway user-data folder, unencrypted: there
+    // is no keychain to ask under xvfb, and nothing real to protect.
+    const tokens = new TokenStore(join(app.getPath('userData'), 'github-token.bin'), {
+      isEncryptionAvailable: () => true,
+      encryptString: (plain) => Buffer.from(plain),
+      decryptString: (encrypted) => encrypted.toString()
+    })
+    if (api.signedIn) await tokens.write(FAKE_TOKEN)
+    return new GitHubService({
+      ...shared,
+      api,
+      tokens,
+      openExternal: async () => api.approve()
+    })
+  }
+  return new GitHubService({
+    ...shared,
+    api: new HttpGitHubApi((input, init) => net.fetch(input, init)),
+    tokens: new TokenStore(join(app.getPath('userData'), 'github-token.bin'), safeStorage),
+    openExternal: (url) => shell.openExternal(url)
+  })
 }
 
 let store: Store | null = null
@@ -231,14 +279,22 @@ app.whenReady().then(async () => {
   )
   watcher = worktreeWatcher
 
+  const projects = new ProjectService(store, gitRunner)
+  // Every mutating operation opens a suppression window on the watcher
+  // before it runs, so Arborist's own write is never read back in as an
+  // external change — see `SuppressWatcher`'s doc comment in git-service.ts.
+  const gitService = new GitService(gitRunner, (worktreePath) =>
+    worktreeWatcher.suppress(worktreePath)
+  )
+
   registerIpcHandlers({
     gitRunner,
     store,
-    projects: new ProjectService(store, gitRunner),
+    projects,
     // Every mutating operation opens a suppression window on the watcher
     // before it runs, so Arborist's own write is never read back in as an
     // external change — see `SuppressWatcher`'s doc comment in git-service.ts.
-    gitService: new GitService(gitRunner, (worktreePath) => worktreeWatcher.suppress(worktreePath)),
+    gitService,
     presets: new PresetService(store, gitRunner, (script, cwd, values) =>
       // A shell preset is a one-command script with the worktree as its
       // working directory, so it rides the automation runner rather than
@@ -247,7 +303,8 @@ app.whenReady().then(async () => {
     ),
     automation,
     updates,
-    watcher: worktreeWatcher
+    watcher: worktreeWatcher,
+    github: await createGitHubService(store, gitRunner, projects, gitService)
   })
 
   const windowStatePath = join(userData, 'window-state.json')
