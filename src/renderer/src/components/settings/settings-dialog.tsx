@@ -13,6 +13,7 @@ import { invoke } from '@/api/client'
 import { AboutSettings } from '@/components/settings/about-settings'
 import { DeveloperSettings } from '@/components/settings/developer-settings'
 import { GeneralSettings } from '@/components/settings/general-settings'
+import { GitHubSettings } from '@/components/settings/github-settings'
 import { PresetSettings } from '@/components/settings/preset-settings'
 import { returnFocusToMenu } from '@/lib/menu-opens-dialog'
 
@@ -62,6 +63,7 @@ export function SettingsDialog({
           >
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="presets">Presets</TabsTrigger>
+            <TabsTrigger value="github">GitHub</TabsTrigger>
             <TabsTrigger value="developer">Developer</TabsTrigger>
             <TabsTrigger value="about">About</TabsTrigger>
           </TabsList>
@@ -81,6 +83,12 @@ export function SettingsDialog({
             className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pt-4"
           >
             <PresetSettings />
+          </TabsContent>
+          <TabsContent
+            value="github"
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pt-4"
+          >
+            <GitHubSettings />
           </TabsContent>
           <TabsContent
             value="developer"

@@ -13,6 +13,7 @@ import { shouldAutoFetch } from '@shared/auto-refresh'
 import { splitDisplayPath } from '@shared/working-tree'
 import { worktreeTitle } from '@shared/format'
 import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { Shell } from '@/components/shell'
 import { Sidebar } from '@/components/sidebar'
 import { NoProjects, NoWorktreeSelected } from '@/components/detail-pane'
@@ -26,6 +27,8 @@ import { ProjectSettingsDialog } from '@/components/project-settings-dialog'
 import { AutomationConsole } from '@/components/automation-console'
 import { SetupToasts } from '@/components/setup-toasts'
 import { SettingsDialog } from '@/components/settings/settings-dialog'
+import { CloneRepositoryDialog } from '@/components/clone-repository-dialog'
+import { PublishRepositoryDialog } from '@/components/publish-repository-dialog'
 import { CommitInspector } from '@/components/commit-inspector'
 import { DiffPanel } from '@/components/diff-panel'
 import {
@@ -90,6 +93,8 @@ function App(): React.JSX.Element | null {
   const [deletingWorktree, setDeletingWorktree] = useState(false)
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [cloneOpen, setCloneOpen] = useState(false)
+  const [publishOpen, setPublishOpen] = useState(false)
 
   const { projectId, selectProject, selectWorktree, selectRemoteBranch, hydrated } = useSelection()
   const selectedWorktree = useSelectedWorktree()
@@ -370,6 +375,8 @@ function App(): React.JSX.Element | null {
             selectedId={selected?.id ?? null}
             onSelect={selectProject}
             onAddProject={() => void handleAddProject()}
+            onCloneProject={() => setCloneOpen(true)}
+            onPublishProject={() => setPublishOpen(true)}
             onNewWorktree={openCreateWorktree}
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenProjectSettings={() => setProjectSettingsOpen(true)}
@@ -420,7 +427,12 @@ function App(): React.JSX.Element | null {
         }
         main={
           <>
-            {!selected && <NoProjects onAddProject={() => void handleAddProject()} />}
+            {!selected && (
+              <NoProjects
+                onAddProject={() => void handleAddProject()}
+                onCloneProject={() => setCloneOpen(true)}
+              />
+            )}
             {selected && !worktree && !remoteBranch && (
               <NoWorktreeSelected onNewWorktree={openCreateWorktree} />
             )}
@@ -509,6 +521,41 @@ function App(): React.JSX.Element | null {
       <SetupToasts />
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+
+      <CloneRepositoryDialog
+        open={cloneOpen}
+        onOpenChange={setCloneOpen}
+        onCloned={async (project) => {
+          // Locations before the list, as for adding a local one, so the new
+          // project lands straight in its owner's group (#166).
+          await queryClient.invalidateQueries({ queryKey: queryKeys.projectRemoteLocations })
+          await queryClient.invalidateQueries({ queryKey: queryKeys.projects, exact: true })
+          selectProject(project.id)
+          setCloneOpen(false)
+        }}
+      />
+
+      {selected && (
+        <PublishRepositoryDialog
+          key={selected.id}
+          open={publishOpen}
+          onOpenChange={setPublishOpen}
+          project={selected}
+          currentBranch={worktrees.data?.find((entry) => entry.isMain)?.branch ?? null}
+          onPublished={async (result) => {
+            setPublishOpen(false)
+            toast.success(`Published to ${result.fullName}`)
+            await queryClient.invalidateQueries({ queryKey: queryKeys.projectRemoteLocations })
+            await queryClient.invalidateQueries({ queryKey: queryKeys.worktrees(selected.path) })
+            await queryClient.invalidateQueries({
+              queryKey: queryKeys.remoteBranches(selected.path)
+            })
+            await queryClient.invalidateQueries({
+              queryKey: queryKeys.localBranches(selected.path)
+            })
+          }}
+        />
+      )}
 
       {selected && (
         <CreateWorktreeDialog

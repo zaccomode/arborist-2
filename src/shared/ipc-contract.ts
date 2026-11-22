@@ -29,10 +29,27 @@ import type { AutomationEvent } from './automation'
 import type { PresetCatalogue, PresetRunResult, ResolvedPreset } from './presets'
 import type { SubstitutionValues } from './substitution'
 import type { UpdateStatus, UpdateSupport } from './updates'
+import type {
+  CloneProtocol,
+  DeviceCode,
+  GitHubAccount,
+  GitHubOwner,
+  GitHubPage,
+  GitHubRepo,
+  GitHubStatus,
+  PublishOptions,
+  PublishResult
+} from './github'
 
 export interface IpcInvokeContract {
-  /** Native folder picker. Resolves null when the user cancels. */
-  'system:pickFolder': { args: []; result: string | null }
+  /**
+   * Native folder picker. Resolves null when the user cancels. `defaultPath`
+   * is where it opens, e.g. the folder the last clone went into.
+   */
+  'system:pickFolder': {
+    args: [options?: { title?: string; defaultPath?: string | null }]
+    result: string | null
+  }
   /** Native application picker: a bundle on macOS, an executable on Windows. */
   'system:pickApplication': { args: []; result: string | null }
   'projects:list': { args: []; result: Repository[] }
@@ -45,6 +62,36 @@ export interface IpcInvokeContract {
    * credentials (#166).
    */
   'projects:remoteLocations': { args: []; result: Record<string, RemoteLocation | null> }
+  /** Who Arborist is signed in to GitHub as, if anyone (#150). Never the token. */
+  'github:status': { args: []; result: GitHubStatus }
+  /**
+   * Starts the device flow: a code for the user to enter on GitHub's
+   * verification page. Follow with `github:finishSignIn`.
+   */
+  'github:startSignIn': { args: []; result: DeviceCode }
+  /**
+   * Resolves once the code from `github:startSignIn` is approved, or rejects
+   * when it is denied, expires, or `github:cancelSignIn` stops it.
+   */
+  'github:finishSignIn': { args: []; result: GitHubAccount }
+  'github:cancelSignIn': { args: []; result: void }
+  /** Opens the verification page, or the page for installing the app on another account. */
+  'github:openPage': { args: [page: GitHubPage]; result: void }
+  'github:signOut': { args: []; result: void }
+  /** Every repository the app is installed on that the user can see. */
+  'github:repos': { args: []; result: GitHubRepo[] }
+  /** The accounts and organisations a project can be published to. */
+  'github:owners': { args: []; result: GitHubOwner[] }
+  /**
+   * Clones a repository from the last `github:repos` listing into
+   * `<parentFolder>/<name>`, then adds it as a project.
+   */
+  'github:clone': {
+    args: [repoId: number, protocol: CloneProtocol, parentFolder: string]
+    result: Repository
+  }
+  /** Creates a GitHub repository for a project with no remote, adds it as origin, and pushes. */
+  'github:publish': { args: [projectId: string, options: PublishOptions]; result: PublishResult }
   /** Lists a repository's worktrees, each enriched with its current status. */
   'worktrees:list': { args: [repoPath: string]; result: Worktree[] }
   'branches:exists': { args: [repoPath: string, branch: string]; result: boolean }
@@ -359,6 +406,16 @@ const CHANNELS: Record<IpcChannel, true> = {
   'projects:add': true,
   'projects:remove': true,
   'projects:remoteLocations': true,
+  'github:status': true,
+  'github:startSignIn': true,
+  'github:finishSignIn': true,
+  'github:cancelSignIn': true,
+  'github:openPage': true,
+  'github:signOut': true,
+  'github:repos': true,
+  'github:owners': true,
+  'github:clone': true,
+  'github:publish': true,
   'worktrees:list': true,
   'branches:exists': true,
   'branches:remote': true,

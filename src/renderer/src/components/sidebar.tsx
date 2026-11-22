@@ -10,6 +10,8 @@ export function Sidebar({
   selectedId,
   onSelect,
   onAddProject,
+  onCloneProject,
+  onPublishProject,
   onNewWorktree,
   onOpenSettings,
   onOpenProjectSettings,
@@ -27,6 +29,8 @@ export function Sidebar({
   selectedId: string | null
   onSelect: (id: string) => void
   onAddProject: () => void
+  onCloneProject: () => void
+  onPublishProject: () => void
   onNewWorktree: () => void
   onOpenSettings: () => void
   onOpenProjectSettings: () => void
@@ -51,6 +55,8 @@ export function Sidebar({
         selectedId={selectedId}
         onSelect={onSelect}
         onAddProject={onAddProject}
+        onCloneProject={onCloneProject}
+        onPublishProject={onPublishProject}
         onOpenSettings={onOpenSettings}
         onFetch={onFetch}
         fetching={fetching}

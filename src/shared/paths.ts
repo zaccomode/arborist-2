@@ -98,3 +98,18 @@ export function parentPath(platform: NodeJS.Platform, path: string): string {
   const result = parentEnd === 0 ? path.slice(0, index) : path.slice(0, parentEnd)
   return platform === 'win32' && /^[a-zA-Z]:$/.test(result) ? `${result}\\` : result
 }
+
+/**
+ * `parent` and `name` joined with the platform's separator, for showing where
+ * something will be created before main creates it with `path.join`. Only one
+ * separator between them, whether or not `parent` ends in one.
+ */
+export function childPath(
+  parent: string,
+  name: string,
+  platform: NodeJS.Platform = process.platform
+): string {
+  const separator = platform === 'win32' ? '\\' : '/'
+  const trimmed = parent.replace(platform === 'win32' ? /[\\/]+$/ : /\/+$/, '')
+  return `${trimmed || (parent ? separator : '')}${trimmed ? separator : ''}${name}`
+}

@@ -24,7 +24,7 @@ async function launch(
 async function addProject(app: ElectronApplication): Promise<void> {
   const window = await app.firstWindow()
   await window.getByTestId('project-switcher').click()
-  await window.getByRole('menuitem', { name: 'Add project…' }).click()
+  await window.getByRole('menuitem', { name: 'Add local repository…' }).click()
 }
 
 type Window = Awaited<ReturnType<ElectronApplication['firstWindow']>>

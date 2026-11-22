@@ -12,6 +12,7 @@ import type { PresetService } from '../services/presets'
 import type { AutomationRunner } from '../services/automation'
 import type { UpdateService } from '../services/updates'
 import type { WorktreeWatcher } from '../services/watch/worktree-watcher'
+import type { GitHubService } from '../services/github/github-service'
 import { commitDraftKey, worktreeNoteKey } from '../../shared/persisted'
 import { resolveWorktreeLocation } from '../../shared/worktree-location'
 import { mapWithConcurrency } from '../../shared/concurrency'
@@ -44,6 +45,7 @@ export interface IpcDeps {
   automation: AutomationRunner
   updates: UpdateService
   watcher: WorktreeWatcher
+  github: GitHubService
 }
 
 export function registerIpcHandlers({
@@ -54,11 +56,12 @@ export function registerIpcHandlers({
   presets,
   automation,
   updates,
-  watcher
+  watcher,
+  github
 }: IpcDeps): void {
   const sshHosts = new SshHostResolver()
 
-  handle('system:pickFolder', async () => {
+  handle('system:pickFolder', async (options) => {
     // A native dialog cannot be driven by Playwright, so e2e tests and
     // screenshot scenarios say up front what the user would have chosen.
     const scripted = process.env['ARBORIST_PICK_FOLDER']
@@ -68,9 +71,13 @@ export function registerIpcHandlers({
     const result = window
       ? await dialog.showOpenDialog(window, {
           properties: ['openDirectory', 'createDirectory'],
-          title: 'Choose a git repository'
+          title: options?.title ?? 'Choose a git repository',
+          defaultPath: options?.defaultPath ?? undefined
         })
-      : await dialog.showOpenDialog({ properties: ['openDirectory'] })
+      : await dialog.showOpenDialog({
+          properties: ['openDirectory'],
+          defaultPath: options?.defaultPath ?? undefined
+        })
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
 
@@ -107,6 +114,19 @@ export function registerIpcHandlers({
       })
     )
   })
+
+  handle('github:status', () => github.status())
+  handle('github:startSignIn', () => github.startSignIn())
+  handle('github:finishSignIn', () => github.finishSignIn())
+  handle('github:cancelSignIn', () => github.cancelSignIn())
+  handle('github:openPage', (page) => github.openPage(page))
+  handle('github:signOut', () => github.signOut())
+  handle('github:repos', () => github.repos())
+  handle('github:owners', () => github.owners())
+  handle('github:clone', (repoId, protocol, parentFolder) =>
+    github.clone(repoId, protocol, parentFolder)
+  )
+  handle('github:publish', (projectId, options) => github.publish(projectId, options))
 
   handle('worktrees:list', (repoPath) =>
     gitService.listWorktrees(repoPath, store.data.settings.refreshConcurrency)

@@ -143,7 +143,7 @@ async function scrollSidebarToBottom(window: Page): Promise<void> {
  */
 async function addProject(window: Page): Promise<void> {
   await window.getByTestId('project-switcher').click()
-  await window.getByRole('menuitem', { name: 'Add project…' }).click()
+  await window.getByRole('menuitem', { name: 'Add local repository…' }).click()
   await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
 }
 
@@ -186,6 +186,63 @@ async function seedProject(
 }
 
 /**
+ * Stands a fake GitHub in for the real one (#150), through the fixture file
+ * `ARBORIST_FAKE_GITHUB` names: an account, the installations the app is on,
+ * and a bare repository for each of their repositories under
+ * `<workDir>/github`, so a clone really clones and a publish really pushes.
+ * Opening the verification page approves the sign-in code.
+ */
+async function fakeGitHub(
+  workDir: string,
+  { signedIn }: { signedIn: boolean }
+): Promise<Record<string, string>> {
+  const remoteRoot = join(workDir, 'github')
+  const installations = [
+    {
+      id: 1,
+      owner: { login: 'zaccomode', type: 'User' },
+      repos: [
+        { id: 11, name: 'arborist-2', private: false, description: 'Git worktree manager' },
+        { id: 12, name: 'sketchframe', private: true, description: null }
+      ]
+    },
+    {
+      id: 2,
+      owner: { login: 'acme', type: 'Organization' },
+      repos: [
+        { id: 21, name: 'api', private: true, description: 'Public API and webhooks' },
+        { id: 22, name: 'widgets', private: false, description: 'Shared UI widgets' }
+      ]
+    }
+  ]
+  for (const installation of installations) {
+    for (const repo of installation.repos) {
+      const source = new GitFixture(join(workDir, 'sources', repo.name), repo.name)
+      await source.init()
+      await source.git([
+        'clone',
+        '--bare',
+        '--quiet',
+        source.repoPath,
+        join(remoteRoot, installation.owner.login, `${repo.name}.git`)
+      ])
+    }
+  }
+  const fixturePath = join(workDir, 'github.json')
+  await writeFile(
+    fixturePath,
+    JSON.stringify({
+      signedIn,
+      account: { login: 'zaccomode', name: 'Isaac Shea' },
+      installations,
+      remoteRoot
+    }),
+    'utf8'
+  )
+  return { ARBORIST_FAKE_GITHUB: fixturePath }
+}
+
+/**
  * Set by `working-tree-external-change`'s `setup` and read by its `drive` —
  * the one scenario that writes to the fixture's working tree *after* the app
  * has already launched, which needs the repository path in both places and
@@ -224,7 +281,7 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menu').waitFor({ state: 'visible' })
       await shot('menu')
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('menuitem', { name: 'Add local repository…' }).click()
       // Lands on the main worktree rather than an empty state, since nothing
       // was ever selected for this project before.
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
@@ -244,7 +301,7 @@ export const scenarios: Scenario[] = [
     },
     drive: async (window, shot) => {
       await window.getByTestId('project-switcher').click()
-      await window.getByRole('menuitem', { name: 'Add project…' }).click()
+      await window.getByRole('menuitem', { name: 'Add local repository…' }).click()
       await window.getByTestId('add-project-error').waitFor({ state: 'visible' })
       await shot('error')
     }
@@ -374,6 +431,114 @@ export const scenarios: Scenario[] = [
       await waitForProjectGroups(window)
       // The last group, so every heading above it has rendered too.
       await window.getByRole('group', { name: 'Local' }).waitFor({ state: 'visible' })
+    }
+  },
+  {
+    name: 'clone-from-github',
+    key: 'Cloning from GitHub (#150).',
+    description:
+      'Cloning a GitHub repository from the empty state (#150): the sign-in ' +
+      'the dialog opens on, the device code it shows, the repository list ' +
+      'once approved, the list filtered as you type, a clone refused because ' +
+      'its folder is taken, the form ready with HTTPS and a chosen folder, ' +
+      'and the cloned project opened.',
+    setup: async ({ workDir }) => {
+      const code = join(workDir, 'code')
+      // Something already where acme/api would go, for the refusal.
+      await mkdir(join(code, 'api'), { recursive: true })
+      await writeFile(join(code, 'api', 'notes.txt'), 'mine\n', 'utf8')
+      return { ...(await fakeGitHub(workDir, { signedIn: false })), ARBORIST_PICK_FOLDER: code }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('no-projects').waitFor({ state: 'visible' })
+      await shot('empty')
+      await window.getByRole('button', { name: 'Clone from GitHub…' }).click()
+      await window.getByTestId('github-sign-in').waitFor({ state: 'visible' })
+      await shot('sign-in')
+
+      await window.getByRole('button', { name: 'Sign in with GitHub' }).click()
+      await window.getByTestId('github-user-code').waitFor({ state: 'visible' })
+      await shot('code')
+
+      await window.getByRole('button', { name: 'Copy code and open GitHub' }).click()
+      await window.getByRole('option', { name: /widgets/ }).waitFor({ state: 'visible' })
+      await shot('repos')
+
+      await window.getByPlaceholder('Filter repositories…').fill('api')
+      await window.getByRole('option').first().waitFor({ state: 'visible' })
+      await window.waitForFunction(() => document.querySelectorAll('[cmdk-item]').length === 1)
+      await shot('filtered')
+
+      await window.getByRole('option', { name: /api/ }).click()
+      await window.getByRole('button', { name: 'Choose…' }).click()
+      await window.getByTestId('clone-destination').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'Clone', exact: true }).click()
+      await window.getByTestId('clone-error').waitFor({ state: 'visible' })
+      await shot('destination-taken')
+
+      await window.getByPlaceholder('Filter repositories…').fill('')
+      await window.getByRole('option', { name: /arborist-2/ }).click()
+      await window
+        .getByTestId('clone-destination')
+        .filter({ hasText: 'arborist-2' })
+        .waitFor({ state: 'visible' })
+      await shot('ready')
+
+      await window.getByRole('button', { name: 'Clone', exact: true }).click()
+      await window.getByTestId('clone-dialog').waitFor({ state: 'detached' })
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await window.getByTestId('project-switcher').filter({ hasText: 'arborist-2' }).waitFor()
+      await shot('cloned')
+    }
+  },
+  {
+    name: 'publish-to-github',
+    key: 'Publishing a local project to GitHub (#150).',
+    description:
+      'Publishing a project with no remote (#150): the switcher offering it, ' +
+      'the dialog with the account first, private on, and only the current ' +
+      'branch ticked; the name interpreted the way GitHub will create it, ' +
+      'an organisation chosen and every branch ticked; and the toast once ' +
+      'it is published. (The fake GitHub hands back a local remote, so the ' +
+      'project still groups under Local here, where a real one moves under ' +
+      'its owner.)',
+    setup: async ({ userDataDir, workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await fixture.git(['remote', 'remove', 'origin'])
+      await fixture.git(['branch', 'feature/clone-dialog'])
+      await fixture.git(['branch', 'release/1.0'])
+      await seedProject(userDataDir, fixture.repoPath)
+      return fakeGitHub(workDir, { signedIn: true })
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Publish to GitHub…' }).waitFor()
+      await waitForProjectGroups(window)
+      await shot('menu')
+
+      await window.getByRole('menuitem', { name: 'Publish to GitHub…' }).click()
+      await window.getByTestId('publish-branches').getByText('release/1.0').waitFor()
+      await window
+        .getByRole('combobox', { name: 'Owner' })
+        .filter({ hasText: 'zaccomode' })
+        .waitFor()
+      await shot('dialog')
+
+      await window.getByRole('combobox', { name: 'Owner' }).click()
+      await window.getByRole('option', { name: 'acme' }).click()
+      await window.getByRole('listbox').waitFor({ state: 'detached' })
+      await window.getByLabel('Name').fill('Arborist Docs')
+      await window.getByTestId('publish-name-interpretation').waitFor({ state: 'visible' })
+      await window.getByRole('button', { name: 'Select all' }).click()
+      await window.getByRole('button', { name: 'Select none' }).waitFor()
+      await shot('filled')
+
+      await window.getByRole('button', { name: 'Publish', exact: true }).click()
+      await window.getByTestId('publish-dialog').waitFor({ state: 'detached' })
+      await window.getByText('Published to acme/Arborist-Docs').waitFor({ state: 'visible' })
+      await shot('published')
     }
   },
   {
@@ -1099,12 +1264,17 @@ export const scenarios: Scenario[] = [
     description:
       'Settings: the General tab with the detected git binary and the theme, ' +
       'the Presets tab with the built-in switches, the preset editor over it, ' +
-      'the Developer tab, and the About tab (#65) in its default, ' +
+      'the GitHub tab signed in (#150), the Developer tab, and the About tab ' +
+      '(#65) in its default, ' +
       'not-yet-checked state.',
     setup: async ({ workDir }) => {
+      // `sources` and `github` beside it are the fake GitHub's.
       const fixture = new GitFixture(workDir, 'Arborist')
       await fixture.init()
-      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+      return {
+        ARBORIST_PICK_FOLDER: fixture.repoPath,
+        ...(await fakeGitHub(workDir, { signedIn: true }))
+      }
     },
     drive: async (window, shot) => {
       await addProject(window)
@@ -1132,6 +1302,10 @@ export const scenarios: Scenario[] = [
       await window.getByRole('listbox').waitFor({ state: 'detached' })
       await window.getByRole('button', { name: 'Cancel' }).click()
       await window.getByTestId('preset-editor').waitFor({ state: 'detached' })
+      await window.getByRole('tab', { name: 'GitHub' }).click()
+      await window.getByTestId('github-account').waitFor({ state: 'visible' })
+      await shot('github')
+
       await window.getByRole('tab', { name: 'Developer' }).click()
       await window.getByLabel('Log every git command').waitFor({ state: 'visible' })
       await shot('developer')

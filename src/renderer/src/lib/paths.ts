@@ -1,4 +1,4 @@
-import { samePath as comparePaths } from '@shared/paths'
+import { childPath as joinChild, samePath as comparePaths } from '@shared/paths'
 
 /**
  * `samePath`, bound to the platform the app is running on. The shared version
@@ -8,4 +8,9 @@ import { samePath as comparePaths } from '@shared/paths'
  */
 export function samePath(a: string | null | undefined, b: string | null | undefined): boolean {
   return comparePaths(a, b, window.arborist.platform)
+}
+
+/** `childPath`, bound to the platform the app is running on. */
+export function childPath(parent: string, name: string): string {
+  return joinChild(parent, name, window.arborist.platform)
 }
