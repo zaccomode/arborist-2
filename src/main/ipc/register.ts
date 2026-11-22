@@ -115,6 +115,21 @@ export function registerIpcHandlers({
     )
   })
 
+  handle('projects:withoutRemote', async () => {
+    const repositories = projects.list()
+    const urls = await mapWithConcurrency(
+      repositories,
+      store.data.settings.refreshConcurrency,
+      (repo) => gitService.remoteUrl(repo.path)
+    )
+    return repositories
+      .filter((_, index) => {
+        const result = urls[index]
+        return result?.status === 'fulfilled' && result.value === null
+      })
+      .map((repo) => repo.id)
+  })
+
   handle('github:status', () => github.status())
   handle('github:startSignIn', () => github.startSignIn())
   handle('github:finishSignIn', () => github.finishSignIn())

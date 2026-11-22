@@ -283,8 +283,8 @@
   },
   "project-actions": {
     "menu": {
-      "dark": "918c2f653a1c3b71ac9a009953af2b86f5cd010f40e1380723e1be189b4706e2",
-      "light": "9b5525d479f02cf5d9749dfab4a335d1d5adcf51babe085e910836442b6c8f07"
+      "dark": "bd4585f6849f180c10a8ecf03082b4b56374f4b2c21a83673804627b3dcad5d3",
+      "light": "551016964c24c5967dc3643bf3ba0b661e27a12eed900ab415fb84c5cd0e599a"
     },
     "remove": {
       "dark": "8e2113a3ea1fa2de2125e1dbcf43c0b5705f0842173d55f7e39860bee80a765c",
@@ -321,8 +321,8 @@
   },
   "project-switcher-order": {
     "": {
-      "dark": "40d4d3f86c5189fab8ba78d86a18c7ed633f9f71f5d5f44357bf23706f04b637",
-      "light": "31ae74a55579dd105f54c227cd08496b5807d004fb0dbae53d1dcef74637e766"
+      "dark": "23c1bcadf8de41df3111410038ded92adac472382f5b74d7d68e33c45811337d",
+      "light": "2a6c68ec22ee1edea74f0b4f09a81fffc7604f4812b13e83b5909ea6e936e55f"
     }
   },
   "prune-worktrees": {

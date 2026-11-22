@@ -29,6 +29,7 @@ import { SetupToasts } from '@/components/setup-toasts'
 import { SettingsDialog } from '@/components/settings/settings-dialog'
 import { CloneRepositoryDialog } from '@/components/clone-repository-dialog'
 import { PublishRepositoryDialog } from '@/components/publish-repository-dialog'
+import { usePublishDialog } from '@/state/publish-dialog'
 import { CommitInspector } from '@/components/commit-inspector'
 import { DiffPanel } from '@/components/diff-panel'
 import {
@@ -94,7 +95,7 @@ function App(): React.JSX.Element | null {
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [cloneOpen, setCloneOpen] = useState(false)
-  const [publishOpen, setPublishOpen] = useState(false)
+  const { open: publishOpen, setOpen: setPublishOpen } = usePublishDialog()
 
   const { projectId, selectProject, selectWorktree, selectRemoteBranch, hydrated } = useSelection()
   const selectedWorktree = useSelectedWorktree()
@@ -546,6 +547,7 @@ function App(): React.JSX.Element | null {
             setPublishOpen(false)
             toast.success(`Published to ${result.fullName}`)
             await queryClient.invalidateQueries({ queryKey: queryKeys.projectRemoteLocations })
+            await queryClient.invalidateQueries({ queryKey: queryKeys.projectsWithoutRemote })
             await queryClient.invalidateQueries({ queryKey: queryKeys.worktrees(selected.path) })
             await queryClient.invalidateQueries({
               queryKey: queryKeys.remoteBranches(selected.path)

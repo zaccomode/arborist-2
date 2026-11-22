@@ -29,6 +29,7 @@ export const queryKeys = {
   projects: ['projects'] as const,
   // Under `projects`, so adding or removing one regroups the switcher too.
   projectRemoteLocations: ['projects', 'remote-locations'] as const,
+  projectsWithoutRemote: ['projects', 'without-remote'] as const,
   worktrees: (repoPath: string) => ['worktrees', repoPath] as const,
   note: (repositoryId: string, worktreePath: string | null) =>
     ['note', repositoryId, worktreePath] as const,
@@ -86,6 +87,25 @@ export function useProjectRemoteLocations(): ReturnType<
     queryFn: () => invoke('projects:remoteLocations'),
     staleTime: PROJECT_LOCATIONS_STALE_MS
   })
+}
+
+/**
+ * Which projects have no remote at all (#150), for offering to publish them
+ * and for sending their push buttons to that offer. Fresh for as long as the
+ * locations are, for the same reason.
+ */
+export function useProjectsWithoutRemote(): ReturnType<typeof useQuery<string[]>> {
+  return useQuery({
+    queryKey: queryKeys.projectsWithoutRemote,
+    queryFn: () => invoke('projects:withoutRemote'),
+    staleTime: PROJECT_LOCATIONS_STALE_MS
+  })
+}
+
+/** Whether a project has a remote: null until that is known. */
+export function useProjectHasRemote(projectId: string): boolean | null {
+  const without = useProjectsWithoutRemote()
+  return without.data ? !without.data.includes(projectId) : null
 }
 
 export function useAddProject(): UseMutationResult<Repository, Error, string> {

@@ -89,6 +89,21 @@ export function pullLabel(behind: number): string {
  * A worktree whose folder is gone has nothing to sync, and a detached HEAD
  * has no branch for either action to name, so both are false for either.
  */
+/**
+ * What pushing a branch with no upstream does (#150). With a remote it
+ * publishes the branch there, `push --set-upstream origin`. A project with no
+ * remote at all has nowhere for that to go — git answers "'origin' does not
+ * appear to be a git repository" — so the button offers to publish the
+ * repository to GitHub instead. `projectHasRemote` null means not known yet,
+ * which pushes, as before this existed.
+ */
+export function pushAction(
+  hasUpstream: boolean,
+  projectHasRemote: boolean | null
+): 'push' | 'publish-repository' {
+  return !hasUpstream && projectHasRemote === false ? 'publish-repository' : 'push'
+}
+
 export function syncAvailability(worktree: Worktree): {
   canPull: boolean
   canPush: boolean

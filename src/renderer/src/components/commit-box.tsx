@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { Worktree } from '@shared/domain'
+import { pushAction } from '@shared/sync'
 import { pushLabel } from '@shared/working-tree'
 import { Button } from '@/components/ui/button'
 import { ButtonGroup } from '@/components/ui/button-group'
@@ -14,7 +15,8 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { CopyableError } from '@/components/copyable-error'
 import { invoke } from '@/api/client'
-import { queryKeys, useCommitDraft, useHasIdentity } from '@/api/queries'
+import { queryKeys, useCommitDraft, useHasIdentity, useProjectHasRemote } from '@/api/queries'
+import { usePublishDialog } from '@/state/publish-dialog'
 import { showErrorToast } from '@/lib/error-toast'
 
 const SAVE_DEBOUNCE_MS = 400
@@ -43,6 +45,8 @@ export function CommitBox({
   const queryClient = useQueryClient()
   const draft = useCommitDraft(repositoryId, worktreePath)
   const identity = useHasIdentity(worktreePath)
+  const hasRemote = useProjectHasRemote(repositoryId)
+  const openPublish = usePublishDialog((state) => state.setOpen)
   const [text, setText] = useState<string | null>(null)
   const [amend, setAmend] = useState(false)
   const [busy, setBusy] = useState<'commit' | 'push' | null>(null)
@@ -119,6 +123,10 @@ export function CommitBox({
 
   const runPush = async (): Promise<void> => {
     setError(null)
+    if (pushAction(hasUpstream, hasRemote) === 'publish-repository') {
+      openPublish(true)
+      return
+    }
     setBusy('push')
     try {
       await invoke('workingTree:push', worktreePath, worktree.branch ?? '', !hasUpstream)

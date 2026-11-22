@@ -565,6 +565,7 @@ export const scenarios: Scenario[] = [
     key: 'Publishing a local project to GitHub (#150).',
     description:
       'Publishing a project with no remote (#150): the switcher offering it, ' +
+      'the header’s Publish button (with no origin to push to) opening it too, ' +
       'the dialog with the account first, private on, and only the current ' +
       'branch ticked; the name interpreted the way GitHub will create it, ' +
       'an organisation chosen and every branch ticked; and the toast once ' +
@@ -587,7 +588,11 @@ export const scenarios: Scenario[] = [
       await waitForProjectGroups(window)
       await shot('menu')
 
-      await window.getByRole('menuitem', { name: 'Publish to GitHub…' }).click()
+      // The header's own Publish button, which would otherwise try to push
+      // to an origin that doesn't exist, opens the same dialog.
+      await window.keyboard.press('Escape')
+      await window.getByRole('menu').waitFor({ state: 'detached' })
+      await window.getByRole('button', { name: 'Publish', exact: true }).click()
       await window.getByTestId('publish-branches').getByText('release/1.0').waitFor()
       await window
         .getByRole('combobox', { name: 'Owner' })

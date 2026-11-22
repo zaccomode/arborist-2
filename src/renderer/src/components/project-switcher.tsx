@@ -21,7 +21,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { useMenuOpensDialog } from '@/lib/menu-opens-dialog'
-import { useProjectRemoteLocations } from '@/api/queries'
+import { useProjectRemoteLocations, useProjectsWithoutRemote } from '@/api/queries'
 import { groupProjects } from '@shared/project-groups'
 
 /**
@@ -75,9 +75,11 @@ export function ProjectSwitcher({
     [projects, locations.data]
   )
 
-  // Only once the remotes are known: offering it while they load would show
-  // it for a moment on every published project.
-  const publishable = !!selected && locations.data?.[selected.id] === null
+  // Only for a project with no remote at all — one on a local path still
+  // pushes somewhere — and only once that is known, rather than for a moment
+  // on every project while it loads.
+  const withoutRemote = useProjectsWithoutRemote()
+  const publishable = !!selected && !!withoutRemote.data?.includes(selected.id)
 
   return (
     <DropdownMenu>
