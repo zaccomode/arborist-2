@@ -98,7 +98,7 @@ export class FakeGitHubApi implements GitHubApi {
     _token: string,
     owner: { login: string },
     repo: { name: string; description: string; private: boolean }
-  ): Promise<GitHubRepo & { htmlUrl: string }> {
+  ): Promise<GitHubRepo> {
     const path = join(this.#fixture.remoteRoot, owner.login, `${repo.name}.git`)
     if (await fs.stat(path).catch(() => null)) {
       throw new AppError('GitHub: name already exists on this account', 'github-request-failed')
@@ -113,7 +113,7 @@ export class FakeGitHubApi implements GitHubApi {
     name: string,
     isPrivate: boolean,
     description: string | null
-  ): GitHubRepo & { htmlUrl: string } {
+  ): GitHubRepo {
     const url = pathToFileURL(join(this.#fixture.remoteRoot, owner, `${name}.git`)).href
     return {
       id,

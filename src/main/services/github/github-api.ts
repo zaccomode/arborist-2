@@ -29,7 +29,7 @@ export interface GitHubApi {
     token: string,
     owner: { login: string; personal: boolean },
     repo: { name: string; description: string; private: boolean }
-  ): Promise<GitHubRepo & { htmlUrl: string }>
+  ): Promise<GitHubRepo>
 }
 
 /** Thrown when GitHub no longer accepts the token, so the service can forget it. */
@@ -53,7 +53,7 @@ interface RawRepo {
   html_url: string
 }
 
-function toRepo(raw: RawRepo): GitHubRepo & { htmlUrl: string } {
+function toRepo(raw: RawRepo): GitHubRepo {
   return {
     id: raw.id,
     fullName: raw.full_name,
@@ -150,7 +150,7 @@ export class HttpGitHubApi implements GitHubApi {
     token: string,
     owner: { login: string; personal: boolean },
     repo: { name: string; description: string; private: boolean }
-  ): Promise<GitHubRepo & { htmlUrl: string }> {
+  ): Promise<GitHubRepo> {
     const path = owner.personal ? '/user/repos' : `/orgs/${encodeURIComponent(owner.login)}/repos`
     const raw = await this.#api(token, 'POST', path, {
       name: repo.name,

@@ -500,6 +500,63 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'clone-already-in-arborist',
+    description:
+      'The clone dialog over a repository that is already a project (#150): ' +
+      'it is tagged In Arborist in the list, and selecting it warns that a ' +
+      'clone would be a second, separate copy, with Clone still offered.',
+    setup: async ({ userDataDir, workDir }) => {
+      const fixture = new GitFixture(join(workDir, 'existing'), 'arborist-2')
+      await fixture.init()
+      // Published on GitHub as far as Arborist can tell, but left out of
+      // `fetch --all`, so opening it doesn't try the network.
+      await fixture.git([
+        'remote',
+        'set-url',
+        'origin',
+        'https://github.com/zaccomode/arborist-2.git'
+      ])
+      await fixture.git(['config', 'remote.origin.skipFetchAll', 'true'])
+      await writeFile(
+        join(userDataDir, 'arborist-data.json'),
+        JSON.stringify({
+          schemaVersion: 4,
+          repositories: [
+            {
+              id: 'p1',
+              path: fixture.repoPath,
+              name: 'arborist-2',
+              addedAt: '2026-01-05T09:00:00.000Z'
+            }
+          ]
+        }),
+        'utf8'
+      )
+      return {
+        ...(await fakeGitHub(workDir, { signedIn: true })),
+        ARBORIST_PICK_FOLDER: join(workDir, 'code'),
+        HOME: workDir,
+        ...isolatedGitEnv
+      }
+    },
+    drive: async (window, shot) => {
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Clone from GitHub…' }).click()
+      await window
+        .getByRole('option', { name: /arborist-2/ })
+        .getByText('In Arborist')
+        .waitFor({ state: 'visible' })
+      await shot('list')
+
+      await window.getByRole('option', { name: /arborist-2/ }).click()
+      await window.getByRole('button', { name: 'Choose…' }).click()
+      await window.getByTestId('clone-destination').waitFor({ state: 'visible' })
+      await window.getByTestId('clone-already-added').waitFor({ state: 'visible' })
+      await shot('warned')
+    }
+  },
+  {
     name: 'publish-to-github',
     key: 'Publishing a local project to GitHub (#150).',
     description:

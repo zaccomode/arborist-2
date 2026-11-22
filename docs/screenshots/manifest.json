@@ -37,6 +37,16 @@
       "light": "8fdc6332704a198b2d71b2e003f2f7abffe76137a6fc4fdc0feb4f0d2b5badfd"
     }
   },
+  "clone-already-in-arborist": {
+    "list": {
+      "dark": "085709e792a6ee3255a47ec91561f462efd135d2da2d225ff0f1e828bab29b96",
+      "light": "fd0774b042b9c5d66ac8b44b9eca06b415cc1fffb1031ae0b7a79921065ec0a9"
+    },
+    "warned": {
+      "dark": "f544d2bb8785dca022fda93bdb6f93bd65cc6795e4fa416be4088efaf387b2fa",
+      "light": "58653b688d92c9d4ca6b3a44676cc9f192602ef36d1c25f6c5d3fb0f1578339d"
+    }
+  },
   "clone-from-github": {
     "cloned": {
       "dark": "6b0c9790521d303c244443181a912d015b1ef8b923704569dc2e096cc738cc77",

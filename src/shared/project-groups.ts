@@ -18,6 +18,12 @@ export interface RemoteLocation {
   host: string
   /** The first path segment, or null when the path has only the repository. */
   owner: string | null
+  /**
+   * The whole path, `.git` dropped: `acme/widgets`, or `team/sub/repo` on a
+   * host with subgroups. Null with no owner. Compared against a GitHub
+   * repository's full name to tell whether it is already a project (#150).
+   */
+  fullName: string | null
 }
 
 export const LOCAL_GROUP = 'Local'
@@ -135,7 +141,8 @@ function locate(split: SplitRemoteUrl, host: string): RemoteLocation {
   const segments = split.path.split('/').filter((segment) => segment.length > 0)
   // `owner/repo` has an owner; a bare `repo.git` at the root does not.
   const owner = segments.length >= 2 ? segments[0]! : null
-  return { host: canonicalHost(host), owner }
+  const fullName = owner ? segments.join('/').replace(/\.git$/i, '') : null
+  return { host: canonicalHost(host), owner, fullName }
 }
 
 /**

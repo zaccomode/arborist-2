@@ -217,7 +217,8 @@ describe('cloning', () => {
             private: true,
             description: null,
             cloneUrl: url,
-            sshUrl: url
+            sshUrl: url,
+            htmlUrl: 'https://github.com/acme/web'
           }
         ]
       })

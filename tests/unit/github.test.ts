@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { Repository } from '@shared/persisted'
 import {
   cloneUrlFor,
   filterRepos,
@@ -7,12 +8,14 @@ import {
   installUrl,
   interpretTokenPoll,
   nextPollInterval,
+  projectsByRepo,
   repoNameFor,
   sortOwners,
   sortRepos,
   type GitHubRepo
 } from '@shared/github'
 import { childPath } from '@shared/paths'
+import { parseRemoteUrl } from '@shared/project-groups'
 
 function repo(id: number, fullName: string, extra: Partial<GitHubRepo> = {}): GitHubRepo {
   const [owner, name] = fullName.split('/')
@@ -25,6 +28,7 @@ function repo(id: number, fullName: string, extra: Partial<GitHubRepo> = {}): Gi
     description: null,
     cloneUrl: `https://github.com/${fullName}.git`,
     sshUrl: `git@github.com:${fullName}.git`,
+    htmlUrl: `https://github.com/${fullName}`,
     ...extra
   }
 }
@@ -196,5 +200,36 @@ describe('childPath', () => {
     expect(childPath('/', 'web', 'linux')).toBe('/web')
     expect(childPath('C:\\code\\', 'web', 'win32')).toBe('C:\\code\\web')
     expect(childPath('C:\\code', 'web', 'win32')).toBe('C:\\code\\web')
+  })
+})
+
+describe('projectsByRepo', () => {
+  const project = (id: string, name: string): Repository => ({
+    id,
+    path: `/code/${name}`,
+    name,
+    addedAt: '2026-01-05T09:00:00.000Z'
+  })
+
+  it('matches a repository to the project cloned from it, however its remote is written', () => {
+    const repos = [repo(1, 'acme/Web'), repo(2, 'acme/api'), repo(3, 'zaccomode/arborist-2')]
+    const projects = [project('a', 'web'), project('b', 'arborist'), project('c', 'scratch')]
+    const matches = projectsByRepo(repos, projects, {
+      // SSH, different case, with `.git`: still acme/Web.
+      a: parseRemoteUrl('git@github.com:ACME/web.git'),
+      b: parseRemoteUrl('https://github.com/zaccomode/arborist-2'),
+      c: null
+    })
+    expect([...matches].map(([id, match]) => [id, match.id])).toEqual([
+      [1, 'a'],
+      [3, 'b']
+    ])
+  })
+
+  it('does not match the same name on another host', () => {
+    const matches = projectsByRepo([repo(1, 'acme/web')], [project('a', 'web')], {
+      a: parseRemoteUrl('git@gitlab.com:acme/web.git')
+    })
+    expect(matches.size).toBe(0)
   })
 })

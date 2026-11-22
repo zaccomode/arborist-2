@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Globe, Loader2, Lock, Plus } from 'lucide-react'
-import { filterRepos, groupReposByOwner, type CloneProtocol } from '@shared/github'
+import { FolderGit2, Globe, Loader2, Lock, Plus } from 'lucide-react'
+import { filterRepos, groupReposByOwner, projectsByRepo, type CloneProtocol } from '@shared/github'
 import type { Repository } from '@shared/persisted'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Command,
@@ -33,7 +35,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { CopyableError } from '@/components/copyable-error'
 import { GitHubSignIn } from '@/components/github-sign-in'
 import { invoke } from '@/api/client'
-import { queryKeys, useGitHubRepos, useGitHubStatus, useSettings } from '@/api/queries'
+import {
+  queryKeys,
+  useGitHubRepos,
+  useGitHubStatus,
+  useProjectRemoteLocations,
+  useProjects,
+  useSettings
+} from '@/api/queries'
 import { returnFocusToMenu } from '@/lib/menu-opens-dialog'
 import { childPath } from '@/lib/paths'
 
@@ -84,6 +93,8 @@ function CloneForm({
   const settings = useSettings()
   const account = status.data?.account ?? null
   const repos = useGitHubRepos(!!account)
+  const projects = useProjects()
+  const locations = useProjectRemoteLocations()
 
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -98,6 +109,15 @@ function CloneForm({
     [repos.data, query]
   )
   const selected = repos.data?.find((repo) => repo.id === selectedId) ?? null
+  // Repositories already cloned as a project. Cloning one again is allowed —
+  // a second, separate copy is occasionally what someone wants — but it is
+  // usually a mistake in an app built around worktrees, so it is flagged
+  // and warned about rather than refused.
+  const existing = useMemo(
+    () => projectsByRepo(repos.data ?? [], projects.data ?? [], locations.data ?? {}),
+    [repos.data, projects.data, locations.data]
+  )
+  const selectedExisting = selected ? (existing.get(selected.id) ?? null) : null
 
   if (status.isPending) {
     return <Skeleton className="h-40 w-full" />
@@ -193,6 +213,11 @@ function CloneForm({
                       {repo.description}
                     </span>
                   )}
+                  {existing.has(repo.id) && (
+                    <Badge variant="outline" className="ml-auto shrink-0">
+                      In Arborist
+                    </Badge>
+                  )}
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -237,6 +262,17 @@ function CloneForm({
         <p className="text-xs text-muted-foreground">
           SSH uses your own SSH keys, not your Arborist sign-in.
         </p>
+      )}
+
+      {selected && selectedExisting && (
+        <Alert data-testid="clone-already-added">
+          <FolderGit2 />
+          <AlertTitle>{selected.fullName} is already in Arborist</AlertTitle>
+          <AlertDescription>
+            It&apos;s the {selectedExisting.name} project. Are you sure you want to clone a second,
+            separate copy? A new worktree is usually what you want instead.
+          </AlertDescription>
+        </Alert>
       )}
 
       {error && <CopyableError testId="clone-error" className="text-sm" message={error} />}

@@ -1,3 +1,6 @@
+import type { Repository } from './persisted'
+import { parseRemoteUrl, type RemoteLocation } from './project-groups'
+
 /**
  * GitHub sign-in, cloning and publishing (#150): the types both processes
  * share and the logic that can be pure. The HTTP calls and the token itself
@@ -40,6 +43,8 @@ export interface GitHubRepo {
   description: string | null
   cloneUrl: string
   sshUrl: string
+  /** The repository's page, which is also what identifies it against a project's remote. */
+  htmlUrl: string
 }
 
 /** The code the user types at `verificationUri` to approve the sign-in. */
@@ -246,4 +251,32 @@ export type GitHubPage = 'verification' | 'install'
 /** The page for installing the Arborist app on another account or organisation. */
 export function installUrl(webUrl: string = GITHUB_WEB_URL): string {
   return `${webUrl}/apps/${GITHUB_APP_SLUG}/installations/new`
+}
+
+/**
+ * The project each repository is already cloned as, if any, by repository
+ * id: matched on host and full name against each project's remote, ignoring
+ * case and `.git`, so a project reached over SSH matches its HTTPS listing.
+ * The clone dialog warns before making a second copy of one of these.
+ */
+export function projectsByRepo(
+  repos: readonly GitHubRepo[],
+  projects: readonly Repository[],
+  locations: Readonly<Record<string, RemoteLocation | null>>
+): Map<number, Repository> {
+  const byKey = new Map<string, Repository>()
+  for (const project of projects) {
+    const location = locations[project.id]
+    if (!location?.fullName) continue
+    const key = `${location.host}/${location.fullName}`.toLowerCase()
+    if (!byKey.has(key)) byKey.set(key, project)
+  }
+  const matches = new Map<number, Repository>()
+  for (const repo of repos) {
+    const location = parseRemoteUrl(repo.htmlUrl)
+    if (!location?.fullName) continue
+    const project = byKey.get(`${location.host}/${location.fullName}`.toLowerCase())
+    if (project) matches.set(repo.id, project)
+  }
+  return matches
 }
