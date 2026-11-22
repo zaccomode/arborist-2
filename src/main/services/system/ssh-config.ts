@@ -11,8 +11,10 @@ const SSH_CONFIG_TIMEOUT_MS = 5_000
  * `ssh -G` prints the configuration ssh would use for a destination without
  * connecting to it. Anything that goes wrong — no ssh on PATH, a timeout, an
  * unreadable config — falls back to the host as written, which is what the
- * switcher showed before. Results are kept for the session: an alias changes
- * far less often than the switcher asks.
+ * switcher showed before. Successful results are kept for the session: an
+ * alias changes far less often than the switcher asks. A failed lookup is
+ * not kept, so a one-off timeout or spawn failure is retried on the next
+ * refetch rather than pinning the fallback until restart (#168).
  */
 export class SshHostResolver {
   #cache = new Map<string, Promise<string>>()
@@ -23,9 +25,14 @@ export class SshHostResolver {
     if (!isResolvableSshHost(host)) return Promise.resolve(host)
     let pending = this.#cache.get(host)
     if (!pending) {
-      pending = this.run(host)
-        .then((output) => parseSshHostname(output) ?? host)
-        .catch(() => host)
+      const attempt: Promise<string> = this.run(host).then(
+        (output) => parseSshHostname(output) ?? host,
+        () => {
+          if (this.#cache.get(host) === attempt) this.#cache.delete(host)
+          return host
+        }
+      )
+      pending = attempt
       this.#cache.set(host, pending)
     }
     return pending

@@ -3,7 +3,11 @@ import { join } from 'path'
 import type { Locator, Page } from 'playwright'
 // Node's native type stripping resolves ESM imports literally, so this needs
 // the real file extension rather than a bare specifier.
-import { GitFixture, makeBadgeMatrixIn } from '../../tests/integration/fixtures/git-fixture.ts'
+import {
+  GitFixture,
+  isolatedGitEnv,
+  makeBadgeMatrixIn
+} from '../../tests/integration/fixtures/git-fixture.ts'
 
 /**
  * Captures the window as it currently stands, in both themes, as
@@ -358,6 +362,10 @@ export const scenarios: Scenario[] = [
         JSON.stringify({ schemaVersion: 4, repositories }),
         'utf8'
       )
+      // The switcher applies the user's git `insteadOf` rules and runs
+      // `ssh -G`, so a developer's `~/.gitconfig` or `~/.ssh/config` would
+      // otherwise regroup these projects and change the capture (#168).
+      return { HOME: workDir, ...isolatedGitEnv }
     },
     drive: async (window) => {
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })

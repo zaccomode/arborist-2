@@ -9,6 +9,20 @@ export default defineConfig({
   },
   test: {
     include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
-    environment: 'node'
+    environment: 'node',
+    // Every git the suite runs, the app's own executor included, reads no
+    // global, system or environment-injected config, so a developer's
+    // `insteadOf` rewrites or signing settings can't change what a test sees
+    // (#168). Kept in step with `isolatedGitEnv` in the git fixture, which
+    // the screenshot runner uses outside vitest; a unit test checks the two
+    // agree.
+    env: {
+      // Literally `/dev/null` on every platform: Git for Windows maps it to
+      // `nul` itself, but refuses Node's `os.devNull` (`\\.\nul`).
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_COUNT: '0',
+      GIT_CONFIG_PARAMETERS: ''
+    }
   }
 })
