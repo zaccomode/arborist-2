@@ -115,19 +115,19 @@ export function registerIpcHandlers({
     )
   })
 
-  handle('projects:withoutRemote', async () => {
+  handle('projects:hasRemote', async () => {
     const repositories = projects.list()
     const urls = await mapWithConcurrency(
       repositories,
       store.data.settings.refreshConcurrency,
       (repo) => gitService.remoteUrl(repo.path)
     )
-    return repositories
-      .filter((_, index) => {
-        const result = urls[index]
-        return result?.status === 'fulfilled' && result.value === null
-      })
-      .map((repo) => repo.id)
+    const hasRemote: Record<string, boolean> = {}
+    repositories.forEach((repo, index) => {
+      const result = urls[index]
+      if (result?.status === 'fulfilled') hasRemote[repo.id] = result.value !== null
+    })
+    return hasRemote
   })
 
   handle('github:status', () => github.status())

@@ -63,12 +63,13 @@ export interface IpcInvokeContract {
    */
   'projects:remoteLocations': { args: []; result: Record<string, RemoteLocation | null> }
   /**
-   * The ids of projects with no remote at all (#150): the ones a push has
-   * nowhere to go from, and that can be published to GitHub. Unlike a null
-   * in `projects:remoteLocations`, a remote on a local path or `file://`
-   * URL still counts as a remote here.
+   * Whether each project has a remote at all (#150), by id: false for the
+   * ones a push has nowhere to go from, and that can be published to GitHub.
+   * Unlike a null in `projects:remoteLocations`, a remote on a local path or
+   * `file://` URL still counts as a remote here. A project whose remotes
+   * couldn't be read is left out, so it reads as not known (#175).
    */
-  'projects:withoutRemote': { args: []; result: string[] }
+  'projects:hasRemote': { args: []; result: Record<string, boolean> }
   /** Who Arborist is signed in to GitHub as, if anyone (#150). Never the token. */
   'github:status': { args: []; result: GitHubStatus }
   /**
@@ -413,7 +414,7 @@ const CHANNELS: Record<IpcChannel, true> = {
   'projects:add': true,
   'projects:remove': true,
   'projects:remoteLocations': true,
-  'projects:withoutRemote': true,
+  'projects:hasRemote': true,
   'github:status': true,
   'github:startSignIn': true,
   'github:finishSignIn': true,

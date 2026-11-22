@@ -109,12 +109,12 @@
       "light": "80a6066baa4b6af1d778bee69bd2180a4aedf45487b2883cbf3eb581b57b3c76"
     },
     "paging-a": {
-      "dark": "1bd71b717b221eae94d02916a36e387bd25015546a3891c144629b30605f6989",
-      "light": "b3e927f6a2adbc05864cd60f28126a8241c7c87899263af758cfee1a16833d90"
+      "dark": "8fa467bcfeaf5d51d2057beefa6e7430151f822d815368bed0f11a921a72504c",
+      "light": "816fdbf5b1d320165a53439ab660fa12552d169e484796c35515051ad0e27a01"
     },
     "paging-b": {
-      "dark": "568a9e72ac927d7de6250db5adb3fb26c002b674ed2caacb1e0a091d3e8e0e97",
-      "light": "d38d44e043af7dceb5730db6d5b176600b1c28dc2579ffabc8834cfa08af0572"
+      "dark": "7c08487a25fd06f721312558b3538931fd5126ff2444ccb6d48e13d6e41d9387",
+      "light": "aa54e5e4ec94f3ded0f0654e38b46f23cb79c23a978c3809be0a31dbf11b112f"
     }
   },
   "commit-graph-crossing-lanes": {
@@ -193,8 +193,8 @@
       "light": "748923104719e75d42d4372b110cf7180acbc8a2bfe0ac6ed59e82f5a3e4a6a0"
     },
     "closed": {
-      "dark": "59835ea4ec71c0a58188801bdbb6d409d15cb4bc42336d38386309663c1743f0",
-      "light": "07829b2e1554715895b9f6db656e23d28a1791a2f73815504bd75793a36cd664"
+      "dark": "67d267b0a92c22fdb3f04c28ee92e50df71ca965eca9cef49d45a504449f1802",
+      "light": "db3a82b6b063d0057381c561cf35e6e4f91aab28a456b71d5fe01b8731fb5f2f"
     },
     "mode-only": {
       "dark": "a7a9c1141de3dae1ba7d97cd43693ee3a254119280f47bf730b57b98dab286d9",
@@ -333,6 +333,16 @@
     "pruned": {
       "dark": "7bee6df511a48a0507339c945744cdb83cbaa61841153fe68522cb65093c7fcc",
       "light": "000517656b4b4fb78872b3c1a3e5ec9558e9f4a4520b814197dc2d36c932ff80"
+    }
+  },
+  "publish-new-local-project": {
+    "dialog": {
+      "dark": "a03ad2297e9576793d69ceee2996ea257d664b826b77c66a578953720ae53b1c",
+      "light": "dc182f05c75e8fc74ee7c2451027836d6d9f2ebfcdefe06d4ce60603cb7fa9f4"
+    },
+    "menu": {
+      "dark": "dc9e0ad343a10efbcc2a826cc2b54a893399fe41c21b0b1a01bc0ace47536b48",
+      "light": "76cc1f1a19adeee0c6067818f250539be7731b01ef586f1494a7cb2426bbfe37"
     }
   },
   "publish-to-github": {

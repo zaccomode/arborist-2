@@ -118,6 +118,21 @@ export function parseWorktreeList(
  * `<remote>/<path>`, so requiring a slash drops it under either git version
  * rather than chasing the exact string each one prints.
  */
+/**
+ * Every URL in `git remote -v` output, fetch and push alike, without
+ * repeats. git prints them after applying `url.*.insteadOf` and
+ * `pushInsteadOf`, so these are the URLs it actually contacts, which is what
+ * `http.<url>.*` config is matched against.
+ */
+export function parseRemoteUrls(output: string): string[] {
+  const urls = new Set<string>()
+  for (const line of splitLines(output)) {
+    const match = /^\S+\t(.+) \((?:fetch|push)\)$/.exec(line)
+    if (match) urls.add(match[1])
+  }
+  return [...urls]
+}
+
 export function isRemoteBranchRef(name: string): boolean {
   return name.length > 0 && name.includes('/') && !/(^|\/)HEAD$/.test(name)
 }

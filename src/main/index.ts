@@ -28,6 +28,7 @@ import { GitHubService } from './services/github/github-service'
 import { HttpGitHubApi } from './services/github/github-api'
 import { FAKE_TOKEN, FakeGitHubApi } from './services/github/fake-github'
 import { TokenStore } from './services/github/token-store'
+import { lastingCredentials } from '../shared/github'
 
 const DEFAULT_WINDOW: WindowState = { width: 1100, height: 720, maximized: false }
 
@@ -121,7 +122,8 @@ async function createGitHubService(
     git,
     store,
     projects,
-    remoteUrl: (repoPath: string) => gitService.remoteUrl(repoPath)
+    remoteUrl: (repoPath: string) => gitService.remoteUrl(repoPath),
+    remoteUrls: (repoPath: string) => gitService.remoteUrls(repoPath)
   }
   if (fixture) {
     const api = await FakeGitHubApi.load(fixture)
@@ -132,7 +134,7 @@ async function createGitHubService(
       encryptString: (plain) => Buffer.from(plain),
       decryptString: (encrypted) => encrypted.toString()
     })
-    if (api.signedIn) await tokens.write(FAKE_TOKEN)
+    if (api.signedIn) await tokens.write(lastingCredentials(FAKE_TOKEN))
     return new GitHubService({
       ...shared,
       api,
@@ -283,9 +285,16 @@ app.whenReady().then(async () => {
   // Every mutating operation opens a suppression window on the watcher
   // before it runs, so Arborist's own write is never read back in as an
   // external change — see `SuppressWatcher`'s doc comment in git-service.ts.
-  const gitService = new GitService(gitRunner, (worktreePath) =>
-    worktreeWatcher.suppress(worktreePath)
+  // The GitHub service needs the git service to read remotes, and the git
+  // service needs it to sign fetches, pulls and pushes in (#174), so the
+  // second link is made once both exist.
+  let github: GitHubService | null = null
+  const gitService = new GitService(
+    gitRunner,
+    (worktreePath) => worktreeWatcher.suppress(worktreePath),
+    async (repoPath) => github?.networkEnv(repoPath)
   )
+  github = await createGitHubService(store, gitRunner, projects, gitService)
 
   registerIpcHandlers({
     gitRunner,
@@ -304,7 +313,7 @@ app.whenReady().then(async () => {
     automation,
     updates,
     watcher: worktreeWatcher,
-    github: await createGitHubService(store, gitRunner, projects, gitService)
+    github
   })
 
   const windowStatePath = join(userData, 'window-state.json')

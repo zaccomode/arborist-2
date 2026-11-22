@@ -90,7 +90,16 @@ export interface PublishResult {
  * the only thing to go on.
  */
 export type TokenPoll =
-  | { kind: 'token'; token: string }
+  | {
+      kind: 'token'
+      token: string
+      /** Seconds the token lasts. Absent for a token that never expires. */
+      expiresIn?: number
+      /** For swapping an expiring token for a new one without the device flow again. */
+      refreshToken?: string
+      /** Seconds the refresh token lasts. */
+      refreshTokenExpiresIn?: number
+    }
   | { kind: 'pending' }
   | { kind: 'slow-down'; interval: number | null }
   | { kind: 'failed'; code: string; message: string }
@@ -101,13 +110,37 @@ const POLL_FAILURES: Record<string, string> = {
   device_flow_disabled: 'Device sign-in is turned off for the Arborist GitHub App.',
   incorrect_client_credentials: 'GitHub did not recognise the Arborist GitHub App.',
   incorrect_device_code: 'GitHub did not recognise the sign-in code. Start again for a new one.',
-  unsupported_grant_type: 'GitHub refused the sign-in request.'
+  unsupported_grant_type: 'GitHub refused the sign-in request.',
+  bad_refresh_token: 'GitHub no longer accepts this sign-in. Sign in again to continue.'
 }
 
+/**
+ * Reads the token endpoint's answer, to a device-flow poll or to a refresh
+ * (#174). A GitHub App with "Expire user authorization tokens" turned on (the
+ * default) issues tokens that last eight hours, with a refresh token that
+ * lasts six months; one with it off issues a token that never expires and no
+ * refresh token. Both are handled, so the app's setting can change without a
+ * release: the expiry fields are kept when GitHub sends them, and their
+ * absence means the token lasts until it is revoked.
+ */
 export function interpretTokenPoll(body: unknown): TokenPoll {
   const record = (body ?? {}) as Record<string, unknown>
   if (typeof record.access_token === 'string' && record.access_token) {
-    return { kind: 'token', token: record.access_token }
+    const seconds = (value: unknown): number | undefined =>
+      typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined
+    const expiresIn = seconds(record.expires_in)
+    const refreshTokenExpiresIn = seconds(record.refresh_token_expires_in)
+    const refreshToken =
+      typeof record.refresh_token === 'string' && record.refresh_token
+        ? record.refresh_token
+        : undefined
+    return {
+      kind: 'token',
+      token: record.access_token,
+      ...(expiresIn !== undefined ? { expiresIn } : {}),
+      ...(refreshToken !== undefined ? { refreshToken } : {}),
+      ...(refreshTokenExpiresIn !== undefined ? { refreshTokenExpiresIn } : {})
+    }
   }
   const error = typeof record.error === 'string' ? record.error : 'unknown'
   if (error === 'authorization_pending') return { kind: 'pending' }
@@ -122,6 +155,88 @@ export function interpretTokenPoll(body: unknown): TokenPoll {
     kind: 'failed',
     code: error,
     message: POLL_FAILURES[error] ?? described ?? `GitHub sign-in failed (${error}).`
+  }
+}
+
+/**
+ * What the token store keeps (#174): the access token, and, when GitHub
+ * issued an expiring one, what is needed to replace it. Times are epoch
+ * milliseconds; null means "doesn't expire" or "there isn't one".
+ */
+export interface GitHubCredentials {
+  accessToken: string
+  expiresAt: number | null
+  refreshToken: string | null
+  refreshExpiresAt: number | null
+}
+
+/**
+ * How long before its expiry a token is refreshed, so a call made just
+ * before the deadline isn't refused on its way to GitHub.
+ */
+export const REFRESH_MARGIN_MS = 5 * 60_000
+
+/** The credentials a token answer amounts to, as of `now`. */
+export function credentialsFrom(
+  poll: Extract<TokenPoll, { kind: 'token' }>,
+  now: number
+): GitHubCredentials {
+  return {
+    accessToken: poll.token,
+    expiresAt: poll.expiresIn !== undefined ? now + poll.expiresIn * 1000 : null,
+    refreshToken: poll.refreshToken ?? null,
+    refreshExpiresAt:
+      poll.refreshToken !== undefined && poll.refreshTokenExpiresIn !== undefined
+        ? now + poll.refreshTokenExpiresIn * 1000
+        : null
+  }
+}
+
+/** Credentials for a token that never expires. */
+export function lastingCredentials(accessToken: string): GitHubCredentials {
+  return { accessToken, expiresAt: null, refreshToken: null, refreshExpiresAt: null }
+}
+
+/** Whether the access token has expired, or is close enough to it to replace now. */
+export function refreshDue(credentials: GitHubCredentials, now: number): boolean {
+  return credentials.expiresAt !== null && now >= credentials.expiresAt - REFRESH_MARGIN_MS
+}
+
+/** Whether there is a refresh token, and it hasn't expired itself. */
+export function canRefresh(credentials: GitHubCredentials, now: number): boolean {
+  return (
+    credentials.refreshToken !== null &&
+    (credentials.refreshExpiresAt === null || now < credentials.refreshExpiresAt)
+  )
+}
+
+export function serializeCredentials(credentials: GitHubCredentials): string {
+  return JSON.stringify(credentials)
+}
+
+/**
+ * Reads what `serializeCredentials` wrote. Anything that isn't that JSON is
+ * taken as a bare access token, which is how 3.12 and earlier stored it, so
+ * an existing sign-in survives the upgrade. Null for nothing usable.
+ */
+export function parseCredentials(text: string): GitHubCredentials | null {
+  const trimmed = text.trim()
+  if (!trimmed) return null
+  if (!trimmed.startsWith('{')) return lastingCredentials(trimmed)
+  try {
+    const record = JSON.parse(trimmed) as Record<string, unknown>
+    if (typeof record.accessToken !== 'string' || !record.accessToken) return null
+    const time = (value: unknown): number | null =>
+      typeof value === 'number' && Number.isFinite(value) ? value : null
+    return {
+      accessToken: record.accessToken,
+      expiresAt: time(record.expiresAt),
+      refreshToken:
+        typeof record.refreshToken === 'string' && record.refreshToken ? record.refreshToken : null,
+      refreshExpiresAt: time(record.refreshExpiresAt)
+    }
+  } catch {
+    return null
   }
 }
 
@@ -221,6 +336,14 @@ export function cloneUrlFor(
  * token never appears in a process listing, and appended after any entries
  * the environment already carries rather than replacing them. Nothing for an
  * SSH or local URL: those authenticate (or don't) without the token.
+ *
+ * It does reach every process git starts with that environment, though:
+ * hooks such as `pre-push`, credential helpers and LFS can all read it
+ * (#174). Arborist still runs the repository's hooks, since skipping them
+ * would quietly change what a push does, and a hook is code the user already
+ * runs as themselves. What limits the exposure is the token itself: it can
+ * do only what the Arborist GitHub App is granted, on the repositories it is
+ * installed on.
  */
 export function gitAuthEnv(
   url: string,
@@ -235,14 +358,67 @@ export function gitAuthEnv(
   } catch {
     return {}
   }
+  return authHeaderEnv([`${origin}/`], token, base)
+}
+
+/**
+ * The same header for a fetch, pull or push in an existing project (#174),
+ * scoped to each of `urls` exactly rather than to the whole host. git matches
+ * `http.<url>.*` against the URL it is about to use, so a remote that isn't
+ * listed here, including another repository on github.com, keeps whatever
+ * credentials the user's own git setup gives it.
+ */
+export function repoAuthEnv(
+  urls: readonly string[],
+  token: string,
+  base: Record<string, string | undefined>
+): Record<string, string> {
+  return authHeaderEnv([...new Set(urls)], token, base)
+}
+
+function authHeaderEnv(
+  scopes: readonly string[],
+  token: string,
+  base: Record<string, string | undefined>
+): Record<string, string> {
+  if (scopes.length === 0) return {}
   const existing = Number.parseInt(base.GIT_CONFIG_COUNT ?? '0', 10)
-  const index = Number.isFinite(existing) && existing > 0 ? existing : 0
-  const credentials = btoa(`x-access-token:${token}`)
-  return {
-    GIT_CONFIG_COUNT: String(index + 1),
-    [`GIT_CONFIG_KEY_${index}`]: `http.${origin}/.extraheader`,
-    [`GIT_CONFIG_VALUE_${index}`]: `Authorization: Basic ${credentials}`
+  const first = Number.isFinite(existing) && existing > 0 ? existing : 0
+  const header = `Authorization: Basic ${btoa(`x-access-token:${token}`)}`
+  const env: Record<string, string> = { GIT_CONFIG_COUNT: String(first + scopes.length) }
+  scopes.forEach((scope, offset) => {
+    env[`GIT_CONFIG_KEY_${first + offset}`] = `http.${scope}.extraheader`
+    env[`GIT_CONFIG_VALUE_${first + offset}`] = header
+  })
+  return env
+}
+
+/**
+ * The repository an HTTPS remote URL points at on GitHub, as a lower-cased
+ * `owner/name`, for deciding whether a fetch, pull or push may carry the
+ * token (#174). Null for SSH and local URLs (the token is an HTTP
+ * credential), for another host, for anything that isn't exactly
+ * `owner/name`, and for a URL that already names a user: those come with
+ * credentials of their own, which the token would override.
+ */
+export function githubRepoForUrl(url: string, webUrl: string = GITHUB_WEB_URL): string | null {
+  let parsed: URL
+  let web: URL
+  try {
+    parsed = new URL(url)
+    web = new URL(webUrl)
+  } catch {
+    return null
   }
+  if (parsed.protocol !== 'https:' || parsed.protocol !== web.protocol) return null
+  if (parsed.host.toLowerCase() !== web.host.toLowerCase()) return null
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) return null
+  const segments = parsed.pathname
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/\.git$/i, '')
+    .split('/')
+  if (segments.length !== 2 || segments.some((segment) => !segment)) return null
+  return segments.join('/').toLowerCase()
 }
 
 /** Where `github:openPage` can send the browser. Main resolves each to a URL. */

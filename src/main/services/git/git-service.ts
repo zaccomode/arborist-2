@@ -69,6 +69,7 @@ import {
   parseCommitNumstat,
   parseLocalBranches,
   parseRemoteBranchRefs,
+  parseRemoteUrls,
   parseStashList,
   parseStatus,
   parseStatusV2,
@@ -170,15 +171,28 @@ function patchHeaderLineIndices(
  */
 export type SuppressWatcher = (worktreePath: string) => void
 
+/**
+ * Extra environment for a git command that talks to a remote, given the
+ * repository it runs in: how a GitHub sign-in reaches fetch, pull and push
+ * (#174). Undefined adds nothing. Defaults to that, like `SuppressWatcher`.
+ */
+export type NetworkEnv = (repoPath: string) => Promise<Record<string, string> | undefined>
+
 export class GitService {
   #git: GitRunner
   /** One in-flight fetch per repository, so concurrent callers share it. */
   #fetching = new Map<string, Promise<void>>()
   #suppressWatcher: SuppressWatcher
+  #networkEnv: NetworkEnv
 
-  constructor(git: GitRunner, suppressWatcher: SuppressWatcher = () => {}) {
+  constructor(
+    git: GitRunner,
+    suppressWatcher: SuppressWatcher = () => {},
+    networkEnv: NetworkEnv = async () => undefined
+  ) {
     this.#git = git
     this.#suppressWatcher = suppressWatcher
+    this.#networkEnv = networkEnv
   }
 
   /**
@@ -197,7 +211,8 @@ export class GitService {
   async #runFetch(repoPath: string): Promise<void> {
     const result = await this.#git.run(['fetch', '--all', '--prune'], {
       repoPath,
-      timeoutMs: FETCH_TIMEOUT_MS
+      timeoutMs: FETCH_TIMEOUT_MS,
+      env: await this.#networkEnv(repoPath)
     })
     if (result.exitCode === 0) return
 
@@ -307,6 +322,15 @@ export class GitService {
     } catch {
       return null
     }
+  }
+  /**
+   * Every URL a fetch, pull or push in `repoPath` can contact, as git will
+   * actually use it (see `parseRemoteUrls`). Main-process only, like
+   * `remoteUrl`, since a URL can carry credentials.
+   */
+  async remoteUrls(repoPath: string): Promise<string[]> {
+    const { exitCode, stdout } = await this.#git.run(['remote', '-v'], { repoPath })
+    return exitCode === 0 ? parseRemoteUrls(stdout) : []
   }
 
   /**
@@ -521,7 +545,8 @@ export class GitService {
     const args = setUpstream ? ['push', '--set-upstream', 'origin', branch] : ['push']
     const result = await this.#git.run(args, {
       repoPath: worktreePath,
-      timeoutMs: FETCH_TIMEOUT_MS
+      timeoutMs: FETCH_TIMEOUT_MS,
+      env: await this.#networkEnv(worktreePath)
     })
     if (result.exitCode === 0) return
 
@@ -554,7 +579,8 @@ export class GitService {
     this.#suppressWatcher(worktreePath)
     const result = await this.#git.run(pullArgsFor(mode), {
       repoPath: worktreePath,
-      timeoutMs: FETCH_TIMEOUT_MS
+      timeoutMs: FETCH_TIMEOUT_MS,
+      env: await this.#networkEnv(worktreePath)
     })
     if (result.exitCode === 0) return { conflict: false, diverged: false }
 

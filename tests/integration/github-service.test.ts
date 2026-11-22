@@ -1,4 +1,5 @@
 import { promises as fs } from 'fs'
+import { AppError } from '@shared/errors'
 import { createServer, type Server } from 'http'
 import type { AddressInfo } from 'net'
 import { join } from 'path'
@@ -12,7 +13,7 @@ import { GitHubService } from '../../src/main/services/github/github-service'
 import { SIGNED_OUT_CODE, type GitHubApi } from '../../src/main/services/github/github-api'
 import { FAKE_TOKEN, FakeGitHubApi } from '../../src/main/services/github/fake-github'
 import { TokenStore, type Encryptor } from '../../src/main/services/github/token-store'
-import type { TokenPoll } from '@shared/github'
+import { lastingCredentials, type GitHubCredentials, type TokenPoll } from '@shared/github'
 import { makeFixtureRepo, type GitFixture } from './fixtures/git-fixture'
 
 const runner = new GitRunner(new GitLocator())
@@ -54,7 +55,8 @@ async function service(
   api: GitHubApi = fakeApi(),
   tokens = new TokenStore(null, null)
 ): Promise<{ github: GitHubService; tokens: TokenStore; opened: string[] }> {
-  if (api instanceof FakeGitHubApi && api.signedIn) await tokens.write(FAKE_TOKEN)
+  if (api instanceof FakeGitHubApi && api.signedIn)
+    await tokens.write(lastingCredentials(FAKE_TOKEN))
   return makeService(api, tokens)
 }
 
@@ -70,6 +72,7 @@ function makeService(
     store,
     projects: new ProjectService(store, runner),
     remoteUrl: (repoPath) => gitService.remoteUrl(repoPath),
+    remoteUrls: (repoPath) => gitService.remoteUrls(repoPath),
     openExternal: async (url) => {
       opened.push(url)
       if (api instanceof FakeGitHubApi) api.approve()
@@ -91,7 +94,7 @@ describe('signing in', () => {
 
     expect(await finished).toEqual({ login: 'me', name: 'Me' })
     expect(opened).toEqual(['https://github.com/login/device'])
-    expect(await tokens.read()).toBe(FAKE_TOKEN)
+    expect((await tokens.read())?.accessToken).toBe(FAKE_TOKEN)
     expect((await github.status()).account?.login).toBe('me')
   })
 
@@ -142,6 +145,214 @@ describe('signing in', () => {
     expect(await tokens.read()).toBeNull()
     expect((await github.status()).account).toBeNull()
   })
+})
+
+describe('signing in when part of it fails (#175)', () => {
+  it('keeps a token whose account lookup failed, and reads the account later', async () => {
+    let lookups = 0
+    const api = Object.assign(fakeApi(false), {
+      account: async () => {
+        if (lookups++ === 0)
+          throw new AppError('Could not reach GitHub: ECONNRESET', 'github-offline')
+        return { login: 'me', name: 'Me' }
+      }
+    })
+    const { github, tokens } = await service(api)
+    await github.startSignIn()
+    const finished = github.finishSignIn()
+    await github.openPage('verification')
+
+    await expect(finished).rejects.toMatchObject({ code: 'github-account-failed' })
+    expect((await tokens.read())?.accessToken).toBe(FAKE_TOKEN)
+    expect((await github.status()).account?.login).toBe('me')
+  })
+
+  it('stays signed out when the token could not be saved', async () => {
+    const path = join(fixture.root, 'data', 'github-token.bin')
+    const tokens = new TokenStore(path, {
+      isEncryptionAvailable: () => true,
+      encryptString: () => {
+        throw new Error('keychain locked')
+      },
+      decryptString: (encrypted) => encrypted.toString()
+    })
+    const { github } = await service(fakeApi(false), tokens)
+    await github.startSignIn()
+    const finished = github.finishSignIn()
+    await github.openPage('verification')
+
+    await expect(finished).rejects.toThrow('keychain locked')
+    expect(await tokens.read()).toBeNull()
+    expect((await github.status()).account).toBeNull()
+  })
+})
+
+describe('expiring tokens (#174)', () => {
+  const expired = (): GitHubCredentials => ({
+    accessToken: 'ghu_old',
+    expiresAt: Date.now() - 1000,
+    refreshToken: 'ghr_old',
+    refreshExpiresAt: Date.now() + 60_000
+  })
+  const renewed: TokenPoll = {
+    kind: 'token',
+    token: 'ghu_new',
+    expiresIn: 28800,
+    refreshToken: 'ghr_new',
+    refreshTokenExpiresIn: 15897600
+  }
+
+  it('refreshes an expired token once, however many calls want it, and keeps the new pair', async () => {
+    const refreshedWith: string[] = []
+    const usedTokens: string[] = []
+    const api = Object.assign(fakeApi(false), {
+      refreshToken: async (refreshToken: string) => {
+        refreshedWith.push(refreshToken)
+        return renewed
+      },
+      installations: async (token: string) => {
+        usedTokens.push(token)
+        return []
+      }
+    })
+    const tokens = new TokenStore(null, null)
+    await tokens.write(expired())
+    const { github } = makeService(api, tokens)
+
+    await Promise.all([github.repos(), github.repos(), github.owners()])
+    expect(refreshedWith).toEqual(['ghr_old'])
+    expect(new Set(usedTokens)).toEqual(new Set(['ghu_new']))
+    expect(await tokens.read()).toMatchObject({ accessToken: 'ghu_new', refreshToken: 'ghr_new' })
+  })
+
+  it('refreshes and retries once when GitHub refuses a token before its expiry', async () => {
+    const api = Object.assign(fakeApi(false), {
+      refreshToken: async () => renewed,
+      installations: async (token: string) => {
+        if (token === 'ghu_old') {
+          throw new AppError('GitHub signed Arborist out.', SIGNED_OUT_CODE)
+        }
+        return []
+      }
+    })
+    const tokens = new TokenStore(null, null)
+    await tokens.write({ ...expired(), expiresAt: Date.now() + 3_600_000 })
+    const { github } = makeService(api, tokens)
+
+    await expect(github.repos()).resolves.toEqual([])
+    expect((await tokens.read())?.accessToken).toBe('ghu_new')
+  })
+
+  it('signs out when GitHub refuses the refresh token', async () => {
+    const api = Object.assign(fakeApi(false), {
+      refreshToken: async (): Promise<TokenPoll> => ({
+        kind: 'failed',
+        code: 'bad_refresh_token',
+        message: 'GitHub no longer accepts this sign-in.'
+      })
+    })
+    const tokens = new TokenStore(null, null)
+    await tokens.write(expired())
+    const { github } = makeService(api, tokens)
+
+    await expect(github.repos()).rejects.toMatchObject({ code: SIGNED_OUT_CODE })
+    expect(await tokens.read()).toBeNull()
+  })
+
+  it('signs out when the refresh token has expired too', async () => {
+    const tokens = new TokenStore(null, null)
+    await tokens.write({ ...expired(), refreshExpiresAt: Date.now() - 1 })
+    const { github } = makeService(fakeApi(false), tokens)
+    expect((await github.status()).account).toBeNull()
+    expect(await tokens.read()).toBeNull()
+  })
+})
+
+describe('fetch, pull and push in a signed-in project (#174)', () => {
+  const granted = 'https://github.com/acme/web.git'
+
+  beforeEach(async () => {
+    await fixture.git(['remote', 'set-url', 'origin', granted])
+    await fixture.git(['remote', 'add', 'other', 'https://github.com/someone/else.git'])
+    await fixture.git(['remote', 'add', 'mirror', 'git@github.com:acme/web.git'])
+  })
+
+  /** What git would send to `url` with `env`, read back through git's own URL matching. */
+  async function headerFor(url: string, env: Record<string, string>): Promise<string | null> {
+    const result = await runner.run(['config', '--get-urlmatch', 'http.extraheader', url], {
+      repoPath: fixture.repoPath,
+      env
+    })
+    return result.exitCode === 0 ? result.stdout.trim() : null
+  }
+
+  it('sends the token only to the remotes whose repository the app can reach', async () => {
+    const { github } = await service()
+    const env = await github.networkEnv(fixture.repoPath)
+    expect(env).toBeDefined()
+    expect(await headerFor(granted, env!)).toBe(
+      `Authorization: Basic ${btoa(`x-access-token:${FAKE_TOKEN}`)}`
+    )
+    expect(await headerFor('https://github.com/someone/else.git', env!)).toBeNull()
+    expect(await headerFor('https://github.com/acme/web-other.git', env!)).toBeNull()
+  })
+
+  it('adds nothing when signed out, or for a project with no GitHub HTTPS remote', async () => {
+    const signedOut = await service(fakeApi(false))
+    expect(await signedOut.github.networkEnv(fixture.repoPath)).toBeUndefined()
+
+    await fixture.git(['remote', 'set-url', 'origin', 'git@github.com:acme/web.git'])
+    const { github } = await service()
+    expect(await github.networkEnv(fixture.repoPath)).toBeUndefined()
+  })
+
+  it('adds nothing, rather than failing the git call, when GitHub cannot be reached', async () => {
+    const api = Object.assign(fakeApi(true), {
+      installations: async () => {
+        throw new AppError('Could not reach GitHub.', 'github-offline')
+      }
+    })
+    const { github } = await service(api)
+    expect(await github.networkEnv(fixture.repoPath)).toBeUndefined()
+  })
+
+  it('reaches git through GitService’s fetch, pull and push', async () => {
+    const seen: (string | undefined)[] = []
+    const server: Server = createServer((request, response) => {
+      seen.push(request.headers.authorization)
+      response.statusCode = 404
+      response.end()
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const { port } = server.address() as AddressInfo
+    const url = `http://127.0.0.1:${port}/acme/web.git`
+    try {
+      await fixture.git(['remote', 'remove', 'other'])
+      await fixture.git(['remote', 'remove', 'mirror'])
+      await fixture.git(['remote', 'set-url', 'origin', url])
+      const asked: string[] = []
+      const signed = new GitService(
+        runner,
+        () => {},
+        async (repoPath) => {
+          asked.push(repoPath)
+          return {
+            GIT_CONFIG_COUNT: '1',
+            GIT_CONFIG_KEY_0: `http.${url}.extraheader`,
+            GIT_CONFIG_VALUE_0: 'Authorization: Basic dGVzdA=='
+          }
+        }
+      )
+      await expect(signed.fetchAll(fixture.repoPath)).rejects.toThrow()
+      await expect(signed.pull(fixture.repoPath, 'ff-only')).rejects.toThrow()
+      await expect(signed.push(fixture.repoPath, 'main', true)).rejects.toThrow()
+      expect(asked).toEqual([fixture.repoPath, fixture.repoPath, fixture.repoPath])
+      expect(seen.length).toBeGreaterThanOrEqual(3)
+      expect(seen.every((header) => header === 'Basic dGVzdA==')).toBe(true)
+    } finally {
+      await new Promise((resolve) => server.close(resolve))
+    }
+  }, 30_000)
 })
 
 describe('listing', () => {
@@ -314,21 +525,43 @@ describe('TokenStore', () => {
 
   it('keeps the token encrypted on disk, across instances', async () => {
     const path = join(fixture.root, 'data', 'github-token.bin')
-    await new TokenStore(path, encryptor).write('ghu_secret')
+    await new TokenStore(path, encryptor).write(lastingCredentials('ghu_secret'))
     expect((await fs.readFile(path)).toString()).not.toContain('ghu_secret')
     const reopened = new TokenStore(path, encryptor)
     expect(reopened.remembers).toBe(true)
-    expect(await reopened.read()).toBe('ghu_secret')
+    expect((await reopened.read())?.accessToken).toBe('ghu_secret')
     await reopened.clear()
     expect(await new TokenStore(path, encryptor).read()).toBeNull()
+  })
+
+  it('reads a token stored bare by 3.12 as a sign-in that does not expire', async () => {
+    const path = join(fixture.root, 'data', 'github-token.bin')
+    await fs.mkdir(join(fixture.root, 'data'), { recursive: true })
+    await fs.writeFile(path, encryptor.encryptString('ghu_old'))
+    expect(await new TokenStore(path, encryptor).read()).toEqual(lastingCredentials('ghu_old'))
+  })
+
+  it('does not remember the token on Linux’s plaintext fallback (#174)', async () => {
+    const path = join(fixture.root, 'data', 'github-token.bin')
+    const tokens = new TokenStore(path, {
+      ...encryptor,
+      getSelectedStorageBackend: () => 'basic_text'
+    })
+    expect(tokens.remembers).toBe(false)
+    await tokens.write(lastingCredentials('ghu_secret'))
+    expect(await fs.stat(path).catch(() => null)).toBeNull()
+    expect(
+      new TokenStore(path, { ...encryptor, getSelectedStorageBackend: () => 'gnome_libsecret' })
+        .remembers
+    ).toBe(true)
   })
 
   it('holds the token in memory only without a keychain', async () => {
     const path = join(fixture.root, 'data', 'github-token.bin')
     const tokens = new TokenStore(path, { ...encryptor, isEncryptionAvailable: () => false })
-    await tokens.write('ghu_secret')
+    await tokens.write(lastingCredentials('ghu_secret'))
     expect(tokens.remembers).toBe(false)
-    expect(await tokens.read()).toBe('ghu_secret')
+    expect((await tokens.read())?.accessToken).toBe('ghu_secret')
     expect(await fs.stat(path).catch(() => null)).toBeNull()
   })
 })

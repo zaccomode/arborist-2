@@ -62,6 +62,34 @@ export function pullLabel(behind: number): string {
 }
 
 /**
+ * What pushing a branch with no upstream does (#150). With a remote it
+ * publishes the branch there, `push --set-upstream origin`. A project with no
+ * remote at all has nowhere for that to go — git answers "'origin' does not
+ * appear to be a git repository" — so the button offers to publish the
+ * repository to GitHub instead. `projectHasRemote` null means not known yet,
+ * which pushes, as before this existed.
+ */
+export function pushAction(
+  hasUpstream: boolean,
+  projectHasRemote: boolean | null
+): 'push' | 'publish-repository' {
+  return !hasUpstream && projectHasRemote === false ? 'publish-repository' : 'push'
+}
+
+/**
+ * Whether a project has a remote, from `projects:hasRemote`: null until that
+ * has been read, and for a project it doesn't cover, such as one added since
+ * (#175). Null pushes as before, so a guess never sends a push to a remote
+ * that isn't there.
+ */
+export function projectHasRemote(
+  hasRemote: Readonly<Record<string, boolean>> | undefined,
+  projectId: string
+): boolean | null {
+  return hasRemote?.[projectId] ?? null
+}
+
+/**
  * Which of the two sync actions a worktree can offer.
  *
  * Each button exists only when it has work to do (#79 review): Pull when the
@@ -89,21 +117,6 @@ export function pullLabel(behind: number): string {
  * A worktree whose folder is gone has nothing to sync, and a detached HEAD
  * has no branch for either action to name, so both are false for either.
  */
-/**
- * What pushing a branch with no upstream does (#150). With a remote it
- * publishes the branch there, `push --set-upstream origin`. A project with no
- * remote at all has nowhere for that to go — git answers "'origin' does not
- * appear to be a git repository" — so the button offers to publish the
- * repository to GitHub instead. `projectHasRemote` null means not known yet,
- * which pushes, as before this existed.
- */
-export function pushAction(
-  hasUpstream: boolean,
-  projectHasRemote: boolean | null
-): 'push' | 'publish-repository' {
-  return !hasUpstream && projectHasRemote === false ? 'publish-repository' : 'push'
-}
-
 export function syncAvailability(worktree: Worktree): {
   canPull: boolean
   canPush: boolean

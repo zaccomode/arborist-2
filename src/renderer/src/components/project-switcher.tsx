@@ -21,8 +21,9 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { useMenuOpensDialog } from '@/lib/menu-opens-dialog'
-import { useProjectRemoteLocations, useProjectsWithoutRemote } from '@/api/queries'
+import { useProjectRemoteLocations, useProjectsHasRemote } from '@/api/queries'
 import { groupProjects } from '@shared/project-groups'
+import { projectHasRemote } from '@shared/sync'
 
 /**
  * One project at a time, chosen here. v1 listed every repository in the
@@ -78,8 +79,8 @@ export function ProjectSwitcher({
   // Only for a project with no remote at all — one on a local path still
   // pushes somewhere — and only once that is known, rather than for a moment
   // on every project while it loads.
-  const withoutRemote = useProjectsWithoutRemote()
-  const publishable = !!selected && !!withoutRemote.data?.includes(selected.id)
+  const hasRemote = useProjectsHasRemote()
+  const publishable = !!selected && projectHasRemote(hasRemote.data, selected.id) === false
 
   return (
     <DropdownMenu>

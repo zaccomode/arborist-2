@@ -12,6 +12,7 @@ import {
   parseBranchState,
   parseRemoteBranchList,
   parseRemoteBranchRefs,
+  parseRemoteUrls,
   parseStashList,
   parseStatus,
   parseUpstreamTrack,
@@ -163,6 +164,30 @@ describe('parseLocalBranches', () => {
 
   it('ignores blank lines', () => {
     expect(parseLocalBranches('\n\n')).toEqual([])
+  })
+})
+
+describe('parseRemoteUrls', () => {
+  it('lists every fetch and push URL once, in order', () => {
+    const output = [
+      'origin\thttps://github.com/acme/web (fetch)',
+      'origin\thttps://github.com/acme/web (push)',
+      'fork\thttps://github.com/me/web.git (fetch)',
+      'fork\tgit@github.com:me/web.git (push)',
+      ''
+    ].join('\n')
+    expect(parseRemoteUrls(output)).toEqual([
+      'https://github.com/acme/web',
+      'https://github.com/me/web.git',
+      'git@github.com:me/web.git'
+    ])
+  })
+
+  it('keeps spaces in a local path, and copes with CRLF and no remotes', () => {
+    expect(parseRemoteUrls('local\t/Users/me/My Repos/web (fetch)\r\n')).toEqual([
+      '/Users/me/My Repos/web'
+    ])
+    expect(parseRemoteUrls('')).toEqual([])
   })
 })
 
