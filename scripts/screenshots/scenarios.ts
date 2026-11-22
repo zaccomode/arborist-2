@@ -616,6 +616,52 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'publish-new-local-project',
+    description:
+      'A project with no remote, added while another project’s remotes are ' +
+      'already known (#175): the switcher offering to publish it straight ' +
+      'away, and the header’s Publish button opening the publish dialog ' +
+      'rather than trying to push to an origin that isn’t there.',
+    setup: async ({ userDataDir, workDir }) => {
+      const published = new GitFixture(join(workDir, 'published'), 'Arborist')
+      await published.init()
+      await seedProject(userDataDir, published.repoPath)
+      const local = new GitFixture(join(workDir, 'local'), 'Notes')
+      await local.init()
+      await local.git(['remote', 'remove', 'origin'])
+      return {
+        ...(await fakeGitHub(workDir, { signedIn: true })),
+        ARBORIST_PICK_FOLDER: local.repoPath
+      }
+    },
+    drive: async (window, shot) => {
+      // The seeded project first, with the switcher's answers for it read,
+      // so the project added next is one those answers predate.
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await window.getByTestId('project-switcher').click()
+      await waitForProjectGroups(window)
+      await window.keyboard.press('Escape')
+      await window.getByRole('menu').waitFor({ state: 'detached' })
+
+      await addProject(window)
+      await window.getByTestId('project-switcher').filter({ hasText: 'Notes' }).waitFor()
+      await window.getByTestId('project-switcher').click()
+      await window.getByRole('menuitem', { name: 'Publish to GitHub…' }).waitFor()
+      await waitForProjectGroups(window)
+      await shot('menu')
+
+      await window.keyboard.press('Escape')
+      await window.getByRole('menu').waitFor({ state: 'detached' })
+      await window.getByRole('button', { name: 'Publish', exact: true }).click()
+      await window
+        .getByRole('combobox', { name: 'Owner' })
+        .filter({ hasText: 'zaccomode' })
+        .waitFor()
+      await window.getByTestId('publish-branches').getByText('main').waitFor()
+      await shot('dialog')
+    }
+  },
+  {
     name: 'prune-worktrees',
     description:
       'Pruning, which used to be a permanent menu item and is now a button ' +

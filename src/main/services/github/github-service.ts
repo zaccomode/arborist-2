@@ -2,8 +2,13 @@ import { promises as fs } from 'fs'
 import { join } from 'path'
 import { AppError } from '../../../shared/errors'
 import {
+  canRefresh,
   cloneUrlFor,
+  credentialsFrom,
   gitAuthEnv,
+  githubRepoForUrl,
+  refreshDue,
+  repoAuthEnv,
   installUrl,
   nextPollInterval,
   repoNameFor,
@@ -12,6 +17,7 @@ import {
   type CloneProtocol,
   type DeviceCode,
   type GitHubAccount,
+  type GitHubCredentials,
   type GitHubOwner,
   type GitHubPage,
   type GitHubRepo,
@@ -33,6 +39,14 @@ import type { TokenStore } from './token-store'
  */
 const MIN_POLL_MS = 100
 
+/**
+ * How long the list of repositories the app can reach is trusted for when
+ * deciding whether a fetch, pull or push may carry the token. Installing the
+ * app on another repository shows up within this long; publishing one clears
+ * it at once.
+ */
+const GRANTED_REPOS_TTL_MS = 5 * 60_000
+
 interface SignInSession {
   deviceCode: string
   verificationUri: string
@@ -50,6 +64,8 @@ export interface GitHubServiceDeps {
   projects: ProjectService
   /** Reads a project's remote, to refuse publishing one that already has one. */
   remoteUrl: (repoPath: string) => Promise<string | null>
+  /** Every URL git fetches from or pushes to in a project, after `insteadOf`. */
+  remoteUrls: (repoPath: string) => Promise<string[]>
   openExternal: (url: string) => Promise<void>
 }
 
@@ -64,6 +80,11 @@ export class GitHubService {
   #session: SignInSession | null = null
   /** The last listing, by id, so a clone request names a repository rather than a URL. */
   #repos = new Map<number, GitHubRepo>()
+  /** One refresh at a time: GitHub invalidates a refresh token the moment it is used. */
+  #refreshing: Promise<GitHubCredentials | null> | null = null
+  /** Lower-cased `owner/name` of every repository the app can reach, and when that was read. */
+  #granted: { names: Set<string>; at: number } | null = null
+  #grantedLoading: Promise<Set<string>> | null = null
 
   constructor(deps: GitHubServiceDeps) {
     this.#deps = deps
@@ -71,8 +92,7 @@ export class GitHubService {
 
   async status(): Promise<GitHubStatus> {
     const remembers = this.#deps.tokens.remembers
-    const token = await this.#deps.tokens.read()
-    if (!token) return { account: null, remembers }
+    if (!(await this.#deps.tokens.read())) return { account: null, remembers }
     if (!this.#account) {
       this.#account = await this.#withToken((value) => this.#deps.api.account(value)).catch(
         (error: unknown) => {
@@ -139,10 +159,22 @@ export class GitHubService {
       }
       if (poll.kind === 'token') {
         this.#session = null
-        const account = await this.#deps.api.account(poll.token)
-        await this.#deps.tokens.write(poll.token)
+        // Kept before anything else can fail (#175): the device code is spent
+        // by now, so a token dropped here means approving on GitHub again.
+        await this.#deps.tokens.write(credentialsFrom(poll, Date.now()))
+        this.#forgetListings()
+        let account: GitHubAccount
+        try {
+          account = await this.#withToken((token) => this.#deps.api.account(token))
+        } catch (error) {
+          if ((error as AppError).code === SIGNED_OUT_CODE) throw error
+          // Signed in all the same; `status()` reads the account again later.
+          throw new AppError(
+            `Signed in to GitHub, but Arborist couldn't read your account: ${(error as Error).message}`,
+            'github-account-failed'
+          )
+        }
         this.#account = account
-        this.#repos.clear()
         return account
       }
       if (poll.kind === 'failed') {
@@ -177,8 +209,7 @@ export class GitHubService {
 
   async signOut(): Promise<void> {
     this.cancelSignIn()
-    this.#account = null
-    this.#repos.clear()
+    this.#forgetListings()
     await this.#deps.tokens.clear()
   }
 
@@ -192,6 +223,10 @@ export class GitHubService {
       return sortRepos(lists.flat())
     })
     this.#repos = new Map(repos.map((repo) => [repo.id, repo]))
+    this.#granted = {
+      names: new Set(repos.map((repo) => repo.fullName.toLowerCase())),
+      at: Date.now()
+    }
     return repos
   }
 
@@ -272,6 +307,9 @@ export class GitHubService {
       )
     )
 
+    // The new repository isn't in the last listing, and its first push after
+    // this one should carry the token like any other.
+    this.#granted = null
     const url = cloneUrlFor(created, options.protocol)
     await this.#deps.git.runOrThrow(['remote', 'add', 'origin', url], { repoPath: project.path })
 
@@ -292,6 +330,36 @@ export class GitHubService {
     return { fullName: created.fullName, htmlUrl: created.htmlUrl }
   }
 
+  /**
+   * Extra environment for a fetch, pull or push in `repoPath` (#174): the
+   * token as an HTTPS header, scoped to each of the project's remote URLs
+   * that points at a repository the app can reach. Without it, a project
+   * cloned over HTTPS through Arborist could be cloned but not pulled from
+   * or pushed to by anyone who has no credential helper for github.com.
+   *
+   * A remote the app can't reach gets nothing, rather than a header GitHub
+   * would refuse in place of the user's own working credentials. So does
+   * every remote when signed out, and any failure here: the git operation
+   * then runs exactly as it would have before sign-in existed.
+   */
+  async networkEnv(repoPath: string): Promise<Record<string, string> | undefined> {
+    try {
+      if (!(await this.#deps.tokens.read())) return undefined
+      const webUrl = this.#deps.api.webUrl
+      const candidates = (await this.#deps.remoteUrls(repoPath)).filter(
+        (url) => githubRepoForUrl(url, webUrl) !== null
+      )
+      if (candidates.length === 0) return undefined
+      const token = await this.#token()
+      if (!token) return undefined
+      const granted = await this.#grantedRepos()
+      const urls = candidates.filter((url) => granted.has(githubRepoForUrl(url, webUrl)!))
+      return urls.length > 0 ? repoAuthEnv(urls, token, gitEnv()) : undefined
+    } catch {
+      return undefined
+    }
+  }
+
   /** Runs git with the token as an HTTPS header for `url`'s host, if there is one to hand. */
   async #git(
     args: string[],
@@ -299,21 +367,100 @@ export class GitHubService {
     timeoutMs: number,
     repoPath?: string
   ): ReturnType<GitRunner['run']> {
-    const token = await this.#deps.tokens.read()
+    const token = await this.#token().catch(() => null)
     const env = token ? gitAuthEnv(url, token, gitEnv()) : undefined
     return this.#deps.git.run(args, { repoPath, timeoutMs, env })
   }
 
-  /** Runs `call` with the token, forgetting it if GitHub says it is no longer valid. */
+  /**
+   * Runs `call` with the token. If GitHub refuses it, an expiring token is
+   * refreshed and the call tried once more (#174); a token that can't be
+   * refreshed, or is refused again, is forgotten.
+   */
   async #withToken<T>(call: (token: string) => Promise<T>): Promise<T> {
-    const token = await this.#deps.tokens.read()
+    const token = await this.#token()
     if (!token) throw new AppError('Sign in to GitHub to continue.', SIGNED_OUT_CODE)
     try {
       return await call(token)
     } catch (error) {
-      if ((error as AppError).code === SIGNED_OUT_CODE) await this.signOut()
-      throw error
+      if ((error as AppError).code !== SIGNED_OUT_CODE) throw error
+      const retry = await this.#tokenAfterRefusal(token)
+      if (!retry) {
+        await this.signOut()
+        throw error
+      }
+      try {
+        return await call(retry)
+      } catch (again) {
+        if ((again as AppError).code === SIGNED_OUT_CODE) await this.signOut()
+        throw again
+      }
     }
+  }
+
+  /**
+   * The access token to use now, refreshed first if it has expired or is
+   * about to. Null when signed out, including when the refresh token itself
+   * has expired or GitHub refuses it. Rejects only when GitHub can't be
+   * reached to refresh.
+   */
+  async #token(): Promise<string | null> {
+    const credentials = await this.#deps.tokens.read()
+    if (!credentials) return null
+    if (!refreshDue(credentials, Date.now())) return credentials.accessToken
+    return (await this.#refresh(credentials))?.accessToken ?? null
+  }
+
+  /** A token to retry with after GitHub refused `refused`, or null to give up. */
+  async #tokenAfterRefusal(refused: string): Promise<string | null> {
+    const credentials = await this.#deps.tokens.read()
+    if (!credentials) return null
+    // Another call refreshed while this one was in flight.
+    if (credentials.accessToken !== refused) return credentials.accessToken
+    if (!canRefresh(credentials, Date.now())) return null
+    const refreshed = await this.#refresh(credentials).catch(() => null)
+    return refreshed?.accessToken ?? null
+  }
+
+  #refresh(credentials: GitHubCredentials): Promise<GitHubCredentials | null> {
+    this.#refreshing ??= this.#runRefresh(credentials).finally(() => {
+      this.#refreshing = null
+    })
+    return this.#refreshing
+  }
+
+  async #runRefresh(credentials: GitHubCredentials): Promise<GitHubCredentials | null> {
+    if (!canRefresh(credentials, Date.now())) {
+      await this.signOut()
+      return null
+    }
+    const poll = await this.#deps.api.refreshToken(credentials.refreshToken!)
+    if (poll.kind !== 'token') {
+      await this.signOut()
+      return null
+    }
+    const next = credentialsFrom(poll, Date.now())
+    await this.#deps.tokens.write(next)
+    return next
+  }
+
+  /** The repositories the app can reach, from a recent listing or a new one. */
+  async #grantedRepos(): Promise<Set<string>> {
+    if (this.#granted && Date.now() - this.#granted.at < GRANTED_REPOS_TTL_MS) {
+      return this.#granted.names
+    }
+    this.#grantedLoading ??= this.repos()
+      .then(() => this.#granted?.names ?? new Set<string>())
+      .finally(() => {
+        this.#grantedLoading = null
+      })
+    return this.#grantedLoading
+  }
+
+  #forgetListings(): void {
+    this.#account = null
+    this.#repos.clear()
+    this.#granted = null
   }
 }
 

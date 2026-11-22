@@ -79,6 +79,10 @@ export class FakeGitHubApi implements GitHubApi {
     return this.#approved ? { kind: 'token', token: FAKE_TOKEN } : { kind: 'pending' }
   }
 
+  async refreshToken(): Promise<TokenPoll> {
+    return { kind: 'token', token: FAKE_TOKEN }
+  }
+
   async account(): Promise<GitHubAccount> {
     return this.#fixture.account
   }

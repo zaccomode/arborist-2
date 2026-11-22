@@ -21,6 +21,7 @@ import type { PresetCatalogue, ResolvedPreset } from '@shared/presets'
 import type { ProjectSettings, Repository, Settings } from '@shared/persisted'
 import type { RemoteLocation } from '@shared/project-groups'
 import type { GitHubOwner, GitHubRepo, GitHubStatus } from '@shared/github'
+import { projectHasRemote } from '@shared/sync'
 import { invoke } from '@/api/client'
 
 const COMMIT_PAGE_SIZE = 20
@@ -29,7 +30,7 @@ export const queryKeys = {
   projects: ['projects'] as const,
   // Under `projects`, so adding or removing one regroups the switcher too.
   projectRemoteLocations: ['projects', 'remote-locations'] as const,
-  projectsWithoutRemote: ['projects', 'without-remote'] as const,
+  projectsHasRemote: ['projects', 'has-remote'] as const,
   worktrees: (repoPath: string) => ['worktrees', repoPath] as const,
   note: (repositoryId: string, worktreePath: string | null) =>
     ['note', repositoryId, worktreePath] as const,
@@ -90,22 +91,24 @@ export function useProjectRemoteLocations(): ReturnType<
 }
 
 /**
- * Which projects have no remote at all (#150), for offering to publish them
- * and for sending their push buttons to that offer. Fresh for as long as the
- * locations are, for the same reason.
+ * Whether each project has a remote at all (#150), for offering to publish
+ * the ones without and for sending their push buttons to that offer. Fresh
+ * for as long as the locations are, for the same reason.
  */
-export function useProjectsWithoutRemote(): ReturnType<typeof useQuery<string[]>> {
+export function useProjectsHasRemote(): ReturnType<typeof useQuery<Record<string, boolean>>> {
   return useQuery({
-    queryKey: queryKeys.projectsWithoutRemote,
-    queryFn: () => invoke('projects:withoutRemote'),
+    queryKey: queryKeys.projectsHasRemote,
+    queryFn: () => invoke('projects:hasRemote'),
     staleTime: PROJECT_LOCATIONS_STALE_MS
   })
 }
 
-/** Whether a project has a remote: null until that is known. */
+/**
+ * Whether a project has a remote: null until that is known, including for a
+ * project added since the answer was read (#175).
+ */
 export function useProjectHasRemote(projectId: string): boolean | null {
-  const without = useProjectsWithoutRemote()
-  return without.data ? !without.data.includes(projectId) : null
+  return projectHasRemote(useProjectsHasRemote().data, projectId)
 }
 
 export function useAddProject(): UseMutationResult<Repository, Error, string> {
@@ -117,6 +120,9 @@ export function useAddProject(): UseMutationResult<Repository, Error, string> {
       // is listed before its location is known and briefly shows under
       // "Local" (#166). A failed refetch still lets the list refresh.
       await client.invalidateQueries({ queryKey: queryKeys.projectRemoteLocations })
+      // Without this a new project with no remote isn't offered "Publish to
+      // GitHub" for up to five minutes, and its push fails instead (#175).
+      await client.invalidateQueries({ queryKey: queryKeys.projectsHasRemote })
       await client.invalidateQueries({ queryKey: queryKeys.projects, exact: true })
     }
   })

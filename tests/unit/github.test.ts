@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import type { Repository } from '@shared/persisted'
 import {
+  REFRESH_MARGIN_MS,
+  canRefresh,
   cloneUrlFor,
+  credentialsFrom,
   filterRepos,
   gitAuthEnv,
+  githubRepoForUrl,
+  lastingCredentials,
+  parseCredentials,
+  refreshDue,
+  repoAuthEnv,
+  serializeCredentials,
   groupReposByOwner,
   installUrl,
   interpretTokenPoll,
@@ -71,6 +80,41 @@ describe('interpretTokenPoll', () => {
       { kind: 'failed', message: 'Something odd.' }
     )
     expect(interpretTokenPoll(null)).toMatchObject({ kind: 'failed', code: 'unknown' })
+  })
+})
+
+describe('interpretTokenPoll expiry (#174)', () => {
+  it('keeps the refresh token and lifetimes GitHub sends with an expiring token', () => {
+    expect(
+      interpretTokenPoll({
+        access_token: 'ghu_a',
+        expires_in: 28800,
+        refresh_token: 'ghr_a',
+        refresh_token_expires_in: 15897600,
+        token_type: 'bearer',
+        scope: ''
+      })
+    ).toEqual({
+      kind: 'token',
+      token: 'ghu_a',
+      expiresIn: 28800,
+      refreshToken: 'ghr_a',
+      refreshTokenExpiresIn: 15897600
+    })
+  })
+
+  it('reads a token that does not expire as just the token', () => {
+    expect(interpretTokenPoll({ access_token: 'ghu_a', expires_in: 'soon' })).toEqual({
+      kind: 'token',
+      token: 'ghu_a'
+    })
+  })
+
+  it('explains a refresh token GitHub refuses', () => {
+    expect(interpretTokenPoll({ error: 'bad_refresh_token' })).toMatchObject({
+      kind: 'failed',
+      message: 'GitHub no longer accepts this sign-in. Sign in again to continue.'
+    })
   })
 })
 
@@ -184,6 +228,126 @@ describe('gitAuthEnv', () => {
     expect(gitAuthEnv('git@github.com:acme/web.git', 't', {})).toEqual({})
     expect(gitAuthEnv('ssh://git@github.com/acme/web.git', 't', {})).toEqual({})
     expect(gitAuthEnv('file:///tmp/web.git', 't', {})).toEqual({})
+  })
+})
+
+describe('repoAuthEnv', () => {
+  const header = `Authorization: Basic ${btoa('x-access-token:t')}`
+
+  it('scopes the header to each URL exactly, once each', () => {
+    const env = repoAuthEnv(
+      [
+        'https://github.com/acme/web.git',
+        'https://github.com/me/web.git',
+        'https://github.com/acme/web.git'
+      ],
+      't',
+      {}
+    )
+    expect(env).toEqual({
+      GIT_CONFIG_COUNT: '2',
+      GIT_CONFIG_KEY_0: 'http.https://github.com/acme/web.git.extraheader',
+      GIT_CONFIG_VALUE_0: header,
+      GIT_CONFIG_KEY_1: 'http.https://github.com/me/web.git.extraheader',
+      GIT_CONFIG_VALUE_1: header
+    })
+  })
+
+  it('appends after entries the environment already carries', () => {
+    const env = repoAuthEnv(['https://github.com/acme/web'], 't', { GIT_CONFIG_COUNT: '1' })
+    expect(env.GIT_CONFIG_COUNT).toBe('2')
+    expect(env.GIT_CONFIG_KEY_1).toBe('http.https://github.com/acme/web.extraheader')
+  })
+
+  it('adds nothing for no URLs', () => {
+    expect(repoAuthEnv([], 't', {})).toEqual({})
+  })
+})
+
+describe('githubRepoForUrl', () => {
+  it('reads owner/name from an HTTPS GitHub URL, with or without .git, ignoring case', () => {
+    expect(githubRepoForUrl('https://github.com/Acme/Web.git')).toBe('acme/web')
+    expect(githubRepoForUrl('https://github.com/acme/web')).toBe('acme/web')
+    expect(githubRepoForUrl('https://github.com/acme/web/')).toBe('acme/web')
+    expect(githubRepoForUrl('https://GitHub.com/acme/web.git')).toBe('acme/web')
+  })
+
+  it('has nothing for SSH, local, other hosts or plain HTTP', () => {
+    expect(githubRepoForUrl('git@github.com:acme/web.git')).toBeNull()
+    expect(githubRepoForUrl('ssh://git@github.com/acme/web.git')).toBeNull()
+    expect(githubRepoForUrl('file:///tmp/acme/web.git')).toBeNull()
+    expect(githubRepoForUrl('/tmp/acme/web.git')).toBeNull()
+    expect(githubRepoForUrl('https://gitlab.com/acme/web.git')).toBeNull()
+    expect(githubRepoForUrl('https://github.com.evil.test/acme/web.git')).toBeNull()
+    expect(githubRepoForUrl('http://github.com/acme/web.git')).toBeNull()
+  })
+
+  it('has nothing for a URL that brings its own credentials', () => {
+    expect(githubRepoForUrl('https://me@github.com/acme/web.git')).toBeNull()
+    expect(githubRepoForUrl('https://me:pat@github.com/acme/web.git')).toBeNull()
+  })
+
+  it('has nothing for a path that is not exactly owner/name', () => {
+    expect(githubRepoForUrl('https://github.com/acme')).toBeNull()
+    expect(githubRepoForUrl('https://github.com/acme/web/tree/main')).toBeNull()
+    expect(githubRepoForUrl('https://github.com/')).toBeNull()
+  })
+
+  it('matches against the web URL it is given', () => {
+    expect(githubRepoForUrl('https://ghe.test/acme/web.git', 'https://ghe.test')).toBe('acme/web')
+    expect(githubRepoForUrl('https://github.com/acme/web.git', 'https://ghe.test')).toBeNull()
+  })
+})
+
+describe('credentials', () => {
+  const now = 1_000_000_000_000
+
+  it('works out expiry times from an expiring token', () => {
+    const credentials = credentialsFrom(
+      {
+        kind: 'token',
+        token: 'ghu_a',
+        expiresIn: 28800,
+        refreshToken: 'ghr_a',
+        refreshTokenExpiresIn: 15897600
+      },
+      now
+    )
+    expect(credentials).toEqual({
+      accessToken: 'ghu_a',
+      expiresAt: now + 28800_000,
+      refreshToken: 'ghr_a',
+      refreshExpiresAt: now + 15897600_000
+    })
+    expect(refreshDue(credentials, now)).toBe(false)
+    expect(refreshDue(credentials, now + 28800_000 - REFRESH_MARGIN_MS)).toBe(true)
+    expect(canRefresh(credentials, now + 28800_000)).toBe(true)
+    expect(canRefresh(credentials, now + 15897600_000)).toBe(false)
+  })
+
+  it('never refreshes a token that does not expire', () => {
+    const credentials = credentialsFrom({ kind: 'token', token: 'ghu_a' }, now)
+    expect(credentials).toEqual(lastingCredentials('ghu_a'))
+    expect(refreshDue(credentials, Number.MAX_SAFE_INTEGER)).toBe(false)
+    expect(canRefresh(credentials, now)).toBe(false)
+  })
+
+  it('round-trips through storage', () => {
+    const credentials = credentialsFrom(
+      { kind: 'token', token: 'ghu_a', expiresIn: 10, refreshToken: 'ghr_a' },
+      now
+    )
+    expect(parseCredentials(serializeCredentials(credentials))).toEqual(credentials)
+  })
+
+  it('reads a bare token, as 3.12 stored it, as one that does not expire', () => {
+    expect(parseCredentials('ghu_old\n')).toEqual(lastingCredentials('ghu_old'))
+  })
+
+  it('has nothing for an empty or unreadable record', () => {
+    expect(parseCredentials('')).toBeNull()
+    expect(parseCredentials('{"accessToken":')).toBeNull()
+    expect(parseCredentials('{"refreshToken":"ghr_a"}')).toBeNull()
   })
 })
 

@@ -47,6 +47,11 @@ export function GitHubSignIn({ reason }: { reason: string }): React.JSX.Element 
           if (cause.code === 'github-sign-in-cancelled') return
           setCode(null)
           setError(cause.message)
+          // The token is kept even when reading the account failed (#175), so
+          // the status may well be signed in now.
+          if (cause.code === 'github-account-failed') {
+            void queryClient.invalidateQueries({ queryKey: queryKeys.github })
+          }
         })
         .finally(() => {
           waiting.current = false

@@ -85,6 +85,30 @@ describe('HttpGitHubApi device flow', () => {
   })
 })
 
+describe('HttpGitHubApi refresh (#174)', () => {
+  it('swaps a refresh token with no client secret, and reads the new pair', async () => {
+    const { fetch, calls } = scripted([
+      {
+        body: {
+          access_token: 'ghu_new',
+          expires_in: 28800,
+          refresh_token: 'ghr_new',
+          refresh_token_expires_in: 15897600
+        }
+      }
+    ])
+    const poll = await new HttpGitHubApi(fetch, options).refreshToken('ghr_old')
+    expect(calls[0].url).toBe('https://gh.test/login/oauth/access_token')
+    const sent = new URLSearchParams(calls[0].body)
+    expect(Object.fromEntries(sent)).toEqual({
+      client_id: 'Iv1',
+      grant_type: 'refresh_token',
+      refresh_token: 'ghr_old'
+    })
+    expect(poll).toMatchObject({ kind: 'token', token: 'ghu_new', refreshToken: 'ghr_new' })
+  })
+})
+
 describe('HttpGitHubApi REST calls', () => {
   it('sends the token and API version, and reads the account', async () => {
     const { fetch, calls } = scripted([{ body: { login: 'me', name: 'Me Myself' } }])
@@ -180,6 +204,16 @@ describe('HttpGitHubApi REST calls', () => {
     await expect(new HttpGitHubApi(fetch, options).account('tok')).rejects.toMatchObject({
       code: SIGNED_OUT_CODE
     })
+  })
+
+  it('reports a body that is not JSON by its status, rather than a parse error (#175)', async () => {
+    const api = new HttpGitHubApi(
+      async () => new Response('<html>Bad gateway</html>', { status: 502 }),
+      options
+    )
+    const failure = api.account('tok')
+    await expect(failure).rejects.toMatchObject({ code: 'github-request-failed' })
+    await expect(failure).rejects.toThrow('GitHub answered with HTTP 502.')
   })
 
   it('reports being offline as such', async () => {

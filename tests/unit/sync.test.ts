@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import type { Worktree } from '../../src/shared/domain'
-import { pullArgsFor, pullLabel, pushAction, syncAvailability } from '../../src/shared/sync'
+import {
+  projectHasRemote,
+  pullArgsFor,
+  pullLabel,
+  pushAction,
+  syncAvailability
+} from '../../src/shared/sync'
 
 function worktree(
   overrides: Partial<Worktree> = {},
@@ -125,6 +131,26 @@ describe('syncAvailability', () => {
 
   it('drops pull once the upstream is deleted on the remote, whatever the stale count says', () => {
     expect(syncAvailability(worktree({}, { gone: true, behind: 4 })).canPull).toBe(false)
+  })
+})
+
+describe('projectHasRemote (#175)', () => {
+  it('is not known until read, nor for a project added since', () => {
+    expect(projectHasRemote(undefined, 'p1')).toBeNull()
+    expect(projectHasRemote({ p1: true }, 'p2')).toBeNull()
+  })
+
+  it('reads the answer for a project it covers', () => {
+    const hasRemote = { p1: true, p2: false }
+    expect(projectHasRemote(hasRemote, 'p1')).toBe(true)
+    expect(projectHasRemote(hasRemote, 'p2')).toBe(false)
+  })
+
+  it('sends a newly added project without a remote to publishing once it is read', () => {
+    expect(pushAction(false, projectHasRemote({ old: true }, 'new'))).toBe('push')
+    expect(pushAction(false, projectHasRemote({ old: true, new: false }, 'new'))).toBe(
+      'publish-repository'
+    )
   })
 })
 

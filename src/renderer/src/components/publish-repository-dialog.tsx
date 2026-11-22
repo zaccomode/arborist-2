@@ -148,7 +148,7 @@ function PublishForm({
       // it: the remote is in place, so the switcher should regroup.
       if (failure.code === 'publish-push-failed') {
         await queryClient.invalidateQueries({ queryKey: queryKeys.projectRemoteLocations })
-        await queryClient.invalidateQueries({ queryKey: queryKeys.projectsWithoutRemote })
+        await queryClient.invalidateQueries({ queryKey: queryKeys.projectsHasRemote })
       }
       setError(failure.message)
     } finally {

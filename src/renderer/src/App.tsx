@@ -547,7 +547,7 @@ function App(): React.JSX.Element | null {
             setPublishOpen(false)
             toast.success(`Published to ${result.fullName}`)
             await queryClient.invalidateQueries({ queryKey: queryKeys.projectRemoteLocations })
-            await queryClient.invalidateQueries({ queryKey: queryKeys.projectsWithoutRemote })
+            await queryClient.invalidateQueries({ queryKey: queryKeys.projectsHasRemote })
             await queryClient.invalidateQueries({ queryKey: queryKeys.worktrees(selected.path) })
             await queryClient.invalidateQueries({
               queryKey: queryKeys.remoteBranches(selected.path)

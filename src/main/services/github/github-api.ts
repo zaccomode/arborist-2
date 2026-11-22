@@ -21,6 +21,12 @@ export interface GitHubApi {
   readonly webUrl: string
   requestDeviceCode(): Promise<DeviceCode & { deviceCode: string }>
   pollDeviceToken(deviceCode: string): Promise<TokenPoll>
+  /**
+   * Swaps a refresh token for a new access token and refresh token (#174).
+   * The old pair stops working once this succeeds. A device-flow token needs
+   * no client secret to refresh.
+   */
+  refreshToken(refreshToken: string): Promise<TokenPoll>
   account(token: string): Promise<GitHubAccount>
   /** The accounts and organisations the app is installed on that this user can see. */
   installations(token: string): Promise<{ id: number; owner: GitHubOwner }[]>
@@ -121,6 +127,15 @@ export class HttpGitHubApi implements GitHubApi {
     return interpretTokenPoll(body)
   }
 
+  async refreshToken(refreshToken: string): Promise<TokenPoll> {
+    const body = await this.#postForm('/login/oauth/access_token', {
+      client_id: this.#clientId,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken
+    })
+    return interpretTokenPoll(body)
+  }
+
   async account(token: string): Promise<GitHubAccount> {
     const user = (await this.#api(token, 'GET', '/user')) as { login: string; name: string | null }
     return { login: user.login, name: user.name ?? null }
@@ -195,7 +210,14 @@ export class HttpGitHubApi implements GitHubApi {
       throw new AppError('GitHub signed Arborist out. Sign in again to continue.', SIGNED_OUT_CODE)
     }
     const text = await response.text()
-    const parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {}
+    let parsed: Record<string, unknown>
+    try {
+      parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {}
+    } catch {
+      // A proxy's HTML error page, or GitHub's own during an outage (#175):
+      // say what status came back rather than "Unexpected token <".
+      throw new AppError(apiErrorMessage(response.status, {}), 'github-request-failed')
+    }
     if (!response.ok) {
       throw new AppError(apiErrorMessage(response.status, parsed), 'github-request-failed')
     }
