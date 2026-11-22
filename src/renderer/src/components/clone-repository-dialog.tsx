@@ -137,7 +137,11 @@ function CloneForm({
   }
 
   return (
-    <div className="space-y-4">
+    // `min-w-0` because the dialog lays its children out on a grid, where an
+    // item is at least as wide as its widest content: without it a long
+    // description or branch name widens the form past the dialog instead of
+    // truncating.
+    <div className="min-w-0 space-y-4">
       <Command
         shouldFilter={false}
         className="h-auto rounded-lg border"

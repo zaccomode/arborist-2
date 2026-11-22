@@ -211,7 +211,15 @@ async function fakeGitHub(
       owner: { login: 'acme', type: 'Organization' },
       repos: [
         { id: 21, name: 'api', private: true, description: 'Public API and webhooks' },
-        { id: 22, name: 'widgets', private: false, description: 'Shared UI widgets' }
+        {
+          id: 22,
+          name: 'widgets',
+          private: false,
+          // Long enough to overflow the dialog unless it truncates.
+          description:
+            'Shared UI widgets for every product surface, with design tokens, themes, ' +
+            'accessibility audits and a catalogue documenting each one'
+        }
       ]
     }
   ]

@@ -156,7 +156,11 @@ function PublishForm({
   }
 
   return (
-    <div className="space-y-4">
+    // `min-w-0` because the dialog lays its children out on a grid, where an
+    // item is at least as wide as its widest content: without it a long
+    // description or branch name widens the form past the dialog instead of
+    // truncating.
+    <div className="min-w-0 space-y-4">
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-3">
         <Label htmlFor="publish-owner">Owner</Label>
         {owners.isPending ? (
