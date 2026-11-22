@@ -207,14 +207,19 @@ function CloneForm({
                   ) : (
                     <Globe className="text-muted-foreground" aria-label="Public" />
                   )}
-                  <span className="truncate">{repo.name}</span>
-                  {repo.description && (
-                    <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                      {repo.description}
-                    </span>
-                  )}
+                  {/* Takes the row's spare width whether or not there is a
+                      description, so the tag sits beside the tick rather than
+                      sharing the space with the tick's own `ml-auto`. */}
+                  <span className="flex min-w-0 flex-1 items-center gap-2">
+                    <span className="truncate">{repo.name}</span>
+                    {repo.description && (
+                      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                        {repo.description}
+                      </span>
+                    )}
+                  </span>
                   {existing.has(repo.id) && (
-                    <Badge variant="outline" className="ml-auto shrink-0">
+                    <Badge variant="outline" className="shrink-0">
                       In Arborist
                     </Badge>
                   )}
@@ -268,10 +273,7 @@ function CloneForm({
         <Alert data-testid="clone-already-added">
           <FolderGit2 />
           <AlertTitle>{selected.fullName} is already in Arborist</AlertTitle>
-          <AlertDescription>
-            It&apos;s the {selectedExisting.name} project. Are you sure you want to clone a second,
-            separate copy? A new worktree is usually what you want instead.
-          </AlertDescription>
+          <AlertDescription>Are you sure you want a second clone?</AlertDescription>
         </Alert>
       )}
 

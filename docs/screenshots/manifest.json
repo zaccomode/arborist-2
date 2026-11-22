@@ -39,12 +39,12 @@
   },
   "clone-already-in-arborist": {
     "list": {
-      "dark": "085709e792a6ee3255a47ec91561f462efd135d2da2d225ff0f1e828bab29b96",
-      "light": "fd0774b042b9c5d66ac8b44b9eca06b415cc1fffb1031ae0b7a79921065ec0a9"
+      "dark": "7d156d718a31b641bbd999890774f30b0a89cb2bbd20a00a7d841665ad115f72",
+      "light": "20d57aa6e6c7ef1b889af1df90d27d44646732e88a54f19091b87310ffa7322e"
     },
     "warned": {
-      "dark": "f544d2bb8785dca022fda93bdb6f93bd65cc6795e4fa416be4088efaf387b2fa",
-      "light": "58653b688d92c9d4ca6b3a44676cc9f192602ef36d1c25f6c5d3fb0f1578339d"
+      "dark": "86cf164d0ef1015fd68d74d40ec8c56c9ee73a57f1bbb1e44558306712ffc8d8",
+      "light": "1c8d383f866888166cc5d6c13ff04a0cd8e4ef91a4c87778a1dedc845562a4f6"
     }
   },
   "clone-from-github": {

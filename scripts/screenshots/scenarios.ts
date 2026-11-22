@@ -502,34 +502,36 @@ export const scenarios: Scenario[] = [
   {
     name: 'clone-already-in-arborist',
     description:
-      'The clone dialog over a repository that is already a project (#150): ' +
-      'it is tagged In Arborist in the list, and selecting it warns that a ' +
-      'clone would be a second, separate copy, with Clone still offered.',
+      'The clone dialog over repositories that are already projects (#150): ' +
+      'each is tagged In Arborist beside the tick, with or without a ' +
+      'description to fill the row, and selecting one asks whether a second ' +
+      'clone is really wanted, with Clone still offered.',
     setup: async ({ userDataDir, workDir }) => {
-      const fixture = new GitFixture(join(workDir, 'existing'), 'arborist-2')
-      await fixture.init()
-      // Published on GitHub as far as Arborist can tell, but left out of
-      // `fetch --all`, so opening it doesn't try the network.
-      await fixture.git([
-        'remote',
-        'set-url',
-        'origin',
-        'https://github.com/zaccomode/arborist-2.git'
-      ])
-      await fixture.git(['config', 'remote.origin.skipFetchAll', 'true'])
+      // One with a description in the fake GitHub and one without: the tag
+      // used to drift to the middle of a row with nothing to fill it.
+      const repositories: { id: string; path: string; name: string; addedAt: string }[] = []
+      for (const [index, name] of ['arborist-2', 'sketchframe'].entries()) {
+        const fixture = new GitFixture(join(workDir, 'existing', name), name)
+        await fixture.init()
+        // Published on GitHub as far as Arborist can tell, but left out of
+        // `fetch --all`, so opening it doesn't try the network.
+        await fixture.git([
+          'remote',
+          'set-url',
+          'origin',
+          `https://github.com/zaccomode/${name}.git`
+        ])
+        await fixture.git(['config', 'remote.origin.skipFetchAll', 'true'])
+        repositories.push({
+          id: `p${index + 1}`,
+          path: fixture.repoPath,
+          name,
+          addedAt: '2026-01-05T09:00:00.000Z'
+        })
+      }
       await writeFile(
         join(userDataDir, 'arborist-data.json'),
-        JSON.stringify({
-          schemaVersion: 4,
-          repositories: [
-            {
-              id: 'p1',
-              path: fixture.repoPath,
-              name: 'arborist-2',
-              addedAt: '2026-01-05T09:00:00.000Z'
-            }
-          ]
-        }),
+        JSON.stringify({ schemaVersion: 4, repositories }),
         'utf8'
       )
       return {
@@ -543,13 +545,15 @@ export const scenarios: Scenario[] = [
       await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
       await window.getByTestId('project-switcher').click()
       await window.getByRole('menuitem', { name: 'Clone from GitHub…' }).click()
-      await window
-        .getByRole('option', { name: /arborist-2/ })
-        .getByText('In Arborist')
-        .waitFor({ state: 'visible' })
+      for (const name of [/arborist-2/, /sketchframe/]) {
+        await window
+          .getByRole('option', { name })
+          .getByText('In Arborist')
+          .waitFor({ state: 'visible' })
+      }
       await shot('list')
 
-      await window.getByRole('option', { name: /arborist-2/ }).click()
+      await window.getByRole('option', { name: /sketchframe/ }).click()
       await window.getByRole('button', { name: 'Choose…' }).click()
       await window.getByTestId('clone-destination').waitFor({ state: 'visible' })
       await window.getByTestId('clone-already-added').waitFor({ state: 'visible' })
