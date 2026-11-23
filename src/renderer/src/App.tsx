@@ -231,7 +231,11 @@ function App(): React.JSX.Element | null {
     const unsubscribers = [
       window.arborist.subscribe('app:refresh', () => void queryClient.invalidateQueries()),
       window.arborist.subscribe('app:newWorktree', openCreateWorktree),
-      window.arborist.subscribe('app:openSettings', () => setSettingsOpen(true))
+      window.arborist.subscribe('app:openSettings', () => setSettingsOpen(true)),
+      window.arborist.subscribe(
+        'github:signedOut',
+        () => void queryClient.invalidateQueries({ queryKey: queryKeys.github })
+      )
     ]
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [queryClient])

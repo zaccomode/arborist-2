@@ -8,6 +8,7 @@ import {
   gitAuthEnv,
   githubRepoForUrl,
   refreshDue,
+  refreshRefused,
   repoAuthEnv,
   installUrl,
   nextPollInterval,
@@ -47,6 +48,18 @@ const MIN_POLL_MS = 100
  */
 const GRANTED_REPOS_TTL_MS = 5 * 60_000
 
+/**
+ * How long a failed listing is remembered (#179), so a background fetch for
+ * every project doesn't each list again while GitHub can't be reached.
+ */
+const GRANTED_REPOS_FAILURE_TTL_MS = 30_000
+
+/**
+ * How long a fetch, pull or push waits for a listing before going ahead
+ * without the token (#179). The listing carries on and is used next time.
+ */
+const GRANTED_REPOS_WAIT_MS = 3_000
+
 interface SignInSession {
   deviceCode: string
   verificationUri: string
@@ -67,6 +80,12 @@ export interface GitHubServiceDeps {
   /** Every URL git fetches from or pushes to in a project, after `insteadOf`. */
   remoteUrls: (repoPath: string) => Promise<string[]>
   openExternal: (url: string) => Promise<void>
+  /**
+   * Called when the service signs out on its own, because GitHub refused
+   * the sign-in (#178), so the renderer stops showing the account. Not
+   * called for `signOut()`, whose caller already knows.
+   */
+  onSignedOut?: () => void
 }
 
 /**
@@ -85,6 +104,15 @@ export class GitHubService {
   /** Lower-cased `owner/name` of every repository the app can reach, and when that was read. */
   #granted: { names: Set<string>; at: number } | null = null
   #grantedLoading: Promise<Set<string>> | null = null
+  /** When the last listing for `#grantedRepos` failed, to wait before trying again. */
+  #grantedFailedAt: number | null = null
+  /**
+   * Bumped by every sign-out and sign-in (#178). Anything that awaited
+   * GitHub compares it before touching the store, so a refresh that lands
+   * after the user signed out, or signed in as someone else, is dropped
+   * rather than undoing that.
+   */
+  #generation = 0
 
   constructor(deps: GitHubServiceDeps) {
     this.#deps = deps
@@ -161,6 +189,7 @@ export class GitHubService {
         this.#session = null
         // Kept before anything else can fail (#175): the device code is spent
         // by now, so a token dropped here means approving on GitHub again.
+        this.#generation++
         await this.#deps.tokens.write(credentialsFrom(poll, Date.now()))
         this.#forgetListings()
         let account: GitHubAccount
@@ -208,6 +237,7 @@ export class GitHubService {
   }
 
   async signOut(): Promise<void> {
+    this.#generation++
     this.cancelSignIn()
     this.#forgetListings()
     await this.#deps.tokens.clear()
@@ -215,6 +245,7 @@ export class GitHubService {
 
   /** Every repository the app can reach for this user, across every installation. */
   async repos(): Promise<GitHubRepo[]> {
+    const generation = this.#generation
     const repos = await this.#withToken(async (token) => {
       const installations = await this.#deps.api.installations(token)
       const lists = await Promise.all(
@@ -222,7 +253,11 @@ export class GitHubService {
       )
       return sortRepos(lists.flat())
     })
+    // Another account's listing, or one from before signing out, isn't
+    // this sign-in's to keep (#178).
+    if (generation !== this.#generation) return repos
     this.#repos = new Map(repos.map((repo) => [repo.id, repo]))
+    this.#grantedFailedAt = null
     this.#granted = {
       names: new Set(repos.map((repo) => repo.fullName.toLowerCase())),
       at: Date.now()
@@ -340,7 +375,13 @@ export class GitHubService {
    * A remote the app can't reach gets nothing, rather than a header GitHub
    * would refuse in place of the user's own working credentials. So does
    * every remote when signed out, and any failure here: the git operation
-   * then runs exactly as it would have before sign-in existed.
+   * then runs exactly as it would have before sign-in existed. A remote the
+   * app can reach with less than the user's own credentials allow is
+   * covered by `GitService`, which retries without this on a refusal (#179).
+   *
+   * Never waits long on GitHub (#179): a listing that is out of date is used
+   * while a new one loads, and one that takes longer than
+   * `GRANTED_REPOS_WAIT_MS` is left to finish in the background.
    */
   async networkEnv(repoPath: string): Promise<Record<string, string> | undefined> {
     try {
@@ -352,7 +393,7 @@ export class GitHubService {
       if (candidates.length === 0) return undefined
       const token = await this.#token()
       if (!token) return undefined
-      const granted = await this.#grantedRepos()
+      const granted = await this.#grantedRepos(GRANTED_REPOS_WAIT_MS)
       const urls = candidates.filter((url) => granted.has(githubRepoForUrl(url, webUrl)!))
       return urls.length > 0 ? repoAuthEnv(urls, token, gitEnv()) : undefined
     } catch {
@@ -378,31 +419,46 @@ export class GitHubService {
    * refreshed, or is refused again, is forgotten.
    */
   async #withToken<T>(call: (token: string) => Promise<T>): Promise<T> {
+    const generation = this.#generation
     const token = await this.#token()
     if (!token) throw new AppError('Sign in to GitHub to continue.', SIGNED_OUT_CODE)
     try {
       return await call(token)
     } catch (error) {
       if ((error as AppError).code !== SIGNED_OUT_CODE) throw error
+      // Rejects if GitHub can't be reached to refresh (#178), which says
+      // nothing about whether the sign-in is still good, so keeps it.
       const retry = await this.#tokenAfterRefusal(token)
       if (!retry) {
-        await this.signOut()
+        await this.#signedOutBy(generation)
         throw error
       }
       try {
         return await call(retry)
       } catch (again) {
-        if ((again as AppError).code === SIGNED_OUT_CODE) await this.signOut()
+        if ((again as AppError).code === SIGNED_OUT_CODE) await this.#signedOutBy(generation)
         throw again
       }
     }
   }
 
   /**
+   * Signs out because GitHub refused the sign-in that was current at
+   * `generation`, unless the user has signed out or in since (#178), and
+   * tells the renderer.
+   */
+  async #signedOutBy(generation: number): Promise<void> {
+    if (generation !== this.#generation) return
+    await this.signOut()
+    this.#deps.onSignedOut?.()
+  }
+
+  /**
    * The access token to use now, refreshed first if it has expired or is
    * about to. Null when signed out, including when the refresh token itself
-   * has expired or GitHub refuses it. Rejects only when GitHub can't be
-   * reached to refresh.
+   * has expired or GitHub refuses it. Rejects when GitHub can't be reached
+   * to refresh, or answers with anything but a token or a refusal, and
+   * keeps the sign-in for next time (#178).
    */
   async #token(): Promise<string | null> {
     const credentials = await this.#deps.tokens.read()
@@ -411,15 +467,17 @@ export class GitHubService {
     return (await this.#refresh(credentials))?.accessToken ?? null
   }
 
-  /** A token to retry with after GitHub refused `refused`, or null to give up. */
+  /**
+   * A token to retry with after GitHub refused `refused`, or null to give up.
+   * Rejects, like `#token`, when the refresh couldn't get an answer.
+   */
   async #tokenAfterRefusal(refused: string): Promise<string | null> {
     const credentials = await this.#deps.tokens.read()
     if (!credentials) return null
     // Another call refreshed while this one was in flight.
     if (credentials.accessToken !== refused) return credentials.accessToken
     if (!canRefresh(credentials, Date.now())) return null
-    const refreshed = await this.#refresh(credentials).catch(() => null)
-    return refreshed?.accessToken ?? null
+    return (await this.#refresh(credentials))?.accessToken ?? null
   }
 
   #refresh(credentials: GitHubCredentials): Promise<GitHubCredentials | null> {
@@ -429,38 +487,82 @@ export class GitHubService {
     return this.#refreshing
   }
 
+  /**
+   * Swaps `credentials` for a new pair. Signs out only when GitHub refuses
+   * the refresh token, or it has expired (#178); any other failure rejects
+   * and leaves the stored pair alone, to try again later. If the user signed
+   * out or in while GitHub was answering, the answer is dropped and the
+   * store left as they left it: null when signed out, or the new sign-in.
+   */
   async #runRefresh(credentials: GitHubCredentials): Promise<GitHubCredentials | null> {
+    const generation = this.#generation
     if (!canRefresh(credentials, Date.now())) {
-      await this.signOut()
+      await this.#signedOutBy(generation)
       return null
     }
     const poll = await this.#deps.api.refreshToken(credentials.refreshToken!)
-    if (poll.kind !== 'token') {
-      await this.signOut()
+    if (generation !== this.#generation) return this.#deps.tokens.read()
+    if (poll.kind === 'token') {
+      const next = credentialsFrom(poll, Date.now())
+      await this.#deps.tokens.write(next)
+      return next
+    }
+    if (refreshRefused(poll)) {
+      await this.#signedOutBy(generation)
       return null
     }
-    const next = credentialsFrom(poll, Date.now())
-    await this.#deps.tokens.write(next)
-    return next
+    throw new AppError(
+      poll.kind === 'failed'
+        ? `GitHub couldn't renew the sign-in: ${poll.message}`
+        : "GitHub couldn't renew the sign-in.",
+      'github-request-failed'
+    )
   }
 
-  /** The repositories the app can reach, from a recent listing or a new one. */
-  async #grantedRepos(): Promise<Set<string>> {
-    if (this.#granted && Date.now() - this.#granted.at < GRANTED_REPOS_TTL_MS) {
-      return this.#granted.names
+  /**
+   * The repositories the app can reach, from a recent listing or a new one.
+   *
+   * A listing past `GRANTED_REPOS_TTL_MS` is still returned while a new one
+   * loads in the background. With none to hand, this waits up to `waitMs`
+   * for one and otherwise answers with no repositories, leaving the listing
+   * to finish for next time. A listing that failed isn't tried again for
+   * `GRANTED_REPOS_FAILURE_TTL_MS` (#179).
+   */
+  async #grantedRepos(waitMs: number): Promise<Set<string>> {
+    const now = Date.now()
+    const granted = this.#granted
+    if (granted && now - granted.at < GRANTED_REPOS_TTL_MS) return granted.names
+    const failedRecently =
+      this.#grantedFailedAt !== null && now - this.#grantedFailedAt < GRANTED_REPOS_FAILURE_TTL_MS
+    if (!failedRecently) {
+      this.#grantedLoading ??= this.repos()
+        .then(() => this.#granted?.names ?? new Set<string>())
+        .catch(() => {
+          this.#grantedFailedAt = Date.now()
+          return granted?.names ?? new Set<string>()
+        })
+        .finally(() => {
+          this.#grantedLoading = null
+        })
     }
-    this.#grantedLoading ??= this.repos()
-      .then(() => this.#granted?.names ?? new Set<string>())
-      .finally(() => {
-        this.#grantedLoading = null
-      })
-    return this.#grantedLoading
+    if (granted) return granted.names
+    if (!this.#grantedLoading) return new Set()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const giveUp = new Promise<Set<string>>((resolve) => {
+      timer = setTimeout(() => resolve(new Set()), waitMs)
+    })
+    try {
+      return await Promise.race([this.#grantedLoading, giveUp])
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   #forgetListings(): void {
     this.#account = null
     this.#repos.clear()
     this.#granted = null
+    this.#grantedFailedAt = null
   }
 }
 

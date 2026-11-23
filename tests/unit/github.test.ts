@@ -11,6 +11,8 @@ import {
   lastingCredentials,
   parseCredentials,
   refreshDue,
+  refreshRefused,
+  remoteRefusedCredentials,
   repoAuthEnv,
   serializeCredentials,
   groupReposByOwner,
@@ -348,6 +350,47 @@ describe('credentials', () => {
     expect(parseCredentials('')).toBeNull()
     expect(parseCredentials('{"accessToken":')).toBeNull()
     expect(parseCredentials('{"refreshToken":"ghr_a"}')).toBeNull()
+  })
+})
+
+describe('refreshRefused (#178)', () => {
+  it('ends the sign-in only when GitHub refuses the refresh token itself', () => {
+    expect(refreshRefused(interpretTokenPoll({ error: 'bad_refresh_token' }))).toBe(true)
+    expect(refreshRefused(interpretTokenPoll({ error: 'invalid_grant' }))).toBe(true)
+    // An outage's empty body, a rate limit's message, or a misconfigured app.
+    expect(refreshRefused(interpretTokenPoll({}))).toBe(false)
+    expect(refreshRefused(interpretTokenPoll({ message: 'API rate limit exceeded' }))).toBe(false)
+    expect(refreshRefused(interpretTokenPoll({ error: 'incorrect_client_credentials' }))).toBe(
+      false
+    )
+    expect(refreshRefused(interpretTokenPoll({ access_token: 'ghu_x' }))).toBe(false)
+  })
+})
+
+describe('remoteRefusedCredentials (#179)', () => {
+  it('recognises the ways GitHub turns down credentials or what they allow', () => {
+    for (const stderr of [
+      "remote: Permission to acme/web.git denied to arborist-2[bot].\nfatal: unable to access 'https://github.com/acme/web.git/': The requested URL returned error: 403",
+      "fatal: unable to access 'https://github.com/acme/web.git/': The requested URL returned error: 401",
+      "fatal: Authentication failed for 'https://github.com/acme/web.git/'",
+      ' ! [remote rejected] main -> main (refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission)',
+      ' ! [remote rejected] main -> main (refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)',
+      "fatal: could not read Username for 'https://github.com': terminal prompts disabled"
+    ]) {
+      expect(remoteRefusedCredentials(stderr), stderr).toBe(true)
+    }
+  })
+
+  it('leaves alone failures a second try without the token would not change', () => {
+    for (const stderr of [
+      "fatal: unable to access 'https://github.com/acme/web.git/': Could not resolve host: github.com",
+      ' ! [rejected]        main -> main (non-fast-forward)',
+      "fatal: repository 'https://github.com/acme/gone.git/' not found",
+      'CONFLICT (content): Merge conflict in README.md',
+      ''
+    ]) {
+      expect(remoteRefusedCredentials(stderr), stderr).toBe(false)
+    }
   })
 })
 

@@ -110,15 +110,6 @@ export function parseWorktreeList(
 }
 
 /**
- * Whether a short ref name from the remote-tracking namespace names a branch
- * anyone could check out, as opposed to a symbolic `origin/HEAD`. Git 2.55
- * (unlike 2.43, where this app's own tests were first written) shortens that
- * symbolic ref to a bare remote name — just `origin`, no slash — where 2.43
- * prints `origin/HEAD`; a real remote branch always has the shape
- * `<remote>/<path>`, so requiring a slash drops it under either git version
- * rather than chasing the exact string each one prints.
- */
-/**
  * Every URL in `git remote -v` output, fetch and push alike, without
  * repeats. git prints them after applying `url.*.insteadOf` and
  * `pushInsteadOf`, so these are the URLs it actually contacts, which is what
@@ -133,6 +124,15 @@ export function parseRemoteUrls(output: string): string[] {
   return [...urls]
 }
 
+/**
+ * Whether a short ref name from the remote-tracking namespace names a branch
+ * anyone could check out, as opposed to a symbolic `origin/HEAD`. Git 2.55
+ * (unlike 2.43, where this app's own tests were first written) shortens that
+ * symbolic ref to a bare remote name — just `origin`, no slash — where 2.43
+ * prints `origin/HEAD`; a real remote branch always has the shape
+ * `<remote>/<path>`, so requiring a slash drops it under either git version
+ * rather than chasing the exact string each one prints.
+ */
 export function isRemoteBranchRef(name: string): boolean {
   return name.length > 0 && name.includes('/') && !/(^|\/)HEAD$/.test(name)
 }
