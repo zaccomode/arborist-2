@@ -1806,6 +1806,52 @@ export const scenarios: Scenario[] = [
     }
   },
   {
+    name: 'diff-panel-reopen',
+    description:
+      'The sidebar keeps its width across the diff panel opening and closing ' +
+      'twice (#177): squeezed while the panel is open, and back to where it ' +
+      'started after each close, rather than drifting and then jumping to ' +
+      'its maximum on the second.',
+    setup: async ({ workDir }) => {
+      const fixture = new GitFixture(workDir, 'Arborist')
+      await fixture.init()
+      await writeFile(
+        join(fixture.repoPath, 'README.md'),
+        '# fixture\nedited for the diff panel\n',
+        'utf8'
+      )
+      return { ARBORIST_PICK_FOLDER: fixture.repoPath }
+    },
+    drive: async (window, shot) => {
+      await addProject(window)
+      await window.getByTestId('worktree-detail').waitFor({ state: 'visible' })
+      await window.getByRole('tab', { name: 'Working Tree' }).click()
+      await window.getByTestId('working-tree-files').waitFor({ state: 'visible' })
+      // The sidebar is restored once the group has laid out without the
+      // panel, a moment after the panel detaches, so wait for its width.
+      const before = await window.evaluate(
+        () => document.querySelector('[data-slot="resizable-panel"]')!.getBoundingClientRect().width
+      )
+      await shot('before')
+
+      for (const round of ['first', 'second']) {
+        await window.getByRole('button', { name: 'README.md', exact: true }).click()
+        await window.getByTestId('diff-panel').waitFor({ state: 'visible' })
+        await window.getByText('edited for the diff panel').waitFor({ state: 'visible' })
+        if (round === 'first') await shot('open')
+        await window.getByRole('button', { name: 'Close' }).click()
+        await window.getByTestId('diff-panel').waitFor({ state: 'detached' })
+        await window.waitForFunction(
+          (expected) =>
+            document.querySelector('[data-slot="resizable-panel"]')!.getBoundingClientRect()
+              .width === expected,
+          before
+        )
+        await shot(`closed-${round}`)
+      }
+    }
+  },
+  {
     name: 'diff-panel-hunks',
     description:
       'Hunk-level staging (#49) in the unified view (#73): a two-hunk diff ' +

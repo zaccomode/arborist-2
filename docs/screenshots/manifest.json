@@ -109,12 +109,12 @@
       "light": "80a6066baa4b6af1d778bee69bd2180a4aedf45487b2883cbf3eb581b57b3c76"
     },
     "paging-a": {
-      "dark": "8fa467bcfeaf5d51d2057beefa6e7430151f822d815368bed0f11a921a72504c",
-      "light": "816fdbf5b1d320165a53439ab660fa12552d169e484796c35515051ad0e27a01"
+      "dark": "feb566f2727afeb28617904b41af78b9f4d6e03fc9905cb3824def61e4a1d103",
+      "light": "b88459ab997491a1882ed599239c3bf8669436167233eabd232f3dc18a4a5c1c"
     },
     "paging-b": {
-      "dark": "7c08487a25fd06f721312558b3538931fd5126ff2444ccb6d48e13d6e41d9387",
-      "light": "aa54e5e4ec94f3ded0f0654e38b46f23cb79c23a978c3809be0a31dbf11b112f"
+      "dark": "3c886e009ec28f8acb89fd0bb24a1e096436378e0d8dc42f92da4a7c3f0b0e65",
+      "light": "7cfa509ef9580ed543de982df172ab3d78ef16115e5b644beea6c605dd2d8648"
     }
   },
   "commit-graph-crossing-lanes": {
@@ -193,8 +193,8 @@
       "light": "748923104719e75d42d4372b110cf7180acbc8a2bfe0ac6ed59e82f5a3e4a6a0"
     },
     "closed": {
-      "dark": "67d267b0a92c22fdb3f04c28ee92e50df71ca965eca9cef49d45a504449f1802",
-      "light": "db3a82b6b063d0057381c561cf35e6e4f91aab28a456b71d5fe01b8731fb5f2f"
+      "dark": "503245acfd45cfc219a59e19afc65404eb2215361fa520fde8ad735da1c95436",
+      "light": "372c89984a01b35eba37d957166666b49e6eb9e0f93431629f7e682f5537a744"
     },
     "mode-only": {
       "dark": "a7a9c1141de3dae1ba7d97cd43693ee3a254119280f47bf730b57b98dab286d9",
@@ -221,6 +221,24 @@
     "unstaged": {
       "dark": "5f5604b2cf29405a1df8e78afb1d13c4120c92474a417b06cf0726052cfcf638",
       "light": "f848cd99010503563f2f19e2a1aa06dad986d54b9d7f4f3a22f352a564dbd545"
+    }
+  },
+  "diff-panel-reopen": {
+    "before": {
+      "dark": "ac3c2394b6ce7e25983a9962f1e5f30ca546b7a35a886cb9f5e434f0d4071811",
+      "light": "517fb4fcf12ed5e80805b9a24acaf199ec72c2ca224fbe2a67f720bca6070c0b"
+    },
+    "closed-first": {
+      "dark": "ac3c2394b6ce7e25983a9962f1e5f30ca546b7a35a886cb9f5e434f0d4071811",
+      "light": "517fb4fcf12ed5e80805b9a24acaf199ec72c2ca224fbe2a67f720bca6070c0b"
+    },
+    "closed-second": {
+      "dark": "ac3c2394b6ce7e25983a9962f1e5f30ca546b7a35a886cb9f5e434f0d4071811",
+      "light": "517fb4fcf12ed5e80805b9a24acaf199ec72c2ca224fbe2a67f720bca6070c0b"
+    },
+    "open": {
+      "dark": "6b37a0b371939e8df0316425cfca05c17543c1cc69e524e666211ab71d9531d6",
+      "light": "65b9435a5d12dabf9f2fd92479e399122172092a66d7e3d9baf4a4ac20c89037"
     }
   },
   "fetch": {
@@ -443,8 +461,8 @@
   },
   "settings": {
     "about": {
-      "dark": "cd61ef6823f4ec5b41949cabf545366b6d9b1eda8a447195fed0b17785e80853",
-      "light": "b439ae53143564f8027c02300679b89224386abc7ad74cbfeb785924fa68292e"
+      "dark": "3da115c11a82c4d86b176f04c97efeb9db55e7f8c0d15cf24c8c688904ff6028",
+      "light": "3766f093dd1bb57affaef1b0e3ce9f68ab01f5fa8cf9869a80d964c71e94f503"
     },
     "developer": {
       "dark": "cfeb5f3d317244cb989465035d6da1cc5ddb41a2532243de4f76eed4d792ad57",
@@ -473,14 +491,14 @@
   },
   "settings-about-error": {
     "error": {
-      "dark": "8e8abbc07aa152eb8d1a6e5603c1daade4f7d39a4e9150ff51af775c007155fa",
-      "light": "f4ca10d7e38acf78587261f77430151afa52fc041ceea639922700f6d1006a94"
+      "dark": "6a9f94bf60f32c43e7181eebf47cab91fb231ee787dd063f134febd98d11e3ee",
+      "light": "1b2099777a2ce186c03082256a339ebdb6c9b1734c79cc6b0a670240796fb338"
     }
   },
   "settings-about-missing-manifest": {
     "error": {
-      "dark": "3f6d3c491dbd313127b4836d529df104f28f0a2a1ca409294250f5ce6235acf6",
-      "light": "4a8c5bf1be3910a1ea730b90bf13a830ec0b5cc3c11650e62a6997444abe7306"
+      "dark": "1f4d7724ebb68844fe8d0f30d68061abacbd5251bd5fee8532e766accc728721",
+      "light": "e54659babccc7fd347cd35f588cd7e6e90b2c1434e685e89875def8b7d172735"
     }
   },
   "settings-worktree-location": {
@@ -657,8 +675,8 @@
   },
   "update-check-tab": {
     "up-to-date": {
-      "dark": "32c063d9a78870af8ef297f8f78f30905aa52bb564f3dce4a70c2db2a4918537",
-      "light": "79044c46c067211b7caafd3506468beb3b1195d97953255fadbcb8b3cb0b40d8"
+      "dark": "08126b3930566d3c439a2877f127d0b98b386fa290e4a4442f04a8b74fcfb99b",
+      "light": "e1d3c3ad9ddd0d0d537bb1d172a8b5359000515511aa1adaa49e22df197153ff"
     }
   },
   "update-downloading": {
