@@ -83,6 +83,11 @@ tries that sign-in first. If GitHub refuses it, for example a push that changes
 `.github/workflows/`, which the app isn't permitted to do, Arborist tries once
 more with your own credentials, and the error names both when neither worked.
 
+To decide which remotes get the sign-in, Arborist asks GitHub which
+repositories the app can reach. A fetch in the background waits only a few
+seconds for that answer, so just after launch on a slow connection it can run
+with your own credentials alone; a pull or push you start waits for it.
+
 If `git fetch` works in your terminal for a repository but fails in Arborist,
 the difference is almost always the credential helper: it is configured in a
 shell profile that a desktop-launched app never reads, or it is an SSH agent

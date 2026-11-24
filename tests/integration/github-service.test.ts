@@ -310,6 +310,33 @@ describe('the sign-in changing while GitHub answers (#178)', () => {
     expect(await tokens.read()).toBeNull()
   })
 
+  it('stays signed out when the sign-out comes while a refresh is being written (#183)', async () => {
+    const path = join(fixture.root, 'data', 'github-token.bin')
+    let duringWrite: () => void = () => {}
+    const tokens = new TokenStore(path, {
+      isEncryptionAvailable: () => true,
+      encryptString: (plain) => {
+        if (plain.includes('ghu_new')) duringWrite()
+        return Buffer.from(plain)
+      },
+      decryptString: (encrypted) => encrypted.toString()
+    })
+    await tokens.write(expired())
+    const api = Object.assign(fakeApi(false), { refreshToken: async () => renewed })
+    const { github } = makeService(api, tokens)
+    let signingOut: Promise<void> | null = null
+    duringWrite = () => {
+      signingOut = github.signOut()
+    }
+
+    await expect(github.repos()).rejects.toMatchObject({ code: SIGNED_OUT_CODE })
+    expect(signingOut).not.toBeNull()
+    await signingOut
+    expect(await tokens.read()).toBeNull()
+    expect(await fs.stat(path).catch(() => null)).toBeNull()
+    expect(await new TokenStore(path, null).read()).toBeNull()
+  })
+
   it('keeps a new sign-in when the old one’s refresh lands after it', async () => {
     const { api, answer } = pendingRefresh()
     const tokens = new TokenStore(null, null)
@@ -495,6 +522,80 @@ describe('fetch, pull and push in a signed-in project (#174)', () => {
       expect(Date.now() - started).toBeLessThan(6_000)
     }, 15_000)
 
+    it('waits for a first listing for a pull or push the user started (#181)', async () => {
+      const { api, setInstallations } = countingApi()
+      const slow = fakeApi(true)
+      setInstallations(
+        (token) =>
+          new Promise((resolve) => setTimeout(() => resolve(slow.installations(token)), 3_500))
+      )
+      const background = await service(api)
+      const started = Date.now()
+      expect(await background.github.networkEnv(fixture.repoPath, 'background')).toBeUndefined()
+      expect(Date.now() - started).toBeLessThan(3_400)
+
+      const { github } = await service(api)
+      const env = await github.networkEnv(fixture.repoPath, 'user')
+      expect(env).toBeDefined()
+      expect(await headerFor(granted, env!)).toBe(
+        `Authorization: Basic ${btoa(`x-access-token:${FAKE_TOKEN}`)}`
+      )
+    }, 20_000)
+
+    it('stops waiting on a slow refresh for a fetch, and keeps the refresh’s answer (#182)', async () => {
+      const api = Object.assign(fakeApi(false), {
+        refreshToken: () =>
+          new Promise<TokenPoll>((resolve) =>
+            setTimeout(() => resolve({ kind: 'token', token: 'ghu_new', expiresIn: 28800 }), 3_500)
+          )
+      })
+      const tokens = new TokenStore(null, null)
+      await tokens.write({
+        accessToken: 'ghu_old',
+        expiresAt: Date.now() - 1000,
+        refreshToken: 'ghr_old',
+        refreshExpiresAt: Date.now() + 60_000
+      })
+      const { github } = makeService(api, tokens)
+      const started = Date.now()
+      expect(await github.networkEnv(fixture.repoPath, 'background')).toBeUndefined()
+      expect(Date.now() - started).toBeLessThan(3_400)
+
+      // The refresh started after the remotes were read, so give it slack.
+      await new Promise((resolve) => setTimeout(resolve, 1_500))
+      expect((await tokens.read())?.accessToken).toBe('ghu_new')
+      expect(await github.networkEnv(fixture.repoPath, 'background')).toBeDefined()
+    }, 20_000)
+
+    it('gives a new sign-in its own listing, whatever happens to the old one (#183)', async () => {
+      for (const failsBeforeAsking of [true, false]) {
+        const { api, setInstallations } = countingApi()
+        let failOld: () => void = () => {}
+        setInstallations(
+          () =>
+            new Promise((_resolve, reject) => {
+              failOld = () => reject(new AppError('Could not reach GitHub.', 'github-offline'))
+            })
+        )
+        const { github } = await service(api)
+        const old = github.networkEnv(fixture.repoPath, 'user')
+        await new Promise((resolve) => setTimeout(resolve, 20))
+
+        await github.signOut()
+        setInstallations(fakeApi(true).installations.bind(fakeApi(true)))
+        await github.startSignIn()
+        const signingIn = github.finishSignIn()
+        await github.openPage('verification')
+        await signingIn
+
+        if (failsBeforeAsking) failOld()
+        const env = github.networkEnv(fixture.repoPath, 'background')
+        if (!failsBeforeAsking) failOld()
+        expect(await env).toBeDefined()
+        expect(await old).toBeUndefined()
+      }
+    })
+
     it('waits a while before listing again after a listing failed', async () => {
       const { api, listings, setInstallations } = countingApi()
       setInstallations(async () => {
@@ -502,6 +603,31 @@ describe('fetch, pull and push in a signed-in project (#174)', () => {
       })
       const { github } = await service(api)
       expect(await github.networkEnv(fixture.repoPath)).toBeUndefined()
+      expect(await github.networkEnv(fixture.repoPath)).toBeUndefined()
+      expect(listings()).toBe(1)
+
+      // A pull or push the user started lists again rather than going
+      // without the token (#181).
+      expect(await github.networkEnv(fixture.repoPath, 'user')).toBeUndefined()
+      expect(listings()).toBe(2)
+      setInstallations(fakeApi(true).installations.bind(fakeApi(true)))
+      expect(await github.networkEnv(fixture.repoPath, 'user')).toBeDefined()
+      expect(listings()).toBe(3)
+      vi.restoreAllMocks()
+
+      const later = await service(countingApi().api)
+      setInstallations(async () => {
+        throw new AppError('Could not reach GitHub.', 'github-offline')
+      })
+      expect(await later.github.networkEnv(fixture.repoPath)).toBeDefined()
+    })
+
+    it('lists again for a fetch once a failed listing is old enough', async () => {
+      const { api, listings, setInstallations } = countingApi()
+      setInstallations(async () => {
+        throw new AppError('Could not reach GitHub.', 'github-offline')
+      })
+      const { github } = await service(api)
       expect(await github.networkEnv(fixture.repoPath)).toBeUndefined()
       expect(listings()).toBe(1)
 
@@ -570,11 +696,13 @@ describe('fetch, pull and push in a signed-in project (#174)', () => {
       await fixture.git(['remote', 'remove', 'mirror'])
       await fixture.git(['remote', 'set-url', 'origin', url])
       const asked: string[] = []
+      const callers: string[] = []
       const signed = new GitService(
         runner,
         () => {},
-        async (repoPath) => {
+        async (repoPath, caller) => {
           asked.push(repoPath)
+          callers.push(caller)
           return {
             GIT_CONFIG_COUNT: '1',
             GIT_CONFIG_KEY_0: `http.${url}.extraheader`,
@@ -586,6 +714,8 @@ describe('fetch, pull and push in a signed-in project (#174)', () => {
       await expect(signed.pull(fixture.repoPath, 'ff-only')).rejects.toThrow()
       await expect(signed.push(fixture.repoPath, 'main', true)).rejects.toThrow()
       expect(asked).toEqual([fixture.repoPath, fixture.repoPath, fixture.repoPath])
+      // A fetch may run in the background; a pull or push is the user's (#181).
+      expect(callers).toEqual(['background', 'user', 'user'])
       expect(seen.length).toBeGreaterThanOrEqual(3)
       expect(seen.every((header) => header === 'Basic dGVzdA==')).toBe(true)
     } finally {
@@ -793,6 +923,32 @@ describe('TokenStore', () => {
       new TokenStore(path, { ...encryptor, getSelectedStorageBackend: () => 'gnome_libsecret' })
         .remembers
     ).toBe(true)
+  })
+
+  it('runs a clear after a write still on its way to disk, not under it (#183)', async () => {
+    const path = join(fixture.root, 'data', 'github-token.bin')
+    const tokens = new TokenStore(path, encryptor)
+    const writing = tokens.write(lastingCredentials('ghu_secret'))
+    const clearing = tokens.clear()
+    await Promise.all([writing, clearing])
+    expect(await tokens.read()).toBeNull()
+    expect(await fs.stat(path).catch(() => null)).toBeNull()
+  })
+
+  it('keeps going after a write fails', async () => {
+    const path = join(fixture.root, 'data', 'github-token.bin')
+    let fail = true
+    const tokens = new TokenStore(path, {
+      ...encryptor,
+      encryptString: (plain) => {
+        if (fail) throw new Error('keychain locked')
+        return encryptor.encryptString(plain)
+      }
+    })
+    await expect(tokens.write(lastingCredentials('ghu_a'))).rejects.toThrow('keychain locked')
+    fail = false
+    await tokens.write(lastingCredentials('ghu_b'))
+    expect((await tokens.read())?.accessToken).toBe('ghu_b')
   })
 
   it('holds the token in memory only without a keychain', async () => {

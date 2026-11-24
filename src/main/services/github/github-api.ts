@@ -50,6 +50,19 @@ type Fetch = (input: string, init?: RequestInit) => Promise<Response>
  */
 export const GITHUB_REQUEST_TIMEOUT_MS = 10_000
 
+/**
+ * How long the refresh-token exchange may take (#182), far longer than
+ * `GITHUB_REQUEST_TIMEOUT_MS` on purpose. GitHub refresh tokens are single
+ * use: once the request reaches GitHub the old pair is spent, whether or not
+ * the answer makes it back. Giving up on a slow answer keeps the spent pair,
+ * and the next refresh is then refused and signs the user out. `fetch` can't
+ * tell a request that was never sent from one whose answer is slow, so this
+ * waits about as long as undici would have without any timeout, and callers
+ * that can't wait that long stop waiting without abandoning the exchange
+ * (see `GitHubService.networkEnv`).
+ */
+export const GITHUB_REFRESH_TIMEOUT_MS = 120_000
+
 const PAGE_SIZE = 100
 /** 5,000 repositories per installation is far past anything a picker can show usefully. */
 const MAX_PAGES = 50
@@ -90,6 +103,7 @@ export class HttpGitHubApi implements GitHubApi {
   readonly #fetch: Fetch
   readonly #clientId: string
   readonly #timeoutMs: number
+  readonly #refreshTimeoutMs: number
 
   constructor(
     fetchImpl: Fetch,
@@ -97,14 +111,22 @@ export class HttpGitHubApi implements GitHubApi {
       webUrl = GITHUB_WEB_URL,
       apiUrl = GITHUB_API_URL,
       clientId = GITHUB_APP_CLIENT_ID,
-      timeoutMs = GITHUB_REQUEST_TIMEOUT_MS
-    }: { webUrl?: string; apiUrl?: string; clientId?: string; timeoutMs?: number } = {}
+      timeoutMs = GITHUB_REQUEST_TIMEOUT_MS,
+      refreshTimeoutMs = GITHUB_REFRESH_TIMEOUT_MS
+    }: {
+      webUrl?: string
+      apiUrl?: string
+      clientId?: string
+      timeoutMs?: number
+      refreshTimeoutMs?: number
+    } = {}
   ) {
     this.#fetch = fetchImpl
     this.webUrl = webUrl
     this.#apiUrl = apiUrl
     this.#clientId = clientId
     this.#timeoutMs = timeoutMs
+    this.#refreshTimeoutMs = refreshTimeoutMs
   }
 
   async requestDeviceCode(): Promise<DeviceCode & { deviceCode: string }> {
@@ -138,11 +160,15 @@ export class HttpGitHubApi implements GitHubApi {
   }
 
   async refreshToken(refreshToken: string): Promise<TokenPoll> {
-    const body = await this.#postForm('/login/oauth/access_token', {
-      client_id: this.#clientId,
-      grant_type: 'refresh_token',
-      refresh_token: refreshToken
-    })
+    const body = await this.#postForm(
+      '/login/oauth/access_token',
+      {
+        client_id: this.#clientId,
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken
+      },
+      this.#refreshTimeoutMs
+    )
     return interpretTokenPoll(body)
   }
 
@@ -235,7 +261,11 @@ export class HttpGitHubApi implements GitHubApi {
     return parsed
   }
 
-  async #postForm(path: string, fields: Record<string, string>): Promise<Record<string, unknown>> {
+  async #postForm(
+    path: string,
+    fields: Record<string, string>,
+    timeoutMs = this.#timeoutMs
+  ): Promise<Record<string, unknown>> {
     let response: Response
     try {
       response = await this.#fetch(`${this.webUrl}${path}`, {
@@ -245,7 +275,7 @@ export class HttpGitHubApi implements GitHubApi {
           'Content-Type': 'application/x-www-form-urlencoded'
         },
         body: new URLSearchParams(fields).toString(),
-        signal: AbortSignal.timeout(this.#timeoutMs)
+        signal: AbortSignal.timeout(timeoutMs)
       })
     } catch (error) {
       throw new AppError(`Could not reach GitHub: ${(error as Error).message}`, 'github-offline')

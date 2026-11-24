@@ -31,7 +31,8 @@ import type { GitRunner } from '../git/git-runner'
 import { CLONE_TIMEOUT_MS, FETCH_TIMEOUT_MS, gitEnv } from '../git/git-executor'
 import type { Store } from '../persistence/store'
 import type { ProjectService } from '../projects'
-import { SIGNED_OUT_CODE, type GitHubApi } from './github-api'
+import type { RemoteCaller } from '../git/git-service'
+import { GITHUB_REQUEST_TIMEOUT_MS, SIGNED_OUT_CODE, type GitHubApi } from './github-api'
 import type { TokenStore } from './token-store'
 
 /**
@@ -55,8 +56,9 @@ const GRANTED_REPOS_TTL_MS = 5 * 60_000
 const GRANTED_REPOS_FAILURE_TTL_MS = 30_000
 
 /**
- * How long a fetch, pull or push waits for a listing before going ahead
- * without the token (#179). The listing carries on and is used next time.
+ * How long a background fetch waits for the token and the listing before
+ * going ahead without the token (#179). Both carry on and are used next
+ * time. A pull or push the user started waits longer: see `networkEnv`.
  */
 const GRANTED_REPOS_WAIT_MS = 3_000
 
@@ -379,26 +381,48 @@ export class GitHubService {
    * app can reach with less than the user's own credentials allow is
    * covered by `GitService`, which retries without this on a refusal (#179).
    *
-   * Never waits long on GitHub (#179): a listing that is out of date is used
-   * while a new one loads, and one that takes longer than
-   * `GRANTED_REPOS_WAIT_MS` is left to finish in the background.
+   * How long it waits on GitHub depends on `caller`. A listing that is out
+   * of date is always used while a new one loads.
+   *
+   * - `background` (a fetch, #179): never waits long. Whatever isn't to hand
+   *   within `GRANTED_REPOS_WAIT_MS` (a first listing, a token refresh) is
+   *   left to finish for next time, and the fetch goes ahead without the
+   *   token. A listing that just failed isn't tried again for a while.
+   * - `user` (a pull or push the user started, #181): waits for a listing,
+   *   each of whose requests is bounded by the API's own timeout, and lists
+   *   again even if the last listing failed, since going ahead without the
+   *   token is what fails the push for someone with no credential helper. A
+   *   token refresh is waited on for `GITHUB_REQUEST_TIMEOUT_MS` only, and
+   *   left running past that rather than abandoned (#182).
    */
-  async networkEnv(repoPath: string): Promise<Record<string, string> | undefined> {
-    try {
-      if (!(await this.#deps.tokens.read())) return undefined
-      const webUrl = this.#deps.api.webUrl
-      const candidates = (await this.#deps.remoteUrls(repoPath)).filter(
-        (url) => githubRepoForUrl(url, webUrl) !== null
-      )
-      if (candidates.length === 0) return undefined
-      const token = await this.#token()
-      if (!token) return undefined
-      const granted = await this.#grantedRepos(GRANTED_REPOS_WAIT_MS)
-      const urls = candidates.filter((url) => granted.has(githubRepoForUrl(url, webUrl)!))
-      return urls.length > 0 ? repoAuthEnv(urls, token, gitEnv()) : undefined
-    } catch {
-      return undefined
-    }
+  async networkEnv(
+    repoPath: string,
+    caller: RemoteCaller = 'background'
+  ): Promise<Record<string, string> | undefined> {
+    const env = this.#networkEnv(repoPath, caller)
+    return caller === 'user'
+      ? env.catch(() => undefined)
+      : within(env, GRANTED_REPOS_WAIT_MS, undefined)
+  }
+
+  async #networkEnv(
+    repoPath: string,
+    caller: RemoteCaller
+  ): Promise<Record<string, string> | undefined> {
+    if (!(await this.#deps.tokens.read())) return undefined
+    const webUrl = this.#deps.api.webUrl
+    const candidates = (await this.#deps.remoteUrls(repoPath)).filter(
+      (url) => githubRepoForUrl(url, webUrl) !== null
+    )
+    if (candidates.length === 0) return undefined
+    const token =
+      caller === 'user'
+        ? await within(this.#token(), GITHUB_REQUEST_TIMEOUT_MS, null)
+        : await this.#token()
+    if (!token) return undefined
+    const granted = await this.#grantedRepos(caller)
+    const urls = candidates.filter((url) => granted.has(githubRepoForUrl(url, webUrl)!))
+    return urls.length > 0 ? repoAuthEnv(urls, token, gitEnv()) : undefined
   }
 
   /** Runs git with the token as an HTTPS header for `url`'s host, if there is one to hand. */
@@ -504,7 +528,11 @@ export class GitHubService {
     if (generation !== this.#generation) return this.#deps.tokens.read()
     if (poll.kind === 'token') {
       const next = credentialsFrom(poll, Date.now())
+      // The store runs one operation at a time (#183), so a sign-out or
+      // sign-in that starts while this is still being written takes effect
+      // after it, rather than being undone by it.
       await this.#deps.tokens.write(next)
+      if (generation !== this.#generation) return this.#deps.tokens.read()
       return next
     }
     if (refreshRefused(poll)) {
@@ -523,46 +551,63 @@ export class GitHubService {
    * The repositories the app can reach, from a recent listing or a new one.
    *
    * A listing past `GRANTED_REPOS_TTL_MS` is still returned while a new one
-   * loads in the background. With none to hand, this waits up to `waitMs`
-   * for one and otherwise answers with no repositories, leaving the listing
-   * to finish for next time. A listing that failed isn't tried again for
-   * `GRANTED_REPOS_FAILURE_TTL_MS` (#179).
+   * loads. With none to hand, this waits for one; `networkEnv` bounds that
+   * wait for a background fetch. A listing that failed isn't tried again for
+   * `GRANTED_REPOS_FAILURE_TTL_MS` (#179), except for a `user` caller, which
+   * would otherwise go without the token (#181).
+   *
+   * A listing belongs to the sign-in it started under (#183): once the user
+   * signs out or in, `#forgetListings` stops anyone new waiting on it, and
+   * its failure no longer holds the next sign-in's listings back.
    */
-  async #grantedRepos(waitMs: number): Promise<Set<string>> {
+  #grantedRepos(caller: RemoteCaller): Promise<Set<string>> {
     const now = Date.now()
     const granted = this.#granted
-    if (granted && now - granted.at < GRANTED_REPOS_TTL_MS) return granted.names
+    if (granted && now - granted.at < GRANTED_REPOS_TTL_MS) return Promise.resolve(granted.names)
     const failedRecently =
       this.#grantedFailedAt !== null && now - this.#grantedFailedAt < GRANTED_REPOS_FAILURE_TTL_MS
-    if (!failedRecently) {
-      this.#grantedLoading ??= this.repos()
-        .then(() => this.#granted?.names ?? new Set<string>())
+    if (!this.#grantedLoading && (!failedRecently || caller === 'user')) {
+      const generation = this.#generation
+      const current = (): boolean => generation === this.#generation
+      const loading: Promise<Set<string>> = this.repos()
+        .then(() => (current() ? this.#granted?.names : undefined) ?? new Set<string>())
         .catch(() => {
+          if (!current()) return new Set<string>()
           this.#grantedFailedAt = Date.now()
           return granted?.names ?? new Set<string>()
         })
         .finally(() => {
-          this.#grantedLoading = null
+          if (this.#grantedLoading === loading) this.#grantedLoading = null
         })
+      this.#grantedLoading = loading
     }
-    if (granted) return granted.names
-    if (!this.#grantedLoading) return new Set()
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const giveUp = new Promise<Set<string>>((resolve) => {
-      timer = setTimeout(() => resolve(new Set()), waitMs)
-    })
-    try {
-      return await Promise.race([this.#grantedLoading, giveUp])
-    } finally {
-      clearTimeout(timer)
-    }
+    if (granted) return Promise.resolve(granted.names)
+    return this.#grantedLoading ?? Promise.resolve(new Set<string>())
   }
 
   #forgetListings(): void {
     this.#account = null
     this.#repos.clear()
     this.#granted = null
+    this.#grantedLoading = null
     this.#grantedFailedAt = null
+  }
+}
+
+/**
+ * `promise`, or `fallback` if it hasn't settled within `ms` or rejects. The
+ * promise itself carries on: a token refresh left behind still lands in the
+ * store for next time.
+ */
+async function within<T, F>(promise: Promise<T>, ms: number, fallback: F): Promise<T | F> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const giveUp = new Promise<F>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms)
+  })
+  try {
+    return await Promise.race([promise.catch(() => fallback), giveUp])
+  } finally {
+    clearTimeout(timer)
   }
 }
 
