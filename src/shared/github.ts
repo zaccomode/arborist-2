@@ -210,6 +210,38 @@ export function canRefresh(credentials: GitHubCredentials, now: number): boolean
   )
 }
 
+/**
+ * Whether a refresh that didn't produce a token means the sign-in is over
+ * (#178): GitHub refused the refresh token itself. Anything else, such as an
+ * outage's empty body or a rate limit, says nothing about the refresh token,
+ * which stays good for months, so signing out over it would only send the
+ * user through the device flow again for nothing.
+ */
+export function refreshRefused(poll: TokenPoll): boolean {
+  return (
+    poll.kind === 'failed' && (poll.code === 'bad_refresh_token' || poll.code === 'invalid_grant')
+  )
+}
+
+/**
+ * Whether git's stderr says the remote refused the credentials it was given
+ * or what they allowed (#179): a 401 or 403, git's own "authentication
+ * failed", or GitHub turning down a push that an app's token isn't allowed
+ * to make, such as one touching `.github/workflows/` without the Workflows
+ * permission, or any push with read-only Contents.
+ *
+ * Used to retry a fetch, pull or push once without Arborist's GitHub token,
+ * so the user's own credentials get their turn. A wrong guess costs at most
+ * one extra git call, or the error the user would have seen anyway: a
+ * refusal leaves nothing half-done to repeat, since git stops before it
+ * merges or updates any ref.
+ */
+export function remoteRefusedCredentials(stderr: string): boolean {
+  return /authentication failed|returned error: 40[13]|permission to \S+ denied|refusing to allow an? (?:GitHub|OAuth) App|could not read username|terminal prompts disabled/i.test(
+    stderr
+  )
+}
+
 export function serializeCredentials(credentials: GitHubCredentials): string {
   return JSON.stringify(credentials)
 }

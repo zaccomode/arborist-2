@@ -37,6 +37,7 @@ import {
   type FileDiff
 } from '../../../shared/diff'
 import { pullArgsFor, type PullMode, type PullResult } from '../../../shared/sync'
+import { remoteRefusedCredentials } from '../../../shared/github'
 import { worktreeBasePath, type ResolvedLocation } from '../../../shared/worktree-location'
 import { sortChangedFiles, stagePathsFor } from '../../../shared/working-tree'
 import { resolveDefaultBranch } from '../../../shared/branch-picker'
@@ -46,7 +47,7 @@ import {
   type BranchPosition
 } from '../../../shared/branch-position'
 import type { GitRunner } from './git-runner'
-import { FETCH_TIMEOUT_MS } from './git-executor'
+import { FETCH_TIMEOUT_MS, type GitExecResult } from './git-executor'
 import {
   hunkId as hunkIdOf,
   lineByteRanges,
@@ -123,6 +124,18 @@ function isAuthFailure(stderr: string): boolean {
   )
 }
 
+/**
+ * What to say when a fetch, pull or push was refused its credentials.
+ * `triedSignIn` is whether Arborist's GitHub token was offered first, and
+ * then the user's own credentials on a retry (#179): the message names both
+ * rather than claiming only the system's were used.
+ */
+export function authFailureMessage(verb: 'fetch' | 'pull' | 'push', triedSignIn: boolean): string {
+  return triedSignIn
+    ? `GitHub refused both Arborist's sign-in and your system git credentials. Check that the Arborist app can reach this repository, or ${verb} from a terminal to check your own credentials.`
+    : `Arborist uses your system git credentials; ${verb} from a terminal to check them.`
+}
+
 /** `origin/feature-x` -> `feature-x`: the name a local branch of the same branch would carry. */
 function shortRemoteName(ref: string): string {
   return ref.slice(ref.indexOf('/') + 1)
@@ -196,6 +209,28 @@ export class GitService {
   }
 
   /**
+   * Runs a git command that talks to a remote, with the GitHub sign-in's
+   * environment when there is one (#174). If the remote refuses those
+   * credentials, it runs once more without them (#179): the token can reach
+   * less than the user's own credentials do (an app without the Workflows
+   * permission can't push a change to `.github/workflows/`), and git sends
+   * the token's header ahead of any credential helper, and doesn't fall back
+   * to the helper after a 403. `triedSignIn` says whether both were tried.
+   */
+  async #runRemote(
+    args: string[],
+    repoPath: string
+  ): Promise<{ result: GitExecResult; triedSignIn: boolean }> {
+    const options = { repoPath, timeoutMs: FETCH_TIMEOUT_MS }
+    const env = await this.#networkEnv(repoPath)
+    const result = await this.#git.run(args, { ...options, env })
+    if (!env || result.exitCode === 0 || !remoteRefusedCredentials(result.stderr)) {
+      return { result, triedSignIn: false }
+    }
+    return { result: await this.#git.run(args, options), triedSignIn: true }
+  }
+
+  /**
    * `git fetch --all --prune`. Two rapid callers on the same repository
    * coalesce into one running fetch rather than racing git's lock files.
    */
@@ -209,18 +244,11 @@ export class GitService {
   }
 
   async #runFetch(repoPath: string): Promise<void> {
-    const result = await this.#git.run(['fetch', '--all', '--prune'], {
-      repoPath,
-      timeoutMs: FETCH_TIMEOUT_MS,
-      env: await this.#networkEnv(repoPath)
-    })
+    const { result, triedSignIn } = await this.#runRemote(['fetch', '--all', '--prune'], repoPath)
     if (result.exitCode === 0) return
 
-    if (isAuthFailure(result.stderr)) {
-      throw new AppError(
-        'Arborist uses your system git credentials; fetch from a terminal to check them.',
-        'fetch-auth-failed'
-      )
+    if (isAuthFailure(result.stderr) || remoteRefusedCredentials(result.stderr)) {
+      throw new AppError(authFailureMessage('fetch', triedSignIn), 'fetch-auth-failed')
     }
     throw new AppError(result.stderr.trim() || 'git fetch failed', 'git-command-failed')
   }
@@ -323,6 +351,7 @@ export class GitService {
       return null
     }
   }
+
   /**
    * Every URL a fetch, pull or push in `repoPath` can contact, as git will
    * actually use it (see `parseRemoteUrls`). Main-process only, like
@@ -543,18 +572,11 @@ export class GitService {
    */
   async push(worktreePath: string, branch: string, setUpstream: boolean): Promise<void> {
     const args = setUpstream ? ['push', '--set-upstream', 'origin', branch] : ['push']
-    const result = await this.#git.run(args, {
-      repoPath: worktreePath,
-      timeoutMs: FETCH_TIMEOUT_MS,
-      env: await this.#networkEnv(worktreePath)
-    })
+    const { result, triedSignIn } = await this.#runRemote(args, worktreePath)
     if (result.exitCode === 0) return
 
-    if (isAuthFailure(result.stderr)) {
-      throw new AppError(
-        'Arborist uses your system git credentials; push from a terminal to check them.',
-        'push-auth-failed'
-      )
+    if (isAuthFailure(result.stderr) || remoteRefusedCredentials(result.stderr)) {
+      throw new AppError(authFailureMessage('push', triedSignIn), 'push-auth-failed')
     }
     throw new AppError(result.stderr.trim() || 'git push failed', 'git-command-failed')
   }
@@ -577,18 +599,11 @@ export class GitService {
    */
   async pull(worktreePath: string, mode: PullMode): Promise<PullResult> {
     this.#suppressWatcher(worktreePath)
-    const result = await this.#git.run(pullArgsFor(mode), {
-      repoPath: worktreePath,
-      timeoutMs: FETCH_TIMEOUT_MS,
-      env: await this.#networkEnv(worktreePath)
-    })
+    const { result, triedSignIn } = await this.#runRemote(pullArgsFor(mode), worktreePath)
     if (result.exitCode === 0) return { conflict: false, diverged: false }
 
-    if (isAuthFailure(result.stderr)) {
-      throw new AppError(
-        'Arborist uses your system git credentials; pull from a terminal to check them.',
-        'pull-auth-failed'
-      )
+    if (isAuthFailure(result.stderr) || remoteRefusedCredentials(result.stderr)) {
+      throw new AppError(authFailureMessage('pull', triedSignIn), 'pull-auth-failed')
     }
 
     const status = await this.workingTreeChanges(worktreePath)

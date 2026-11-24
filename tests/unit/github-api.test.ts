@@ -109,6 +109,39 @@ describe('HttpGitHubApi refresh (#174)', () => {
   })
 })
 
+describe('HttpGitHubApi failures (#178, #179)', () => {
+  it('passes an OAuth error through whatever the status, for the service to judge', async () => {
+    const { fetch } = scripted([{ status: 400, body: { error: 'bad_refresh_token' } }])
+    expect(await new HttpGitHubApi(fetch, options).refreshToken('ghr')).toMatchObject({
+      kind: 'failed',
+      code: 'bad_refresh_token'
+    })
+  })
+
+  it('throws, rather than answering "failed", on an outage or a rate limit', async () => {
+    const empty = async (): Promise<Response> => new Response('', { status: 503 })
+    await expect(new HttpGitHubApi(empty, options).refreshToken('ghr')).rejects.toMatchObject({
+      code: 'github-request-failed',
+      message: 'GitHub answered with HTTP 503.'
+    })
+    const { fetch } = scripted([{ status: 429, body: { message: 'API rate limit exceeded' } }])
+    await expect(new HttpGitHubApi(fetch, options).refreshToken('ghr')).rejects.toMatchObject({
+      code: 'github-request-failed',
+      message: 'GitHub: API rate limit exceeded'
+    })
+  })
+
+  it('gives up on a request GitHub never answers', async () => {
+    const hanging = (_url: string, init?: RequestInit): Promise<Response> =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal!.reason))
+      })
+    const api = new HttpGitHubApi(hanging, { ...options, timeoutMs: 50 })
+    await expect(api.account('tok')).rejects.toMatchObject({ code: 'github-offline' })
+    await expect(api.refreshToken('ghr')).rejects.toMatchObject({ code: 'github-offline' })
+  })
+})
+
 describe('HttpGitHubApi REST calls', () => {
   it('sends the token and API version, and reads the account', async () => {
     const { fetch, calls } = scripted([{ body: { login: 'me', name: 'Me Myself' } }])

@@ -3,10 +3,10 @@ import { AppError } from '@shared/errors'
 import { createServer, type Server } from 'http'
 import type { AddressInfo } from 'net'
 import { join } from 'path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GitLocator } from '../../src/main/services/git/git-discovery'
 import { GitRunner } from '../../src/main/services/git/git-runner'
-import { GitService } from '../../src/main/services/git/git-service'
+import { GitService, authFailureMessage } from '../../src/main/services/git/git-service'
 import { Store } from '../../src/main/services/persistence/store'
 import { ProjectService } from '../../src/main/services/projects'
 import { GitHubService } from '../../src/main/services/github/github-service'
@@ -62,10 +62,12 @@ async function service(
 
 function makeService(
   api: GitHubApi,
-  tokens: TokenStore
+  tokens: TokenStore,
+  onSignedOut?: () => void
 ): { github: GitHubService; tokens: TokenStore; opened: string[] } {
   const opened: string[] = []
   const github = new GitHubService({
+    onSignedOut,
     api,
     tokens,
     git: runner,
@@ -268,6 +270,131 @@ describe('expiring tokens (#174)', () => {
   })
 })
 
+describe('the sign-in changing while GitHub answers (#178)', () => {
+  const expired = (): GitHubCredentials => ({
+    accessToken: 'ghu_old',
+    expiresAt: Date.now() - 1000,
+    refreshToken: 'ghr_old',
+    refreshExpiresAt: Date.now() + 60_000
+  })
+  const renewed: TokenPoll = { kind: 'token', token: 'ghu_new', expiresIn: 28800 }
+
+  /** An API whose refresh waits until `answer` is called. */
+  function pendingRefresh(): { api: FakeGitHubApi; answer: (poll: TokenPoll) => void } {
+    let answer: (poll: TokenPoll) => void = () => {}
+    const api = Object.assign(fakeApi(false), {
+      refreshToken: () =>
+        new Promise<TokenPoll>((resolve) => {
+          answer = resolve
+        })
+    })
+    return { api, answer: (poll) => answer(poll) }
+  }
+
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+
+  it('stays signed out when a refresh lands after signing out', async () => {
+    const { api, answer } = pendingRefresh()
+    const tokens = new TokenStore(null, null)
+    await tokens.write(expired())
+    const { github } = makeService(api, tokens)
+
+    const listing = github.repos()
+    await settle()
+    await github.signOut()
+    answer(renewed)
+
+    await expect(listing).rejects.toMatchObject({ code: SIGNED_OUT_CODE })
+    expect(await tokens.read()).toBeNull()
+  })
+
+  it('keeps a new sign-in when the old one’s refresh lands after it', async () => {
+    const { api, answer } = pendingRefresh()
+    const tokens = new TokenStore(null, null)
+    await tokens.write(expired())
+    const { github } = makeService(api, tokens)
+
+    const listing = github.repos()
+    await settle()
+    await github.signOut()
+    await github.startSignIn()
+    const signingIn = github.finishSignIn()
+    await github.openPage('verification')
+    await signingIn
+    answer(renewed)
+    await listing.catch(() => {})
+
+    expect((await tokens.read())?.accessToken).toBe(FAKE_TOKEN)
+    expect((await github.status()).account?.login).toBe('me')
+  })
+
+  it('keeps the sign-in when GitHub can’t be reached, or has an outage, to refresh', async () => {
+    const failures: (() => Promise<TokenPoll>)[] = [
+      async () => {
+        throw new AppError('Could not reach GitHub: fetch failed', 'github-offline')
+      },
+      async () => {
+        throw new AppError('GitHub answered with HTTP 503.', 'github-request-failed')
+      },
+      // What 3.13 read an empty 503 as: an answer that isn't a refusal.
+      async () => ({ kind: 'failed', code: 'unknown', message: 'GitHub sign-in failed.' })
+    ]
+    for (const refreshToken of failures) {
+      let signedOut = 0
+      const api = Object.assign(fakeApi(false), { refreshToken })
+      const tokens = new TokenStore(null, null)
+      await tokens.write(expired())
+      const { github } = makeService(api, tokens, () => signedOut++)
+      await expect(github.repos()).rejects.toMatchObject({
+        code: expect.stringMatching(/^github-(offline|request-failed)$/)
+      })
+      expect((await tokens.read())?.refreshToken).toBe('ghr_old')
+      expect(signedOut).toBe(0)
+    }
+  })
+
+  it('keeps the sign-in when GitHub refuses a token and then can’t be reached to refresh it', async () => {
+    const api = Object.assign(fakeApi(false), {
+      refreshToken: async (): Promise<TokenPoll> => {
+        throw new AppError('Could not reach GitHub: fetch failed', 'github-offline')
+      },
+      installations: async () => {
+        throw new AppError('GitHub signed Arborist out.', SIGNED_OUT_CODE)
+      }
+    })
+    const tokens = new TokenStore(null, null)
+    await tokens.write({ ...expired(), expiresAt: Date.now() + 3_600_000 })
+    const { github } = makeService(api, tokens)
+
+    await expect(github.repos()).rejects.toMatchObject({ code: 'github-offline' })
+    expect((await tokens.read())?.accessToken).toBe('ghu_old')
+  })
+
+  it('tells the renderer when it signs out on its own, and not when asked to', async () => {
+    const api = Object.assign(fakeApi(false), {
+      refreshToken: async (): Promise<TokenPoll> => ({
+        kind: 'failed',
+        code: 'bad_refresh_token',
+        message: 'GitHub no longer accepts this sign-in.'
+      })
+    })
+    const tokens = new TokenStore(null, null)
+    await tokens.write(expired())
+    let told = 0
+    const { github } = makeService(api, tokens, () => told++)
+
+    await expect(github.repos()).rejects.toMatchObject({ code: SIGNED_OUT_CODE })
+    expect(await tokens.read()).toBeNull()
+    expect(told).toBe(1)
+
+    await tokens.write(lastingCredentials('ghu_other'))
+    await github.signOut()
+    expect(told).toBe(1)
+  })
+})
+
 describe('fetch, pull and push in a signed-in project (#174)', () => {
   const granted = 'https://github.com/acme/web.git'
 
@@ -315,6 +442,118 @@ describe('fetch, pull and push in a signed-in project (#174)', () => {
     const { github } = await service(api)
     expect(await github.networkEnv(fixture.repoPath)).toBeUndefined()
   })
+
+  describe('the listing of repositories it decides by (#179)', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    /** An API counting its listings, whose `installations` can be swapped mid-test. */
+    function countingApi(): {
+      api: FakeGitHubApi
+      listings: () => number
+      setInstallations: (next: FakeGitHubApi['installations']) => void
+    } {
+      const base = fakeApi(true)
+      let impl = base.installations.bind(base)
+      let count = 0
+      const api = Object.assign(base, {
+        installations: (token: string) => {
+          count++
+          return impl(token)
+        }
+      })
+      return { api, listings: () => count, setInstallations: (next) => (impl = next) }
+    }
+
+    function advanceClock(ms: number): void {
+      const now = Date.now() + ms
+      vi.spyOn(Date, 'now').mockReturnValue(now)
+    }
+
+    it('uses an out-of-date listing while a new one loads, rather than waiting on it', async () => {
+      const { api, listings, setInstallations } = countingApi()
+      const { github } = await service(api)
+      expect(await github.networkEnv(fixture.repoPath)).toBeDefined()
+      expect(listings()).toBe(1)
+
+      expect(await github.networkEnv(fixture.repoPath)).toBeDefined()
+      expect(listings()).toBe(1)
+
+      setInstallations(() => new Promise(() => {}))
+      advanceClock(6 * 60_000)
+      expect(await github.networkEnv(fixture.repoPath)).toBeDefined()
+      expect(listings()).toBe(2)
+    })
+
+    it('waits a few seconds at most for a first listing, and goes ahead without the token', async () => {
+      const { api, setInstallations } = countingApi()
+      setInstallations(() => new Promise(() => {}))
+      const { github } = await service(api)
+      const started = Date.now()
+      expect(await github.networkEnv(fixture.repoPath)).toBeUndefined()
+      expect(Date.now() - started).toBeLessThan(6_000)
+    }, 15_000)
+
+    it('waits a while before listing again after a listing failed', async () => {
+      const { api, listings, setInstallations } = countingApi()
+      setInstallations(async () => {
+        throw new AppError('Could not reach GitHub.', 'github-offline')
+      })
+      const { github } = await service(api)
+      expect(await github.networkEnv(fixture.repoPath)).toBeUndefined()
+      expect(await github.networkEnv(fixture.repoPath)).toBeUndefined()
+      expect(listings()).toBe(1)
+
+      setInstallations(fakeApi(true).installations.bind(fakeApi(true)))
+      advanceClock(31_000)
+      expect(await github.networkEnv(fixture.repoPath)).toBeDefined()
+      expect(listings()).toBe(2)
+    })
+  })
+
+  it('retries once without the token when the remote refuses it', async () => {
+    const seen: (string | undefined)[] = []
+    const server: Server = createServer((request, response) => {
+      seen.push(request.headers.authorization)
+      response.statusCode = request.headers.authorization ? 403 : 401
+      response.setHeader('WWW-Authenticate', 'Basic realm="test"')
+      response.end()
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const { port } = server.address() as AddressInfo
+    const url = `http://127.0.0.1:${port}/acme/web.git`
+    try {
+      await fixture.git(['remote', 'remove', 'other'])
+      await fixture.git(['remote', 'remove', 'mirror'])
+      await fixture.git(['remote', 'set-url', 'origin', url])
+      const env = {
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: `http.${url}.extraheader`,
+        GIT_CONFIG_VALUE_0: 'Authorization: Basic dGVzdA=='
+      }
+      const signed = new GitService(
+        runner,
+        () => {},
+        async () => env
+      )
+      await expect(signed.fetchAll(fixture.repoPath)).rejects.toMatchObject({
+        code: 'fetch-auth-failed',
+        message: authFailureMessage('fetch', true)
+      })
+      // The first try carried the header; the retry, git's own credentials (none here).
+      expect(seen[0]).toBe('Basic dGVzdA==')
+      expect(seen.at(-1)).toBeUndefined()
+
+      seen.length = 0
+      await expect(gitService.fetchAll(fixture.repoPath)).rejects.toMatchObject({
+        message: authFailureMessage('fetch', false)
+      })
+      expect(seen.every((header) => header === undefined)).toBe(true)
+    } finally {
+      await new Promise((resolve) => server.close(resolve))
+    }
+  }, 30_000)
 
   it('reaches git through GitService’s fetch, pull and push', async () => {
     const seen: (string | undefined)[] = []

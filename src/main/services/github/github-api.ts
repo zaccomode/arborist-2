@@ -43,6 +43,13 @@ export const SIGNED_OUT_CODE = 'github-signed-out'
 
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>
 
+/**
+ * How long one request to GitHub may take (#179). Without a limit a captive
+ * portal or a half-open connection holds a pull or push for undici's own
+ * timeout, about five minutes, before git has even started.
+ */
+export const GITHUB_REQUEST_TIMEOUT_MS = 10_000
+
 const PAGE_SIZE = 100
 /** 5,000 repositories per installation is far past anything a picker can show usefully. */
 const MAX_PAGES = 50
@@ -82,19 +89,22 @@ export class HttpGitHubApi implements GitHubApi {
   readonly #apiUrl: string
   readonly #fetch: Fetch
   readonly #clientId: string
+  readonly #timeoutMs: number
 
   constructor(
     fetchImpl: Fetch,
     {
       webUrl = GITHUB_WEB_URL,
       apiUrl = GITHUB_API_URL,
-      clientId = GITHUB_APP_CLIENT_ID
-    }: { webUrl?: string; apiUrl?: string; clientId?: string } = {}
+      clientId = GITHUB_APP_CLIENT_ID,
+      timeoutMs = GITHUB_REQUEST_TIMEOUT_MS
+    }: { webUrl?: string; apiUrl?: string; clientId?: string; timeoutMs?: number } = {}
   ) {
     this.#fetch = fetchImpl
     this.webUrl = webUrl
     this.#apiUrl = apiUrl
     this.#clientId = clientId
+    this.#timeoutMs = timeoutMs
   }
 
   async requestDeviceCode(): Promise<DeviceCode & { deviceCode: string }> {
@@ -201,7 +211,8 @@ export class HttpGitHubApi implements GitHubApi {
           'X-GitHub-Api-Version': '2022-11-28',
           ...(body ? { 'Content-Type': 'application/json' } : {})
         },
-        body: body ? JSON.stringify(body) : undefined
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(this.#timeoutMs)
       })
     } catch (error) {
       throw new AppError(`Could not reach GitHub: ${(error as Error).message}`, 'github-offline')
@@ -209,7 +220,7 @@ export class HttpGitHubApi implements GitHubApi {
     if (response.status === 401) {
       throw new AppError('GitHub signed Arborist out. Sign in again to continue.', SIGNED_OUT_CODE)
     }
-    const text = await response.text()
+    const text = await this.#text(response)
     let parsed: Record<string, unknown>
     try {
       parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {}
@@ -233,19 +244,38 @@ export class HttpGitHubApi implements GitHubApi {
           Accept: 'application/json',
           'Content-Type': 'application/x-www-form-urlencoded'
         },
-        body: new URLSearchParams(fields).toString()
+        body: new URLSearchParams(fields).toString(),
+        signal: AbortSignal.timeout(this.#timeoutMs)
       })
     } catch (error) {
       throw new AppError(`Could not reach GitHub: ${(error as Error).message}`, 'github-offline')
     }
-    const text = await response.text()
+    const text = await this.#text(response)
+    let parsed: Record<string, unknown>
     try {
-      return text ? (JSON.parse(text) as Record<string, unknown>) : {}
+      parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {}
     } catch {
       throw new AppError(
         `GitHub answered the sign-in request with HTTP ${response.status}.`,
         'github-request-failed'
       )
+    }
+    // An OAuth error (`bad_refresh_token`, `authorization_pending`) is the
+    // answer, whatever the status. Anything else that isn't a success, such
+    // as an outage's empty 503 or a 429, is a failed request (#178), not a
+    // refusal: read as one, it would sign the user out.
+    if (!response.ok && typeof parsed.error !== 'string') {
+      throw new AppError(apiErrorMessage(response.status, parsed), 'github-request-failed')
+    }
+    return parsed
+  }
+
+  /** The body, with a timeout mid-body reported like one before it. */
+  async #text(response: Response): Promise<string> {
+    try {
+      return await response.text()
+    } catch (error) {
+      throw new AppError(`Could not reach GitHub: ${(error as Error).message}`, 'github-offline')
     }
   }
 }

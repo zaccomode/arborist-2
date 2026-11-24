@@ -514,6 +514,12 @@ export interface IpcEventContract {
    * state, the same way an external change notification would.
    */
   'app:focus': void
+  /**
+   * GitHub refused the sign-in and main signed out on its own (#178), such
+   * as when a refresh token is turned down during a background fetch. The
+   * renderer re-reads the GitHub queries so the account stops showing.
+   */
+  'github:signedOut': void
   /** Every updater transition, so the toast follows a download it did not start. */
   'updates:changed': UpdateStatus
   /**
@@ -533,6 +539,7 @@ const EVENT_CHANNELS: Record<IpcEventChannel, true> = {
   'app:newWorktree': true,
   'app:openSettings': true,
   'app:focus': true,
+  'github:signedOut': true,
   'updates:changed': true,
   'worktree:changed': true
 }

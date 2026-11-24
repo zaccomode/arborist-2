@@ -123,7 +123,8 @@ async function createGitHubService(
     store,
     projects,
     remoteUrl: (repoPath: string) => gitService.remoteUrl(repoPath),
-    remoteUrls: (repoPath: string) => gitService.remoteUrls(repoPath)
+    remoteUrls: (repoPath: string) => gitService.remoteUrls(repoPath),
+    onSignedOut: () => broadcast('github:signedOut', undefined)
   }
   if (fixture) {
     const api = await FakeGitHubApi.load(fixture)

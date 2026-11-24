@@ -76,12 +76,17 @@ unsigned, and Gatekeeper is right to block it. Right-click the app and choose
 
 ## A Fetch Fails With an Authentication Error
 
-Arborist uses your system git and therefore your system git credentials. It has
-no separate login, stores no tokens, and never sees your password. If
-`git fetch` works in your terminal for a repository but fails in Arborist, the
-difference is almost always the credential helper: it is configured in a shell
-profile that a desktop-launched app never reads, or it is an SSH agent that only
-your terminal has the socket for.
+Arborist uses your system git and therefore your system git credentials, and
+never sees your password. If you have signed in to GitHub in Arborist, a fetch,
+pull or push to an HTTPS remote on a repository the Arborist app is installed on
+tries that sign-in first. If GitHub refuses it, for example a push that changes
+`.github/workflows/`, which the app isn't permitted to do, Arborist tries once
+more with your own credentials, and the error names both when neither worked.
+
+If `git fetch` works in your terminal for a repository but fails in Arborist,
+the difference is almost always the credential helper: it is configured in a
+shell profile that a desktop-launched app never reads, or it is an SSH agent
+that only your terminal has the socket for.
 
 The quickest test is to run the same fetch from a terminal in the same
 repository. If that fails too, the fix is a git one and the error message is

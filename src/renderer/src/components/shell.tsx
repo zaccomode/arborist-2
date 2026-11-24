@@ -17,7 +17,17 @@ const MAIN_MIN_WIDTH = 360
  * imperative handle, since it never unmounts and so never re-reads a
  * `defaultSize` of its own.
  *
- * Panel widths aren't persisted across sessions here — v4 has no
+ * The sidebar keeps the width the user last dragged it to (#177). Opening
+ * an inspector can squeeze it below that, since the main panel and the
+ * inspector have minimum widths of their own, so closing one `resize()`s it
+ * back rather than leaving the freed space to react-resizable-panels, which
+ * hands it to the sidebar unevenly (up to its `maxSize` on a second close).
+ * Only a drag (`isUserInteraction`) counts as the user choosing a width, and
+ * only a drag is reported through `onSidebarResize` to be saved, so neither
+ * the squeeze nor anything else the library does to the layout is mistaken
+ * for one.
+ *
+ * Panel widths other than the sidebar's aren't persisted across sessions here — v4 has no
  * `autoSaveId`, only `defaultLayout` plus `onLayoutChanged`, and wiring that
  * up is a deliberate follow-up (v3 Phase 4, #46).
  */
@@ -35,6 +45,13 @@ export function Shell({
   inspector: React.ReactNode | null
 }): React.JSX.Element {
   const mainPanelRef = useRef<PanelImperativeHandle>(null)
+  const sidebarPanelRef = useRef<PanelImperativeHandle>(null)
+  const chosenSidebarWidth = useRef(sidebarWidth)
+  const hadInspector = useRef(false)
+  // Set when the inspector closes, and acted on once the group has laid
+  // itself out without it: resizing straight from the effect is undone by
+  // the group's own redistribution, which lands after it.
+  const restoreSidebar = useRef(false)
   const currentMainWidth = useRef(700)
   const lastAbsoluteMainWidth = useRef<number | null>(null)
   // A ref, not state: feeding a dragged panel's own live width back into its
@@ -45,6 +62,9 @@ export function Shell({
   const hasInspector = inspector !== null
 
   useEffect(() => {
+    const closed = hadInspector.current && !hasInspector
+    hadInspector.current = hasInspector
+    if (closed) restoreSidebar.current = true
     if (!hasInspector) return
     const target = lastAbsoluteMainWidth.current ?? currentMainWidth.current
     mainPanelRef.current?.resize(target)
@@ -53,15 +73,28 @@ export function Shell({
   }, [hasInspector])
 
   return (
-    <ResizablePanelGroup orientation="horizontal">
+    <ResizablePanelGroup
+      orientation="horizontal"
+      onLayoutChanged={(layout, meta) => {
+        if (restoreSidebar.current && !('inspector' in layout)) {
+          restoreSidebar.current = false
+          sidebarPanelRef.current?.resize(chosenSidebarWidth.current)
+        }
+        if (!meta.isUserInteraction) return
+        const size = sidebarPanelRef.current?.getSize()
+        if (!size || size.inPixels === chosenSidebarWidth.current) return
+        chosenSidebarWidth.current = size.inPixels
+        onSidebarResize(size)
+      }}
+    >
       {/* Numeric sizes are pixels: the concept's sidebar is about 260 wide. */}
       <ResizablePanel
         id="sidebar"
+        panelRef={sidebarPanelRef}
         defaultSize={sidebarWidth}
         minSize={200}
         maxSize={420}
         groupResizeBehavior="preserve-pixel-size"
-        onResize={onSidebarResize}
       >
         {sidebar}
       </ResizablePanel>
