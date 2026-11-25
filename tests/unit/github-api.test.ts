@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  GITHUB_REFRESH_TIMEOUT_MS,
+  GITHUB_REQUEST_TIMEOUT_MS,
   HttpGitHubApi,
   SIGNED_OUT_CODE,
   apiErrorMessage
@@ -136,9 +138,31 @@ describe('HttpGitHubApi failures (#178, #179)', () => {
       new Promise((_resolve, reject) => {
         init?.signal?.addEventListener('abort', () => reject(init.signal!.reason))
       })
-    const api = new HttpGitHubApi(hanging, { ...options, timeoutMs: 50 })
+    const api = new HttpGitHubApi(hanging, { ...options, timeoutMs: 50, refreshTimeoutMs: 100 })
     await expect(api.account('tok')).rejects.toMatchObject({ code: 'github-offline' })
     await expect(api.refreshToken('ghr')).rejects.toMatchObject({ code: 'github-offline' })
+  })
+
+  it('waits well past the general timeout for a refresh, which spends the old token (#182)', async () => {
+    const slow = (url: string, init?: RequestInit): Promise<Response> =>
+      new Promise((resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal!.reason))
+        setTimeout(() => {
+          const body = url.endsWith('/user')
+            ? { login: 'me', name: null }
+            : { access_token: 'ghu_new', expires_in: 28800, refresh_token: 'ghr_new' }
+          resolve(new Response(JSON.stringify(body)))
+        }, 150)
+      })
+    const api = new HttpGitHubApi(slow, { ...options, timeoutMs: 50 })
+    expect(await api.refreshToken('ghr_old')).toMatchObject({ kind: 'token', token: 'ghu_new' })
+    // Every other request keeps the general bound.
+    await expect(api.account('tok')).rejects.toMatchObject({ code: 'github-offline' })
+    await expect(api.pollDeviceToken('dc')).rejects.toMatchObject({ code: 'github-offline' })
+  })
+
+  it('bounds the refresh well past the general timeout by default (#182)', () => {
+    expect(GITHUB_REFRESH_TIMEOUT_MS).toBeGreaterThanOrEqual(10 * GITHUB_REQUEST_TIMEOUT_MS)
   })
 })
 

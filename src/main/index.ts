@@ -293,7 +293,7 @@ app.whenReady().then(async () => {
   const gitService = new GitService(
     gitRunner,
     (worktreePath) => worktreeWatcher.suppress(worktreePath),
-    async (repoPath) => github?.networkEnv(repoPath)
+    async (repoPath, caller) => github?.networkEnv(repoPath, caller)
   )
   github = await createGitHubService(store, gitRunner, projects, gitService)
 

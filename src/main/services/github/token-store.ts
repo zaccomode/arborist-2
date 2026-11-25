@@ -33,6 +33,12 @@ export class TokenStore {
   readonly #filePath: string | null
   readonly #encryptor: Encryptor | null
   #memory: GitHubCredentials | null = null
+  /**
+   * The last operation queued (#183). Reads, writes and clears run one at a
+   * time, in the order they were asked for, so a write still awaiting the
+   * disk can't finish after a sign-out's clear and sign the user back in.
+   */
+  #tail: Promise<unknown> = Promise.resolve()
 
   /** `filePath` null keeps the token in memory only, as the scenarios' fake does. */
   constructor(filePath: string | null, encryptor: Encryptor | null) {
@@ -46,7 +52,29 @@ export class TokenStore {
     )
   }
 
-  async read(): Promise<GitHubCredentials | null> {
+  read(): Promise<GitHubCredentials | null> {
+    return this.#queue(() => this.#read())
+  }
+
+  /**
+   * Writes to disk before memory (#175), so a failed write leaves the store
+   * as it was rather than holding a sign-in that the error just said failed.
+   */
+  write(credentials: GitHubCredentials): Promise<void> {
+    return this.#queue(() => this.#write(credentials))
+  }
+
+  clear(): Promise<void> {
+    return this.#queue(() => this.#clear())
+  }
+
+  #queue<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.#tail.then(operation)
+    this.#tail = run.catch(() => {})
+    return run
+  }
+
+  async #read(): Promise<GitHubCredentials | null> {
     if (this.#memory) return this.#memory
     if (!this.remembers) return null
     try {
@@ -60,11 +88,7 @@ export class TokenStore {
     return this.#memory
   }
 
-  /**
-   * Writes to disk before memory (#175), so a failed write leaves the store
-   * as it was rather than holding a sign-in that the error just said failed.
-   */
-  async write(credentials: GitHubCredentials): Promise<void> {
+  async #write(credentials: GitHubCredentials): Promise<void> {
     if (this.remembers) {
       await fs.mkdir(dirname(this.#filePath!), { recursive: true })
       await fs.writeFile(
@@ -76,7 +100,7 @@ export class TokenStore {
     this.#memory = credentials
   }
 
-  async clear(): Promise<void> {
+  async #clear(): Promise<void> {
     this.#memory = null
     if (this.#filePath) await fs.rm(this.#filePath, { force: true })
   }

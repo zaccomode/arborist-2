@@ -113,10 +113,17 @@ const DIFF_FLAGS = [
 
 /**
  * Whether a fetch failure looks like a credentials problem, as opposed to an
- * unreachable host or a repository-side error. This is the one sanctioned
- * use of stderr matching in the codebase: it only selects which message the
- * user sees, never control flow, and `GIT_TERMINAL_PROMPT=0` (set app-wide in
- * `gitEnv`) makes git's own phrasing for "would have prompted" quite stable.
+ * unreachable host or a repository-side error. One of the codebase's two
+ * sanctioned uses of stderr matching, and the only one that is message-only:
+ * it selects which message the user sees, never control flow.
+ * `GIT_TERMINAL_PROMPT=0` (set app-wide in `gitEnv`) makes git's own phrasing
+ * for "would have prompted" quite stable.
+ *
+ * The other, `remoteRefusedCredentials` in `shared/github.ts`, overlaps with
+ * this but *does* drive control flow (#180): `#runRemote` retries a fetch,
+ * pull or push without Arborist's GitHub token when it matches. Changing what
+ * either regex accepts changes the message here, and possibly whether that
+ * retry happens.
  */
 function isAuthFailure(stderr: string): boolean {
   return /authentication failed|permission denied|could not read username|could not read password|terminal prompts disabled/i.test(
@@ -185,11 +192,21 @@ function patchHeaderLineIndices(
 export type SuppressWatcher = (worktreePath: string) => void
 
 /**
+ * Who a remote git command is for (#181). A `background` fetch shouldn't
+ * wait long on GitHub to decide its credentials; a pull or push the `user`
+ * started should, since going without the token can fail it outright.
+ */
+export type RemoteCaller = 'background' | 'user'
+
+/**
  * Extra environment for a git command that talks to a remote, given the
  * repository it runs in: how a GitHub sign-in reaches fetch, pull and push
  * (#174). Undefined adds nothing. Defaults to that, like `SuppressWatcher`.
  */
-export type NetworkEnv = (repoPath: string) => Promise<Record<string, string> | undefined>
+export type NetworkEnv = (
+  repoPath: string,
+  caller: RemoteCaller
+) => Promise<Record<string, string> | undefined>
 
 export class GitService {
   #git: GitRunner
@@ -219,10 +236,11 @@ export class GitService {
    */
   async #runRemote(
     args: string[],
-    repoPath: string
+    repoPath: string,
+    caller: RemoteCaller
   ): Promise<{ result: GitExecResult; triedSignIn: boolean }> {
     const options = { repoPath, timeoutMs: FETCH_TIMEOUT_MS }
-    const env = await this.#networkEnv(repoPath)
+    const env = await this.#networkEnv(repoPath, caller)
     const result = await this.#git.run(args, { ...options, env })
     if (!env || result.exitCode === 0 || !remoteRefusedCredentials(result.stderr)) {
       return { result, triedSignIn: false }
@@ -244,7 +262,11 @@ export class GitService {
   }
 
   async #runFetch(repoPath: string): Promise<void> {
-    const { result, triedSignIn } = await this.#runRemote(['fetch', '--all', '--prune'], repoPath)
+    const { result, triedSignIn } = await this.#runRemote(
+      ['fetch', '--all', '--prune'],
+      repoPath,
+      'background'
+    )
     if (result.exitCode === 0) return
 
     if (isAuthFailure(result.stderr) || remoteRefusedCredentials(result.stderr)) {
@@ -572,7 +594,7 @@ export class GitService {
    */
   async push(worktreePath: string, branch: string, setUpstream: boolean): Promise<void> {
     const args = setUpstream ? ['push', '--set-upstream', 'origin', branch] : ['push']
-    const { result, triedSignIn } = await this.#runRemote(args, worktreePath)
+    const { result, triedSignIn } = await this.#runRemote(args, worktreePath, 'user')
     if (result.exitCode === 0) return
 
     if (isAuthFailure(result.stderr) || remoteRefusedCredentials(result.stderr)) {
@@ -599,7 +621,7 @@ export class GitService {
    */
   async pull(worktreePath: string, mode: PullMode): Promise<PullResult> {
     this.#suppressWatcher(worktreePath)
-    const { result, triedSignIn } = await this.#runRemote(pullArgsFor(mode), worktreePath)
+    const { result, triedSignIn } = await this.#runRemote(pullArgsFor(mode), worktreePath, 'user')
     if (result.exitCode === 0) return { conflict: false, diverged: false }
 
     if (isAuthFailure(result.stderr) || remoteRefusedCredentials(result.stderr)) {
