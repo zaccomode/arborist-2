@@ -21,7 +21,7 @@ import type { PresetCatalogue, ResolvedPreset } from '@shared/presets'
 import type { ProjectSettings, Repository, Settings } from '@shared/persisted'
 import type { RemoteLocation } from '@shared/project-groups'
 import type { GitHubOwner, GitHubRepo, GitHubStatus } from '@shared/github'
-import { projectHasRemote } from '@shared/sync'
+import { projectHasRemote, type RemoteCaller } from '@shared/sync'
 import { invoke } from '@/api/client'
 
 const COMMIT_PAGE_SIZE = 20
@@ -172,15 +172,24 @@ export function useRemoveProject(): UseMutationResult<void, Error, string> {
 }
 
 /**
+ * A fetch and who it is for (#185): the Fetch and Refresh buttons are the
+ * `user`'s, auto-fetch on select, focus and the interval is `background`.
+ */
+export interface FetchRequest {
+  repoPath: string
+  caller: RemoteCaller
+}
+
+/**
  * Fetches a repository's remotes, then invalidates everything a fetch can
  * change: ahead/behind counts and remote-deleted flags live on the worktree
  * list, and new or vanished remote branches live on the remote-branches list.
  */
-export function useFetch(): UseMutationResult<void, Error, string> {
+export function useFetch(): UseMutationResult<void, Error, FetchRequest> {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (repoPath: string) => invoke('repos:fetch', repoPath),
-    onSuccess: (_result, repoPath) => {
+    mutationFn: ({ repoPath, caller }: FetchRequest) => invoke('repos:fetch', repoPath, caller),
+    onSuccess: (_result, { repoPath }) => {
       client.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
       client.invalidateQueries({ queryKey: queryKeys.remoteBranches(repoPath) })
       // A fetch moves the remote-tracking refs, so every open commit query on

@@ -31,7 +31,7 @@ import type { GitRunner } from '../git/git-runner'
 import { CLONE_TIMEOUT_MS, FETCH_TIMEOUT_MS, gitEnv } from '../git/git-executor'
 import type { Store } from '../persistence/store'
 import type { ProjectService } from '../projects'
-import type { RemoteCaller } from '../git/git-service'
+import type { RemoteCaller } from '../../../shared/sync'
 import { GITHUB_REQUEST_TIMEOUT_MS, SIGNED_OUT_CODE, type GitHubApi } from './github-api'
 import type { TokenStore } from './token-store'
 
@@ -58,7 +58,7 @@ const GRANTED_REPOS_FAILURE_TTL_MS = 30_000
 /**
  * How long a background fetch waits for the token and the listing before
  * going ahead without the token (#179). Both carry on and are used next
- * time. A pull or push the user started waits longer: see `networkEnv`.
+ * time. A fetch, pull or push the user started waits longer: see `networkEnv`.
  */
 const GRANTED_REPOS_WAIT_MS = 3_000
 
@@ -384,11 +384,11 @@ export class GitHubService {
    * How long it waits on GitHub depends on `caller`. A listing that is out
    * of date is always used while a new one loads.
    *
-   * - `background` (a fetch, #179): never waits long. Whatever isn't to hand
+   * - `background` (an automatic fetch, #179): never waits long. Whatever isn't to hand
    *   within `GRANTED_REPOS_WAIT_MS` (a first listing, a token refresh) is
    *   left to finish for next time, and the fetch goes ahead without the
    *   token. A listing that just failed isn't tried again for a while.
-   * - `user` (a pull or push the user started, #181): waits for a listing,
+   * - `user` (a fetch, pull or push the user started, #181, #185): waits for a listing,
    *   each of whose requests is bounded by the API's own timeout, and lists
    *   again even if the last listing failed, since going ahead without the
    *   token is what fails the push for someone with no credential helper. A

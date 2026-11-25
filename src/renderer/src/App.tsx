@@ -299,9 +299,12 @@ function App(): React.JSX.Element | null {
   }, [worktreePath, repoPath, worktree, queryClient])
 
   const handleFetch = (path: string): void => {
-    fetchProject.mutate(path, {
-      onError: (error) => showErrorToast('Fetch failed', { description: error.message })
-    })
+    fetchProject.mutate(
+      { repoPath: path, caller: 'user' },
+      {
+        onError: (error) => showErrorToast('Fetch failed', { description: error.message })
+      }
+    )
   }
   const fetchMutate = fetchProject.mutate
 
@@ -316,7 +319,7 @@ function App(): React.JSX.Element | null {
       const now = Date.now()
       if (!shouldAutoFetch(lastAutoFetch.current.get(repoPath), now)) return
       lastAutoFetch.current.set(repoPath, now)
-      fetchMutate(repoPath)
+      fetchMutate({ repoPath, caller: 'background' })
     }
     autoFetch()
     return window.arborist.subscribe('app:focus', autoFetch)
@@ -330,7 +333,7 @@ function App(): React.JSX.Element | null {
     if (!intervalMinutes || !repoPath) return
 
     const timer = setInterval(() => {
-      if (document.hasFocus()) fetchMutate(repoPath)
+      if (document.hasFocus()) fetchMutate({ repoPath, caller: 'background' })
     }, intervalMinutes * 60_000)
     return () => clearInterval(timer)
   }, [intervalMinutes, repoPath, fetchMutate])

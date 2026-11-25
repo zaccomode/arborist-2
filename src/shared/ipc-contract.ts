@@ -24,7 +24,7 @@ import type { ConflictOperation, ConflictState } from './conflicts'
 import type { DiffRequest, FileDiff } from './diff'
 import type { Preset, ProjectSettings, Repository, SelectionState, Settings } from './persisted'
 import type { RemoteLocation } from './project-groups'
-import type { PullMode, PullResult } from './sync'
+import type { PullMode, PullResult, RemoteCaller } from './sync'
 import type { AutomationEvent } from './automation'
 import type { PresetCatalogue, PresetRunResult, ResolvedPreset } from './presets'
 import type { SubstitutionValues } from './substitution'
@@ -332,9 +332,11 @@ export interface IpcInvokeContract {
   }
   /**
    * `git fetch --all --prune`. Serialised per repository in the service
-   * layer, so two rapid clicks share one running fetch.
+   * layer, so two rapid clicks share one running fetch. `caller` is `user`
+   * for the Fetch and Refresh buttons, which wait for a GitHub sign-in, and
+   * `background` for auto-fetch, which doesn't wait long (#185).
    */
-  'repos:fetch': { args: [repoPath: string]; result: void }
+  'repos:fetch': { args: [repoPath: string, caller: RemoteCaller]; result: void }
   /**
    * Recent commits on `refs`, newest first. `repoPath` need only be
    * somewhere inside the repository — for a remote branch with no local

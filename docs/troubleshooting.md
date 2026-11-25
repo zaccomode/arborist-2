@@ -86,7 +86,8 @@ more with your own credentials, and the error names both when neither worked.
 To decide which remotes get the sign-in, Arborist asks GitHub which
 repositories the app can reach. A fetch in the background waits only a few
 seconds for that answer, so just after launch on a slow connection it can run
-with your own credentials alone; a pull or push you start waits for it.
+with your own credentials alone; a fetch, refresh, pull or push you start
+waits for it.
 
 If `git fetch` works in your terminal for a repository but fails in Arborist,
 the difference is almost always the credential helper: it is configured in a

@@ -36,7 +36,12 @@ import {
   type DiffRequest,
   type FileDiff
 } from '../../../shared/diff'
-import { pullArgsFor, type PullMode, type PullResult } from '../../../shared/sync'
+import {
+  pullArgsFor,
+  type PullMode,
+  type PullResult,
+  type RemoteCaller
+} from '../../../shared/sync'
 import { remoteRefusedCredentials } from '../../../shared/github'
 import { worktreeBasePath, type ResolvedLocation } from '../../../shared/worktree-location'
 import { sortChangedFiles, stagePathsFor } from '../../../shared/working-tree'
@@ -191,12 +196,7 @@ function patchHeaderLineIndices(
  */
 export type SuppressWatcher = (worktreePath: string) => void
 
-/**
- * Who a remote git command is for (#181). A `background` fetch shouldn't
- * wait long on GitHub to decide its credentials; a pull or push the `user`
- * started should, since going without the token can fail it outright.
- */
-export type RemoteCaller = 'background' | 'user'
+export type { RemoteCaller }
 
 /**
  * Extra environment for a git command that talks to a remote, given the
@@ -210,8 +210,11 @@ export type NetworkEnv = (
 
 export class GitService {
   #git: GitRunner
-  /** One in-flight fetch per repository, so concurrent callers share it. */
-  #fetching = new Map<string, Promise<void>>()
+  /**
+   * One in-flight fetch per repository, so concurrent callers share it, and
+   * who it was started for.
+   */
+  #fetching = new Map<string, { caller: RemoteCaller; run: Promise<void> }>()
   #suppressWatcher: SuppressWatcher
   #networkEnv: NetworkEnv
 
@@ -251,21 +254,33 @@ export class GitService {
   /**
    * `git fetch --all --prune`. Two rapid callers on the same repository
    * coalesce into one running fetch rather than racing git's lock files.
+   *
+   * `caller` decides how long the fetch waits on a GitHub sign-in (#185): the
+   * Fetch and Refresh buttons are the `user`'s, auto-fetch is `background`.
+   * Any caller joins a `user` fetch, and a `background` caller joins any
+   * fetch. A `user` caller that finds a `background` fetch running waits for
+   * it, since starting a second would race it, and if it failed (perhaps for
+   * want of a sign-in it didn't wait for) runs a fetch of its own after.
    */
-  async fetchAll(repoPath: string): Promise<void> {
+  async fetchAll(repoPath: string, caller: RemoteCaller = 'background'): Promise<void> {
     const inFlight = this.#fetching.get(repoPath)
-    if (inFlight) return inFlight
+    if (inFlight) {
+      if (inFlight.caller === 'user' || caller === 'background') return inFlight.run
+      // `run` settles after its own `finally` has cleared the entry, so the
+      // retry starts (or joins another user's) a fetch of its own.
+      return inFlight.run.catch(() => this.fetchAll(repoPath, 'user'))
+    }
 
-    const run = this.#runFetch(repoPath).finally(() => this.#fetching.delete(repoPath))
-    this.#fetching.set(repoPath, run)
+    const run = this.#runFetch(repoPath, caller).finally(() => this.#fetching.delete(repoPath))
+    this.#fetching.set(repoPath, { caller, run })
     return run
   }
 
-  async #runFetch(repoPath: string): Promise<void> {
+  async #runFetch(repoPath: string, caller: RemoteCaller): Promise<void> {
     const { result, triedSignIn } = await this.#runRemote(
       ['fetch', '--all', '--prune'],
       repoPath,
-      'background'
+      caller
     )
     if (result.exitCode === 0) return
 
