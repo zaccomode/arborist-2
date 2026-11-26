@@ -293,7 +293,9 @@ export function registerIpcHandlers({
   handle('presets:reorder', (orderedIds) => presets.reorder(orderedIds))
   handle('presets:run', (presetId, context, target) => presets.run(presetId, context, target))
 
-  handle('repos:fetch', (repoPath) => gitService.fetchAll(repoPath))
+  handle('repos:fetch', (repoPath, caller) =>
+    gitService.fetchAll(repoPath, caller === 'user' ? 'user' : 'background')
+  )
   handle('commits:recent', (repoPath, refs, limit, skip) =>
     gitService.commitLog(repoPath, refs, limit, skip)
   )

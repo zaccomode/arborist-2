@@ -1,6 +1,15 @@
 import type { Worktree } from './domain'
 
 /**
+ * Who a remote git command is for (#181, #185). A `background` fetch (on
+ * select, on focus, on the interval) shouldn't wait long on GitHub to decide
+ * its credentials. A fetch, pull or push the `user` started should, since
+ * going without the token can fail it outright for someone with no
+ * credential helper.
+ */
+export type RemoteCaller = 'background' | 'user'
+
+/**
  * How a pull integrates what it fetched (#78).
  *
  * `ff-only` is the default because it is the only one of the three that

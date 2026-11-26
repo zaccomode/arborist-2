@@ -710,13 +710,20 @@ describe('fetch, pull and push in a signed-in project (#174)', () => {
           }
         }
       )
-      await expect(signed.fetchAll(fixture.repoPath)).rejects.toThrow()
+      await expect(signed.fetchAll(fixture.repoPath, 'background')).rejects.toThrow()
+      await expect(signed.fetchAll(fixture.repoPath, 'user')).rejects.toThrow()
       await expect(signed.pull(fixture.repoPath, 'ff-only')).rejects.toThrow()
       await expect(signed.push(fixture.repoPath, 'main', true)).rejects.toThrow()
-      expect(asked).toEqual([fixture.repoPath, fixture.repoPath, fixture.repoPath])
-      // A fetch may run in the background; a pull or push is the user's (#181).
-      expect(callers).toEqual(['background', 'user', 'user'])
-      expect(seen.length).toBeGreaterThanOrEqual(3)
+      expect(asked).toEqual([
+        fixture.repoPath,
+        fixture.repoPath,
+        fixture.repoPath,
+        fixture.repoPath
+      ])
+      // Auto-fetch runs in the background; the Fetch and Refresh buttons
+      // (#185), a pull and a push (#181) are the user's.
+      expect(callers).toEqual(['background', 'user', 'user', 'user'])
+      expect(seen.length).toBeGreaterThanOrEqual(4)
       expect(seen.every((header) => header === 'Basic dGVzdA==')).toBe(true)
     } finally {
       await new Promise((resolve) => server.close(resolve))
