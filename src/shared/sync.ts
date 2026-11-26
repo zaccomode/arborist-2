@@ -10,6 +10,30 @@ import type { Worktree } from './domain'
 export type RemoteCaller = 'background' | 'user'
 
 /**
+ * What started a fetch (#187): the Fetch or Refresh `button`, or one of
+ * auto-fetch's triggers — selecting a repository, regaining focus, or the
+ * interval.
+ */
+export type FetchTrigger = 'button' | 'select' | 'focus' | 'interval'
+
+/**
+ * Who a fetch is for, by what started it (#185, #187). Only the buttons are
+ * the `user`'s: a click is someone waiting on the answer, so it waits for the
+ * GitHub sign-in. Every auto-fetch trigger is `background`.
+ */
+export function fetchCaller(trigger: FetchTrigger): RemoteCaller {
+  return trigger === 'button' ? 'user' : 'background'
+}
+
+/**
+ * A caller from across IPC, where the renderer's types aren't enforced.
+ * Anything but `user` is `background`, the one that waits less.
+ */
+export function toRemoteCaller(value: unknown): RemoteCaller {
+  return value === 'user' ? 'user' : 'background'
+}
+
+/**
  * How a pull integrates what it fetched (#78).
  *
  * `ff-only` is the default because it is the only one of the three that

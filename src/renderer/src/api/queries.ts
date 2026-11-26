@@ -21,7 +21,7 @@ import type { PresetCatalogue, ResolvedPreset } from '@shared/presets'
 import type { ProjectSettings, Repository, Settings } from '@shared/persisted'
 import type { RemoteLocation } from '@shared/project-groups'
 import type { GitHubOwner, GitHubRepo, GitHubStatus } from '@shared/github'
-import { projectHasRemote, type RemoteCaller } from '@shared/sync'
+import { fetchCaller, projectHasRemote, type FetchTrigger } from '@shared/sync'
 import { invoke } from '@/api/client'
 
 const COMMIT_PAGE_SIZE = 20
@@ -172,12 +172,12 @@ export function useRemoveProject(): UseMutationResult<void, Error, string> {
 }
 
 /**
- * A fetch and who it is for (#185): the Fetch and Refresh buttons are the
- * `user`'s, auto-fetch on select, focus and the interval is `background`.
+ * A fetch and what started it. The caller it runs as (#185) follows from the
+ * trigger through `fetchCaller`, so a call site can't leave it out (#187).
  */
 export interface FetchRequest {
   repoPath: string
-  caller: RemoteCaller
+  trigger: FetchTrigger
 }
 
 /**
@@ -188,7 +188,8 @@ export interface FetchRequest {
 export function useFetch(): UseMutationResult<void, Error, FetchRequest> {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ repoPath, caller }: FetchRequest) => invoke('repos:fetch', repoPath, caller),
+    mutationFn: ({ repoPath, trigger }: FetchRequest) =>
+      invoke('repos:fetch', repoPath, fetchCaller(trigger)),
     onSuccess: (_result, { repoPath }) => {
       client.invalidateQueries({ queryKey: queryKeys.worktrees(repoPath) })
       client.invalidateQueries({ queryKey: queryKeys.remoteBranches(repoPath) })
