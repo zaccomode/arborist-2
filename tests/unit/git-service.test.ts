@@ -105,11 +105,17 @@ describe('GitService.fetchAll', () => {
 
   describe('a user fetch arriving during a background fetch (#185)', () => {
     /**
-     * A service whose first fetch blocks until `release` is called, failing
-     * or succeeding as asked, and whose later fetches succeed at once.
+     * A service whose first fetch blocks until `release` is called. Its first
+     * `failures` git runs fail as `firstFails` asks (an auth failure for
+     * `true`, or the given stderr) and later ones succeed at once. A caller
+     * for whom `signedIn` holds is given the sign-in's environment.
      * `running` counts git processes alive at the same time.
      */
-    function blockedService(firstFails: boolean): {
+    function blockedService(
+      firstFails: boolean | string,
+      signedIn: (caller: string) => boolean = () => false,
+      failures = 1
+    ): {
       service: GitService
       release: () => void
       callers: string[]
@@ -123,21 +129,23 @@ describe('GitService.fetchAll', () => {
       let maxRunning = 0
       let calls = 0
       const run = vi.fn(async (): Promise<GitExecResult> => {
-        const first = calls++ === 0
+        const index = ++calls
+        const first = index === 1
         running++
         maxRunning = Math.max(maxRunning, running)
         if (first) await gate
         running--
-        return first && firstFails
-          ? { stdout: '', stderr: 'fatal: could not read Username', exitCode: 128 }
-          : { stdout: '', stderr: '', exitCode: 0 }
+        if (index > failures || !firstFails) return { stdout: '', stderr: '', exitCode: 0 }
+        const stderr =
+          typeof firstFails === 'string' ? firstFails : 'fatal: could not read Username'
+        return { stdout: '', stderr, exitCode: 128 }
       })
       const service = new GitService(
         { run } as unknown as GitRunner,
         () => {},
         async (_repoPath, caller) => {
           callers.push(caller)
-          return undefined
+          return signedIn(caller) ? { GIT_CONFIG_COUNT: '0' } : undefined
         }
       )
       return { service, release, callers, run, maxRunning: () => maxRunning }
@@ -160,6 +168,41 @@ describe('GitService.fetchAll', () => {
       expect(callers).toEqual(['background', 'user'])
       expect(run).toHaveBeenCalledTimes(2)
       expect(maxRunning()).toBe(1)
+    })
+
+    it('passes on a network failure without fetching again (#188)', async () => {
+      const { service, release, callers, run } = blockedService(
+        "fatal: unable to access 'https://github.com/o/r.git/': Could not resolve host: github.com"
+      )
+      const background = service.fetchAll('/repo', 'background')
+      const user = service.fetchAll('/repo', 'user')
+      release()
+
+      await expect(background).rejects.toMatchObject({ code: 'git-command-failed' })
+      await expect(user).rejects.toMatchObject({
+        code: 'git-command-failed',
+        message: expect.stringContaining('Could not resolve host')
+      })
+      expect(callers).toEqual(['background'])
+      expect(run).toHaveBeenCalledTimes(1)
+    })
+
+    it('passes on an auth failure from a fetch that already had the sign-in (#188)', async () => {
+      // The token was sent and refused, then the fallback without it failed
+      // too: waiting for the same sign-in would change nothing.
+      const { service, release, callers, run } = blockedService(
+        'remote: Permission to o/r.git denied.\nfatal: unable to access: The requested URL returned error: 403',
+        () => true,
+        2
+      )
+      const background = service.fetchAll('/repo', 'background')
+      const user = service.fetchAll('/repo', 'user')
+      release()
+
+      await expect(background).rejects.toMatchObject({ code: 'fetch-auth-failed' })
+      await expect(user).rejects.toMatchObject({ code: 'fetch-auth-failed' })
+      expect(callers).toEqual(['background'])
+      expect(run).toHaveBeenCalledTimes(2)
     })
 
     it('shares the background fetch when it succeeds', async () => {
