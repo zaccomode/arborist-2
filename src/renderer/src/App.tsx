@@ -10,6 +10,7 @@ import {
   sortWorktrees
 } from '@shared/list-view'
 import { shouldAutoFetch } from '@shared/auto-refresh'
+import type { FetchTrigger } from '@shared/sync'
 import { splitDisplayPath } from '@shared/working-tree'
 import { worktreeTitle } from '@shared/format'
 import { useQueryClient } from '@tanstack/react-query'
@@ -86,7 +87,12 @@ function App(): React.JSX.Element | null {
   const projects = useProjects()
   const addProject = useAddProject()
   const removeProject = useRemoveProject()
+  // Two instances of one mutation (#187): `mutate` keeps only its latest
+  // call's callbacks, so an auto-fetch sharing the buttons' instance would
+  // drop the "Fetch failed" toast of a click still in flight.
   const fetchProject = useFetch()
+  const autoFetchProject = useFetch()
+  const fetchPending = fetchProject.isPending || autoFetchProject.isPending
   const settings = useSettings()
   const [addError, setAddError] = useState<string | null>(null)
   const [creatingWorktree, setCreatingWorktree] = useState(false)
@@ -300,13 +306,13 @@ function App(): React.JSX.Element | null {
 
   const handleFetch = (path: string): void => {
     fetchProject.mutate(
-      { repoPath: path, caller: 'user' },
+      { repoPath: path, trigger: 'button' },
       {
         onError: (error) => showErrorToast('Fetch failed', { description: error.message })
       }
     )
   }
-  const fetchMutate = fetchProject.mutate
+  const fetchMutate = autoFetchProject.mutate
 
   // #94: selecting a repository, and regaining focus, fetch its remotes so
   // ahead/behind is current without pressing Fetch. Throttled per repository,
@@ -315,14 +321,14 @@ function App(): React.JSX.Element | null {
   const lastAutoFetch = useRef(new Map<string, number>())
   useEffect(() => {
     if (!repoPath) return
-    const autoFetch = (): void => {
+    const autoFetch = (trigger: FetchTrigger): void => {
       const now = Date.now()
       if (!shouldAutoFetch(lastAutoFetch.current.get(repoPath), now)) return
       lastAutoFetch.current.set(repoPath, now)
-      fetchMutate({ repoPath, caller: 'background' })
+      fetchMutate({ repoPath, trigger })
     }
-    autoFetch()
-    return window.arborist.subscribe('app:focus', autoFetch)
+    autoFetch('select')
+    return window.arborist.subscribe('app:focus', () => autoFetch('focus'))
   }, [repoPath, fetchMutate])
 
   const intervalMinutes = settings.data?.autoFetchIntervalMinutes ?? 0
@@ -333,7 +339,7 @@ function App(): React.JSX.Element | null {
     if (!intervalMinutes || !repoPath) return
 
     const timer = setInterval(() => {
-      if (document.hasFocus()) fetchMutate({ repoPath, caller: 'background' })
+      if (document.hasFocus()) fetchMutate({ repoPath, trigger: 'interval' })
     }, intervalMinutes * 60_000)
     return () => clearInterval(timer)
   }, [intervalMinutes, repoPath, fetchMutate])
@@ -396,7 +402,7 @@ function App(): React.JSX.Element | null {
             prunableCount={(worktrees.data ?? []).filter((entry) => entry.prunable).length}
             addError={addError}
             onFetch={() => selected && handleFetch(selected.path)}
-            fetching={fetchProject.isPending}
+            fetching={fetchPending}
             worktreeView={{
               sort: worktreeSort,
               onSortChange: (sort) => updateSettings({ worktreeSort: sort }),
@@ -448,7 +454,7 @@ function App(): React.JSX.Element | null {
               <WorktreeDetail
                 worktree={worktree}
                 project={selected}
-                refreshing={worktrees.isFetching || fetchProject.isPending}
+                refreshing={worktrees.isFetching || fetchPending}
                 onRefresh={() => {
                   // Asks the remote first (#82). The chips this refreshes are
                   // mostly about the upstream — "↑2 ↓1 from origin/main" — and

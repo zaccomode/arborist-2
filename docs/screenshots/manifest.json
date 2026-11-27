@@ -461,8 +461,8 @@
   },
   "settings": {
     "about": {
-      "dark": "01a8f9227cfb3891129816d93badec77f40d19c0da6388c5e9cd18e375e3ad06",
-      "light": "99916c98484f1572063cc228e74261874553105131471b514be325ca0cd5ac9b"
+      "dark": "fdc6bfd497767dd256cd0ce588360de578073094a0d238618e03dfe4a47d8724",
+      "light": "35b4960c4441f1223cfa9bb3d49fa1710b2fb14051bcdc1c159d7396bc4af7e8"
     },
     "developer": {
       "dark": "cfeb5f3d317244cb989465035d6da1cc5ddb41a2532243de4f76eed4d792ad57",
@@ -491,14 +491,14 @@
   },
   "settings-about-error": {
     "error": {
-      "dark": "c9077bf49afa9d9e786e5d154138b174d40147827ade429b20a58759c250c950",
-      "light": "f708ca881b66afaca8700c90bbfe38533a1c6e60f575d611e0428c6b00098e0a"
+      "dark": "e343a8122d8997c756723ee4ce196d8c0fdac22ab1af11a29ea21e1cc740a851",
+      "light": "7a866a7c67a1b3ff31c9ac71f7eb498ddd25620b364ba49057c9a2d8630ed8d6"
     }
   },
   "settings-about-missing-manifest": {
     "error": {
-      "dark": "97da1763f11c3fd5f88f5eb0151e2652a82dce3497ab9cf3e284d01d9a0013fd",
-      "light": "3843956f5c494fcc637a2db558c4412d7440c03713c8efe80f6b6db257146cc8"
+      "dark": "95896e405121a8c1c67a04f6f224290a55f4a7819bbafdba58016b3c5350b3a7",
+      "light": "c1d4766e3e2c1f85f66cc9c99f60f76621ac7bbe2e4d30958d6c529809640e0a"
     }
   },
   "settings-worktree-location": {
@@ -675,8 +675,8 @@
   },
   "update-check-tab": {
     "up-to-date": {
-      "dark": "0e9c216e5f2a2dd9e02492304fcc289f5e900027be8bdaeb16519628564550b6",
-      "light": "6ed362a5dbb514ef8b47fe5744638d38c446cfb05472a0ab456672e9923cb99b"
+      "dark": "1fdd65024187b2be9a865df43fbd3968cf760ad87b6a3c2ba1e1e73435cf0e84",
+      "light": "ec9518c8bba553c552c92efe5f1e0a231d7910b151533e08fe459d59e8b6a5e6"
     }
   },
   "update-downloading": {

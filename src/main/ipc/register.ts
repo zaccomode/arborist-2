@@ -16,6 +16,7 @@ import type { GitHubService } from '../services/github/github-service'
 import { commitDraftKey, worktreeNoteKey } from '../../shared/persisted'
 import { resolveWorktreeLocation } from '../../shared/worktree-location'
 import { mapWithConcurrency } from '../../shared/concurrency'
+import { toRemoteCaller } from '../../shared/sync'
 import { applicationPickerOptions } from '../services/system/pickers'
 import { SshHostResolver } from '../services/system/ssh-config'
 import { resolveRemoteLocation } from '../../shared/project-groups'
@@ -293,9 +294,7 @@ export function registerIpcHandlers({
   handle('presets:reorder', (orderedIds) => presets.reorder(orderedIds))
   handle('presets:run', (presetId, context, target) => presets.run(presetId, context, target))
 
-  handle('repos:fetch', (repoPath, caller) =>
-    gitService.fetchAll(repoPath, caller === 'user' ? 'user' : 'background')
-  )
+  handle('repos:fetch', (repoPath, caller) => gitService.fetchAll(repoPath, toRemoteCaller(caller)))
   handle('commits:recent', (repoPath, refs, limit, skip) =>
     gitService.commitLog(repoPath, refs, limit, skip)
   )

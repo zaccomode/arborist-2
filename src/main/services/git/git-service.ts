@@ -208,13 +208,31 @@ export type NetworkEnv = (
   caller: RemoteCaller
 ) => Promise<Record<string, string> | undefined>
 
+/** A `git fetch` running for one repository, for later callers to join. */
+interface InFlightFetch {
+  caller: RemoteCaller
+  run: Promise<void>
+  /** Whether it ran with the GitHub sign-in's token; undefined until known. */
+  hadSignIn: boolean | undefined
+}
+
+/**
+ * Whether a fetch failed only because it went without a sign-in, so a `user`
+ * caller, which waits for one, might succeed where it didn't (#188).
+ */
+function missedSignIn(error: unknown, fetch: InFlightFetch): boolean {
+  return (
+    error instanceof AppError && error.code === 'fetch-auth-failed' && fetch.hadSignIn === false
+  )
+}
+
 export class GitService {
   #git: GitRunner
   /**
    * One in-flight fetch per repository, so concurrent callers share it, and
    * who it was started for.
    */
-  #fetching = new Map<string, { caller: RemoteCaller; run: Promise<void> }>()
+  #fetching = new Map<string, InFlightFetch>()
   #suppressWatcher: SuppressWatcher
   #networkEnv: NetworkEnv
 
@@ -240,10 +258,12 @@ export class GitService {
   async #runRemote(
     args: string[],
     repoPath: string,
-    caller: RemoteCaller
+    caller: RemoteCaller,
+    onEnv?: (hadSignIn: boolean) => void
   ): Promise<{ result: GitExecResult; triedSignIn: boolean }> {
     const options = { repoPath, timeoutMs: FETCH_TIMEOUT_MS }
     const env = await this.#networkEnv(repoPath, caller)
+    onEnv?.(env !== undefined)
     const result = await this.#git.run(args, { ...options, env })
     if (!env || result.exitCode === 0 || !remoteRefusedCredentials(result.stderr)) {
       return { result, triedSignIn: false }
@@ -259,8 +279,11 @@ export class GitService {
    * Fetch and Refresh buttons are the `user`'s, auto-fetch is `background`.
    * Any caller joins a `user` fetch, and a `background` caller joins any
    * fetch. A `user` caller that finds a `background` fetch running waits for
-   * it, since starting a second would race it, and if it failed (perhaps for
-   * want of a sign-in it didn't wait for) runs a fetch of its own after.
+   * it, since starting a second would race it. If that fetch failed for want
+   * of a sign-in it didn't wait for — an auth failure from a run that went
+   * without the token — the user caller runs a fetch of its own after. Any
+   * other failure (offline, a timeout, a token the remote refused) is passed
+   * on as it is, since a second identical fetch would only fail again (#188).
    */
   async fetchAll(repoPath: string, caller: RemoteCaller = 'background'): Promise<void> {
     const inFlight = this.#fetching.get(repoPath)
@@ -268,19 +291,32 @@ export class GitService {
       if (inFlight.caller === 'user' || caller === 'background') return inFlight.run
       // `run` settles after its own `finally` has cleared the entry, so the
       // retry starts (or joins another user's) a fetch of its own.
-      return inFlight.run.catch(() => this.fetchAll(repoPath, 'user'))
+      return inFlight.run.catch((error: unknown) => {
+        if (!missedSignIn(error, inFlight)) throw error
+        return this.fetchAll(repoPath, 'user')
+      })
     }
 
-    const run = this.#runFetch(repoPath, caller).finally(() => this.#fetching.delete(repoPath))
-    this.#fetching.set(repoPath, { caller, run })
-    return run
+    const entry: InFlightFetch = { caller, run: Promise.resolve(), hadSignIn: undefined }
+    entry.run = this.#runFetch(
+      repoPath,
+      caller,
+      (hadSignIn) => (entry.hadSignIn = hadSignIn)
+    ).finally(() => this.#fetching.delete(repoPath))
+    this.#fetching.set(repoPath, entry)
+    return entry.run
   }
 
-  async #runFetch(repoPath: string, caller: RemoteCaller): Promise<void> {
+  async #runFetch(
+    repoPath: string,
+    caller: RemoteCaller,
+    onEnv: (hadSignIn: boolean) => void
+  ): Promise<void> {
     const { result, triedSignIn } = await this.#runRemote(
       ['fetch', '--all', '--prune'],
       repoPath,
-      caller
+      caller,
+      onEnv
     )
     if (result.exitCode === 0) return
 

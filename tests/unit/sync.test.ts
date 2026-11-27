@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import type { Worktree } from '../../src/shared/domain'
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
 import {
+  fetchCaller,
   projectHasRemote,
+  toRemoteCaller,
   pullArgsFor,
   pullLabel,
   pushAction,
@@ -165,5 +169,58 @@ describe('pushAction', () => {
     expect(pushAction(false, null)).toBe('push')
     // An upstream means a remote, whatever the cached answer says.
     expect(pushAction(true, false)).toBe('push')
+  })
+})
+
+describe('fetchCaller (#185, #187)', () => {
+  it('makes a button press the user’s fetch', () => {
+    expect(fetchCaller('button')).toBe('user')
+  })
+  it.each(['select', 'focus', 'interval'] as const)('makes %s a background fetch', (trigger) => {
+    expect(fetchCaller(trigger)).toBe('background')
+  })
+})
+
+describe('toRemoteCaller', () => {
+  it('keeps user', () => {
+    expect(toRemoteCaller('user')).toBe('user')
+  })
+  it.each([undefined, null, 'background', 'USER', 1, {}])('makes %s background', (value) => {
+    expect(toRemoteCaller(value)).toBe('background')
+  })
+})
+
+/**
+ * The fix for #185 depends on the Fetch and Refresh buttons fetching as the
+ * user, and auto-fetch as the background. `FetchRequest` requires a trigger,
+ * so none can be left out, but a wrong one would type-check: this pins each
+ * call site in `App.tsx` to the trigger it should send (#187).
+ */
+describe('the fetch triggers App.tsx sends (#187)', () => {
+  const app = readFileSync(resolve(__dirname, '../../src/renderer/src/App.tsx'), 'utf8')
+  const body = (start: string): string => {
+    const from = app.indexOf(start)
+    expect(from, `App.tsx no longer contains ${start}`).toBeGreaterThanOrEqual(0)
+    return app.slice(from, app.indexOf('\n  }', from))
+  }
+
+  it('fetches as the button from handleFetch, which both buttons call', () => {
+    expect(body('const handleFetch =')).toMatch(
+      /fetchProject\.mutate\(\s*\{ repoPath: path, trigger: 'button' \}/
+    )
+    expect(app).toMatch(/onFetch=\{\(\) => selected && handleFetch\(/)
+    expect(body('onRefresh={() => {')).toContain('handleFetch(selected.path)')
+  })
+
+  it('sends no auto-fetch through the buttons’ mutation, whose toast it would drop', () => {
+    expect(app).toContain('const fetchMutate = autoFetchProject.mutate')
+    // `trigger` alone is autoFetch's parameter, which is only ever 'select' or 'focus'.
+    const sent = [...app.matchAll(/fetchMutate\(\{ repoPath, trigger(?:: '(\w+)')? \}\)/g)].map(
+      (m) => m[1] ?? 'trigger'
+    )
+    expect(sent.sort()).toEqual(['interval', 'trigger'])
+    expect(app).toContain("autoFetch('select')")
+    expect(app).toContain("autoFetch('focus')")
+    expect(app.match(/fetchProject\.mutate\(/g)).toHaveLength(1)
   })
 })
